@@ -8,7 +8,7 @@ window.DASHBOARD_CONFIG = {
   // ---- DATA SOURCE ----------------------------------------------------
   // "demo"  = use embedded sample data in data.js (works offline, today)
   // "live"  = fetch JSON from your proxy endpoints (see PROXY_BASE below)
-  MODE: "live",   // "Demo" or "live"
+  MODE: "demo",   // "demo" = reads data.js snapshot; "live" = fetches from PROXY_BASE
 
   // Base URL of the small proxy/API that talks to Business Central ON-PREM.
   // The browser CANNOT call BC OData directly (CORS + credentials must stay
