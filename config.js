@@ -16,7 +16,7 @@ window.DASHBOARD_CONFIG = {
   // and returns clean JSON. Run the included `proxy/server.js` on a machine
   // that can reach your BC server (same LAN/VPN), then put its URL here.
   // Leave blank while in demo mode.
-  PROXY_BASE: "",   // e.g. "http://localhost:8080"
+  PROXY_BASE:"http://localhost:8080",   // e.g. "http://localhost:8080"
 
   // Endpoint map — the proxy should expose these returning the shapes
   // documented in data.js. Change paths to match your proxy if needed.
