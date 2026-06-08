@@ -227,8 +227,24 @@ async function build() {
     ]
   };
 
+  /* ---- HR / People ---- */
+  const employees = await bc('GetEmployee');
+  const hrByStatus={}, hrByType={}, hrByGender={};
+  employees.forEach(e=>{
+    const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
+    const t=e.employeeType||'Unknown';   hrByType[t]=(hrByType[t]||0)+1;
+    const g=e.gender||'Unknown';         hrByGender[g]=(hrByGender[g]||0)+1;
+  });
+  const hr = {
+    total: employees.length,
+    byStatus: Object.entries(hrByStatus).map(([status,count])=>({status,count})).sort((a,b)=>b.count-a.count),
+    byType:   Object.entries(hrByType).map(([type,count])=>({type,count})).sort((a,b)=>b.count-a.count),
+    byGender: Object.entries(hrByGender).map(([gender,count])=>({gender,count})).sort((a,b)=>b.count-a.count)
+  };
+  console.log(`  HR: ${hr.total} employees — Active ${(hr.byStatus.find(x=>x.status==='Active')||{count:0}).count} | Gender: ${hr.byGender.map(x=>x.gender+' '+x.count).join(', ')}`);
+
   return { asOf: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),
-           budgetActual, budgetOverview, cashflow, reports };
+           budgetActual, budgetOverview, cashflow, reports, hr };
 }
 
 (async () => {
