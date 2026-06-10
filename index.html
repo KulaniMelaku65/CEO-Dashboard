@@ -1006,6 +1006,8 @@ function buildChatContext(){
   const rev=get('Revenue'),gp=get('Gross Profit'),eb=get('EBITDA'),cos=get('Cost of Sales'),ex=get('Expenses');
   const hr=d.hr,mo=d.budgetOverview?.monthly?.labels?.length||6;
   const active=(hr?.byStatus?.find(x=>x.status==='Active')||{count:0}).count;
+  const male=(hr?.byGender?.find(x=>x.gender==='Male')||{count:0}).count;
+  const female=(hr?.byGender?.find(x=>x.gender==='Female')||{count:0}).count;
   const proj=v=>v?(v/mo*12).toFixed(0):'?';
   const pct=(a,b)=>b?(a/b*100).toFixed(1)+'%':'n/a';
   const net=d.reports?.pl?.at(-1)?.value;
@@ -1038,21 +1040,12 @@ INSTRUCTIONS:
 - Always use ETB millions as the unit. Format numbers with commas where helpful.`;
 }
 async function callGroq(userMsg){
+  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
+  if(!key) return null;
   const payload=JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5});
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),15000);
-  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
-  const isLocal=window.location.protocol==='file:'||window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1';
   try{
-    if(!isLocal){
-      // On Netlify: use serverless function so key stays server-side
-      try{
-        const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
-        if(r.ok){clearTimeout(timer);return (await r.json()).choices?.[0]?.message?.content||null;}
-      }catch(e){if(e.name==='AbortError'){clearTimeout(timer);return null;}}
-    }
-    // Local (or Netlify function unavailable): call Groq directly with config key
-    if(!key){clearTimeout(timer);return null;}
     const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
       headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
     clearTimeout(timer);
@@ -1099,10 +1092,15 @@ async function sendChat(){
   const think=document.createElement('div');
   think.className='msg bot thinking';think.id='thinking';think.textContent='Thinking…';
   msgs.appendChild(think);msgs.scrollTop=msgs.scrollHeight;
-  let ans=await callGroq(q);
-  if(!ans) ans=ruleAnswer(q)||'I was unable to reach the AI service. Please try again in a moment.';
-  document.getElementById('thinking')?.remove();
-  msgs.innerHTML+=`<div class="msg bot">${ans}</div>`;
+  try{
+    let ans=await callGroq(q);
+    if(!ans) ans=ruleAnswer(q)||'I was unable to reach the AI service. Please try again in a moment.';
+    document.getElementById('thinking')?.remove();
+    msgs.innerHTML+=`<div class="msg bot">${ans}</div>`;
+  }catch(e){
+    document.getElementById('thinking')?.remove();
+    msgs.innerHTML+=`<div class="msg bot">I was unable to reach the AI service. Please try again in a moment.</div>`;
+  }
   msgs.scrollTop=msgs.scrollHeight;
 }
 
