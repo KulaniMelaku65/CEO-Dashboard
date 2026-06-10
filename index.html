@@ -1039,20 +1039,23 @@ INSTRUCTIONS:
 }
 async function callGroq(userMsg){
   const payload=JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5});
-  // 1. Try Netlify serverless function (works when deployed to Netlify)
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),9000); // 9s total timeout
   try{
-    const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
-    if(r.ok){const d=await r.json();return d.choices?.[0]?.message?.content||null;}
-  }catch(e){}
-  // 2. Fallback: direct Groq call using key from config.js (works locally)
-  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
-  if(!key)return null;
-  try{
+    // 1. Try Netlify serverless function (works when deployed to Netlify)
+    try{
+      const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
+      if(r.ok){clearTimeout(timer);return (await r.json()).choices?.[0]?.message?.content||null;}
+    }catch(e){if(e.name==='AbortError'){clearTimeout(timer);return null;}}
+    // 2. Fallback: direct Groq call using key from config.js (works locally)
+    const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
+    if(!key){clearTimeout(timer);return null;}
     const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
-      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload});
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
+    clearTimeout(timer);
     if(!r.ok)return null;
     return (await r.json()).choices?.[0]?.message?.content||null;
-  }catch(e){return null;}
+  }catch(e){clearTimeout(timer);return null;}
 }
 function ruleAnswer(q){
   const d=window.DEMO_DATA; if(!d) return 'No data loaded yet.';
@@ -1094,7 +1097,7 @@ async function sendChat(){
   think.className='msg bot thinking';think.id='thinking';think.textContent='Thinking…';
   msgs.appendChild(think);msgs.scrollTop=msgs.scrollHeight;
   let ans=await callGroq(q);
-  if(!ans) ans=ruleAnswer(q);
+  if(!ans) ans=ruleAnswer(q)||'I was unable to reach the AI service. Please try again in a moment.';
   document.getElementById('thinking')?.remove();
   msgs.innerHTML+=`<div class="msg bot">${ans}</div>`;
   msgs.scrollTop=msgs.scrollHeight;
