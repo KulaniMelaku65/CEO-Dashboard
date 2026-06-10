@@ -353,10 +353,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
         </div>
       </div>
 
-      <div class="card mt" style="border:1px dashed #BCC8D8;background:#F9FBFC">
-        <h3 style="color:var(--muted);margin-bottom:10px">Loan Portfolio Details — Awaiting BC Endpoint</h3>
-        <p style="font-size:12px;color:var(--muted);line-height:1.7">To show <strong>gross loan portfolio balance, active borrower count, and PAR metrics</strong>, ask your BC administrator to publish a <strong>Loan Ledger</strong> or <strong>Loan Management</strong> OData web service. Once published, add the endpoint to <code style="background:#EEF3F9;padding:2px 5px;border-radius:4px">snapshot.js</code> and this section will populate automatically.</p>
-      </div>
+      <div id="lendPortfolioSection" class="mt"></div>
     </section>
 
     <!-- ══════════════ PAGE: COLLECTIONS ══════════════ -->
@@ -622,10 +619,11 @@ function renderOverview(d){
   destroy('ovBUDonut');
   CHARTS.ovBUDonut=new Chart(document.getElementById('ovBUDonut'),{
     type:'doughnut',
-    data:{labels:top6.map(x=>x.unit),datasets:[{data:top6.map(x=>x.budget),
+    data:{labels:top6.map(x=>deptName(x.unit)),datasets:[{data:top6.map(x=>x.budget),
       backgroundColor:PAL,borderWidth:2,borderColor:'#fff'}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:8,font:{size:10,family:"'Montserrat',sans-serif"}}}}}
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:8,font:{size:10,family:"'Montserrat',sans-serif"}}},
+        tooltip:{callbacks:{label:c=>` ${fmtM(top6[c.dataIndex].budget)}M`}}}}
   });
 }
 
@@ -729,7 +727,7 @@ function renderFinBVA(d){
   }).join('');
 }
 
-/* ═══ RENDER: LENDING (real GL data) ═══ */
+/* ═══ RENDER: LENDING (real GL + loan portfolio data) ═══ */
 function renderLending(d){
   const ld=d.lending;
   if(!ld){
@@ -737,12 +735,14 @@ function renderLending(d){
     return;
   }
   const cf=d.cashflow;
-  const net=cf.flows.collections-ld.disbursementsYTD;
+  const lp=ld.loanPortfolio;
+
   document.getElementById('kpiLEND').innerHTML=
     kpiCard({label:'Disbursements YTD',val:fmtM(ld.disbursementsYTD)+'M',sub:'loan disbursements — accts 6021 & 6022',barColor:C.navy})+
-    kpiCard({label:'Bank Collections YTD',val:fmtM(cf.flows.collections)+'M',sub:'inflows across all bank accounts',barColor:C.green})+
-    kpiCard({label:'Net Position',val:(net>=0?'+':'')+fmtM(net)+'M',sub:'collections minus disbursements',barColor:net>=0?C.green:C.gold})+
-    kpiCard({label:'Bank Balance',val:fmtM(cf.bankDaily.balances.at(-1))+'M',sub:'latest daily position',barColor:C.navy3});
+    kpiCard({label:'Bank Collections YTD',val:fmtM(cf.flows.collections)+'M',sub:'inflows across all bank accounts',barColor:C.teal})+
+    (lp ? kpiCard({label:'Gross Loan Portfolio',val:fmtM(lp.grossPortfolio)+'M',sub:fmt(lp.activeBorrowers)+' active borrowers',barColor:C.navy3}) : '')+
+    (lp ? kpiCard({label:'PAR — Overdue',val:lp.parPct+'%',sub:fmtM(lp.overdueBalance)+'M across '+fmt(lp.overdueBorrowers)+' borrowers',barColor:lp.parPct>10?C.gold:C.teal}) : '')+
+    (!lp ? kpiCard({label:'Bank Balance',val:fmtM(cf.bankDaily.balances.at(-1))+'M',sub:'latest daily position',barColor:C.navy}) : '');
 
   destroy('lendDisburse');
   CHARTS.lendDisburse=new Chart(document.getElementById('lendDisburse'),{
@@ -757,6 +757,39 @@ function renderLending(d){
     data:{labels:cf.collectionsByBank.map(x=>x.bank),datasets:[{data:cf.collectionsByBank.map(x=>x.amount),backgroundColor:PAL,borderRadius:6,label:'Collections'}]},
     options:baseOpts({legend:false})
   });
+
+  const lps=document.getElementById('lendPortfolioSection');
+  if(lp && lp.portfolioByUnit && lp.portfolioByUnit.length){
+    lps.innerHTML=`
+      <div class="g2">
+        <div class="card">
+          <h3>Loan Portfolio by Business Unit <span class="ctag">Outstanding Balance ETB M</span></h3>
+          <div class="chartbox lg"><canvas id="lendPortfolioChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Portfolio at Risk (PAR) <span class="ctag">Current vs Overdue</span></h3>
+          <div class="chartbox lg"><canvas id="lendPARChart"></canvas></div>
+        </div>
+      </div>`;
+    destroy('lendPortfolioChart');
+    CHARTS.lendPortfolioChart=new Chart(document.getElementById('lendPortfolioChart'),{
+      type:'bar',
+      data:{labels:lp.portfolioByUnit.map(x=>deptName(x.unit)),datasets:[{data:lp.portfolioByUnit.map(x=>x.balance),backgroundColor:PAL,borderRadius:6,label:'Outstanding (ETB M)'}]},
+      options:{...baseOpts({legend:false}),indexAxis:'y'}
+    });
+    destroy('lendPARChart');
+    CHARTS.lendPARChart=new Chart(document.getElementById('lendPARChart'),{
+      type:'doughnut',
+      data:{labels:['Current (not overdue)','Overdue (PAR)'],
+        datasets:[{data:[+(lp.grossPortfolio-lp.overdueBalance).toFixed(1),lp.overdueBalance],
+          backgroundColor:[C.teal,C.gold],borderWidth:3,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+        plugins:{legend:{position:'bottom',labels:{boxWidth:12,padding:12,font:{size:12,family:"'Montserrat',sans-serif"}}},
+          tooltip:{callbacks:{label:c=>` ${fmtM(c.parsed)}M (${(c.parsed/lp.grossPortfolio*100).toFixed(1)}%)`}}}}
+    });
+  } else {
+    lps.innerHTML='';
+  }
 }
 
 /* ═══ RENDER: COLLECTIONS (real bank ledger data) ═══ */
@@ -990,6 +1023,8 @@ LIVE FINANCIAL DATA (${mo} months YTD from Business Central ERP):
 
 LENDING & COLLECTIONS:
 - Loan disbursements YTD (GL accts 6021/6022): ${ld?.disbursementsYTD||'?'}M
+- Gross Loan Portfolio: ${ld?.loanPortfolio?.grossPortfolio||'?'}M | Active borrowers: ${ld?.loanPortfolio?.activeBorrowers||'?'}
+- Overdue/PAR balance: ${ld?.loanPortfolio?.overdueBalance||'?'}M | PAR ratio: ${ld?.loanPortfolio?.parPct||'?'}%
 - Bank collections YTD: ${d.cashflow?.flows?.collections||'?'}M | Latest bank balance: ${d.cashflow?.bankDaily?.balances?.at(-1)||'?'}M
 
 WORKFORCE (active employees from BC HR):

@@ -283,9 +283,34 @@ async function build() {
   }
 
   const disbursementsYTD = toM(Math.abs(A('disbursements')));
+
+  /* ---- Loan Portfolio (KFT_Loan_Accounts + KFT_Overdue_Loans) ---- */
+  let loanPortfolio = null;
+  try {
+    const [loanAccts, overdueLoans] = await Promise.all([
+      bc('KFT_Loan_Accounts'),
+      bc('KFT_Overdue_Loans')
+    ]);
+    const grossPortfolio = toM(loanAccts.reduce((s,x)=>s+num(x.outstandingBalance),0));
+    const activeBorrowers = new Set(loanAccts.map(x=>x.customerNo)).size;
+    const overdueBalance  = toM(overdueLoans.reduce((s,x)=>s+num(x.overdueBalance),0));
+    const overdueBorrowers = new Set(overdueLoans.map(x=>x.customerNo)).size;
+    const parPct = grossPortfolio>0 ? +(overdueBalance/grossPortfolio*100).toFixed(1) : 0;
+    const byUnitMap = {};
+    loanAccts.forEach(x=>{ const u=x.globalDim2||'Other'; byUnitMap[u]=(byUnitMap[u]||0)+num(x.outstandingBalance); });
+    const portfolioByUnit = Object.entries(byUnitMap)
+      .map(([unit,bal])=>({unit, balance:toM(bal)}))
+      .sort((a,b)=>b.balance-a.balance);
+    loanPortfolio = { grossPortfolio, activeBorrowers, overdueBalance, overdueBorrowers, parPct, portfolioByUnit };
+    console.log(`  Loan portfolio: ${grossPortfolio}M gross, ${activeBorrowers} borrowers, PAR ${parPct}% (${overdueBalance}M overdue)`);
+  } catch(e) {
+    console.warn('  Loan portfolio not loaded:', e.message);
+  }
+
   const lending = {
     disbursementsYTD,
-    monthlyDisburse: { labels, data: labels.map((_,i)=>toM(disbByMonth[i])) }
+    monthlyDisburse: { labels, data: labels.map((_,i)=>toM(disbByMonth[i])) },
+    ...(loanPortfolio ? { loanPortfolio } : {})
   };
   console.log(`  Lending disbursements YTD: ${disbursementsYTD}M (accounts 6021/6022)`);
   console.log(`  Monthly bank collections: ${labels.map((_,i)=>toM(collByMonth[i])+'M').join(', ')}`);
