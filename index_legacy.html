@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kifiya · CEO Financial Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#02404F;        /* Kifiya Peacock Green */
+    --navy-2:#013B47;
+    --navy-3:#3A4656;      /* Limed Spruce */
+    --gold:#EB7D23;        /* Kifiya Orange */
+    --gold-soft:#F5A870;
+    --teal:#1FB6A6;
+    --green:#2EBD85;
+    --red:#E5544B;
+    --bg:#F4F6FA;
+    --card:#FFFFFF;
+    --ink:#02404F;
+    --muted:#6B7C93;
+    --line:#E3E9F2;
+    --shadow:0 2px 14px rgba(2,64,79,.07);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);}
+  /* ---------- Top bar ---------- */
+  header{
+    background:linear-gradient(100deg,var(--navy),var(--navy-3));
+    color:#fff;padding:14px 26px;display:flex;align-items:center;gap:18px;
+    position:sticky;top:0;z-index:50;box-shadow:0 2px 18px rgba(11,42,74,.25);
+  }
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo .mark{width:42px;height:42px;flex:none}
+  .logo .name{font-weight:700;font-size:20px;letter-spacing:.3px;line-height:1}
+  .logo .name span{color:var(--gold)}
+  .logo .sub{font-size:11px;color:#B9CBE0;letter-spacing:2px;text-transform:uppercase}
+  header .title{margin-left:6px;font-size:13px;color:#cfe0f2;border-left:1px solid rgba(255,255,255,.2);padding-left:18px}
+  header .spacer{flex:1}
+  .status{display:flex;align-items:center;gap:8px;font-size:12px;color:#cfe0f2}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(245,166,35,.2)}
+  .dot.live{background:var(--green);box-shadow:0 0 0 4px rgba(46,189,133,.25)}
+  .btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
+    padding:8px 14px;border-radius:9px;font-size:12px;cursor:pointer;font-weight:600;transition:.15s}
+  .btn:hover{background:rgba(255,255,255,.22)}
+  /* ---------- Tabs ---------- */
+  nav{background:#fff;border-bottom:1px solid var(--line);padding:0 26px;display:flex;gap:4px;
+    position:sticky;top:70px;z-index:40;overflow-x:auto}
+  nav button{background:none;border:none;padding:15px 18px;font-size:14px;font-weight:600;color:var(--muted);
+    cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:.15s}
+  nav button:hover{color:var(--navy)}
+  nav button.active{color:var(--navy);border-bottom-color:var(--gold)}
+  /* ---------- Layout ---------- */
+  main{padding:24px 26px 60px;max-width:1400px;margin:0 auto}
+  .page{display:none}.page.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:15px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin:6px 0 16px;font-weight:700}
+  .grid{display:grid;gap:18px}
+  .g-kpi{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+  .g-2{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+  .g-3{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
+  .card h3{font-size:14px;color:var(--navy);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+  .card h3 .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:#EEF3F9;color:var(--muted)}
+  /* ---------- KPI cards ---------- */
+  .kpi{position:relative;overflow:hidden}
+  .kpi .label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .kpi .val{font-size:27px;font-weight:700;margin:8px 0 4px;color:var(--navy)}
+  .kpi .meta{font-size:12px;display:flex;align-items:center;gap:6px}
+  .kpi .bar{height:5px;border-radius:4px;background:#EEF3F9;margin-top:14px;overflow:hidden}
+  .kpi .bar i{display:block;height:100%;border-radius:4px}
+  .up{color:var(--green)}.down{color:var(--red)}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .pill.g{background:rgba(46,189,133,.12);color:var(--green)}
+  .pill.r{background:rgba(229,84,75,.12);color:var(--red)}
+  .accent-strip{position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--gold)}
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:11px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+  tbody tr:hover{background:#FAFBFE}
+  td.pos{color:var(--green);font-weight:600}td.neg{color:var(--red);font-weight:600}
+  .chartbox{position:relative;height:280px}
+  .chartbox.tall{height:330px}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;border-top:1px solid var(--line)}
+  .note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+  /* ---------- Info tooltips ---------- */
+  .info-tip{
+    background:none;border:1px solid var(--line);border-radius:50%;
+    width:17px;height:17px;font-size:10px;cursor:pointer;padding:0;
+    color:var(--muted);display:inline-flex;align-items:center;justify-content:center;
+    flex-shrink:0;transition:.15s;line-height:1;vertical-align:middle;margin-left:5px;
+  }
+  .info-tip:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+  .kpi-row{display:flex;justify-content:space-between;align-items:flex-start}
+  /* ---------- AI Chatbot ---------- */
+  #chatBtn{
+    position:fixed;bottom:24px;right:24px;z-index:200;
+    width:52px;height:52px;border-radius:50%;border:none;
+    background:var(--gold);color:#fff;font-size:24px;cursor:pointer;
+    box-shadow:0 4px 20px rgba(2,64,79,.35);transition:.2s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #chatBtn:hover{transform:scale(1.1)}
+  #chatPanel{
+    position:fixed;bottom:88px;right:24px;z-index:200;
+    width:370px;background:#fff;border-radius:18px;
+    box-shadow:0 10px 50px rgba(2,64,79,.2);
+    display:none;flex-direction:column;overflow:hidden;
+    border:1px solid var(--line);max-height:540px;
+  }
+  #chatPanel.open{display:flex}
+  #chatHeader{
+    background:var(--navy);color:#fff;padding:14px 16px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  #chatHeader .ch-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+  #chatHeader .ch-title span{font-size:10px;background:var(--gold);padding:2px 7px;border-radius:20px;font-weight:600}
+  #chatHeader button{background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;line-height:1}
+  #chatHeader button:hover{color:#fff}
+  #chatMessages{
+    flex:1;overflow-y:auto;padding:14px 12px;
+    display:flex;flex-direction:column;gap:9px;max-height:320px;
+  }
+  .msg{padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.55;max-width:92%}
+  .msg.bot{background:#F0F4F8;color:var(--ink);align-self:flex-start;border-bottom-left-radius:4px}
+  .msg.user{background:var(--navy);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+  .msg.thinking{color:var(--muted);font-style:italic;background:#F8F9FB}
+  #chatSugg{padding:8px 10px;display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid var(--line)}
+  #chatSugg button{
+    background:#EEF3F9;border:none;border-radius:20px;padding:5px 10px;
+    font-size:11px;color:var(--navy);cursor:pointer;font-weight:600;
+  }
+  #chatSugg button:hover{background:var(--gold);color:#fff}
+  #chatInputRow{display:flex;padding:10px 12px;gap:8px;border-top:1px solid var(--line)}
+  #chatBox{
+    flex:1;border:1px solid var(--line);border-radius:20px;
+    padding:8px 14px;font-size:13px;outline:none;font-family:inherit;
+  }
+  #chatBox:focus{border-color:var(--navy)}
+  #chatSend{
+    background:var(--navy);color:#fff;border:none;border-radius:20px;
+    padding:8px 16px;cursor:pointer;font-size:13px;font-weight:600;
+  }
+  #chatSend:hover{background:var(--gold)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <img class="mark" src="logo.jfif" alt="Kifiya" style="border-radius:8px;object-fit:contain;background:#fff;padding:2px"/>
+    <div>
+      <div class="name">KIFIYA<span>.</span></div>
+      <div class="sub">Financial Technology</div>
+    </div>
+  </div>
+  <div class="title">CEO Financial Performance Dashboard</div>
+  <div class="spacer"></div>
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusTxt">Demo data</span>
+  </div>
+  <button class="btn" onclick="refresh()">⟳ Refresh</button>
+</header>
+
+<nav>
+  <button class="active" data-tab="budget-actual">Budget vs Actual</button>
+  <button data-tab="budget-overview">Budget Overview</button>
+  <button data-tab="cashflow">Cash Flow</button>
+  <button data-tab="reports">Reports</button>
+  <button data-tab="hr">People &amp; HR</button>
+</nav>
+
+<main>
+  <!-- ===================== BUDGET VS ACTUAL ===================== -->
+  <section class="page active" id="budget-actual">
+    <h2 class="section">Budget vs Actual — YTD</h2>
+    <div class="grid g-kpi" id="kpiBVA"></div>
+    <div class="grid g-2" style="margin-top:18px">
+      <div class="card"><h3>Budget vs Actual by Line <span class="tag">ETB Millions</span><button class="info-tip" onclick="openChatWithQ('Explain the budget vs actual chart and highlight any notable variances')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">Side-by-side comparison of planned budget against actual spend/income for each P&amp;L line year-to-date.</p>
+        <div class="chartbox"><canvas id="bvaBar"></canvas></div></div>
+      <div class="card"><h3>Variance % by Line<button class="info-tip" onclick="openChatWithQ('Which line items have the biggest budget variance and what does that mean?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">Positive bars = performing above budget (good for revenue, bad for costs). Negative = below budget.</p>
+        <div class="chartbox"><canvas id="varBar"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>Detailed Breakdown</h3>
+      <table id="bvaTable"><thead><tr><th>Line Item</th><th>Budget</th><th>Actual</th><th>Variance</th><th>Var %</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <!-- ===================== BUDGET OVERVIEW ===================== -->
+  <section class="page" id="budget-overview">
+    <h2 class="section">Budget Overview</h2>
+    <div class="grid g-kpi" id="kpiBO"></div>
+    <div class="grid g-2" style="margin-top:18px">
+      <div class="card"><h3>Total Budget Allocation by Business Unit<button class="info-tip" onclick="openChatWithQ('Which business unit has the largest budget and is it being utilised well?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">How the annual budget is split across Kifiya's business lines (FinTech, AgTech, Mobility, etc.).</p>
+        <div class="chartbox"><canvas id="buDonut"></canvas></div></div>
+      <div class="card"><h3>Month-to-Month Comparison <span class="tag">Budget vs Actual</span><button class="info-tip" onclick="openChatWithQ('How is our monthly spending trending vs budget?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">Monthly actual spend vs the evenly-distributed budget line. Helps spot seasonal patterns or acceleration in spending.</p>
+        <div class="chartbox"><canvas id="m2mLine"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>Utilization Year-to-Date (YTD) by Business Unit</h3>
+      <div class="chartbox tall"><canvas id="utilBar"></canvas></div></div>
+  </section>
+
+  <!-- ===================== CASH FLOW ===================== -->
+  <section class="page" id="cashflow">
+    <h2 class="section">Cash Flow</h2>
+    <div class="grid g-kpi" id="kpiCF"></div>
+    <div class="grid g-2" style="margin-top:18px">
+      <div class="card"><h3>Total Bank Balances — Daily <span class="tag">Last 30 days</span><button class="info-tip" onclick="openChatWithQ('Explain our bank balance trend and what it means for liquidity')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">Aggregate balance across all Kifiya bank accounts over the last 30 days. Rising trend = improving liquidity.</p>
+        <div class="chartbox"><canvas id="bankLine"></canvas></div></div>
+      <div class="card"><h3>Inflows vs Outflows <span class="tag">ETB Millions</span><button class="info-tip" onclick="openChatWithQ('Are our cash inflows covering outflows? What is our net cash position?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:10px">YTD cash collections (money received) vs operating and CAPEX outflows. Positive net = cash generative.</p>
+        <div class="chartbox"><canvas id="flowBar"></canvas></div></div>
+    </div>
+    <div class="grid g-3" style="margin-top:18px">
+      <div class="card"><h3>Collections as per Bank<button class="info-tip" onclick="openChatWithQ('Which bank account is collecting the most and what does that tell us?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:8px">YTD cash inflows broken down by bank. Shows which banking relationships drive the most revenue collection.</p>
+        <div class="chartbox" style="height:230px"><canvas id="collDonut"></canvas></div></div>
+      <div class="card"><h3>Debt Utilisation<button class="info-tip" onclick="openChatWithQ('How much of our debt facility are we using and is that healthy?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:8px">Drawn debt vs approved facility limit. Gauge shows % of facility used — lower is generally safer.</p>
+        <div class="chartbox" style="height:230px"><canvas id="debtGauge"></canvas></div></div>
+      <div class="card"><h3>CAPEX Utilisation<button class="info-tip" onclick="openChatWithQ('How much of our CAPEX budget have we spent so far?')">ℹ</button></h3>
+        <p class="note" style="margin-bottom:8px">Capital expenditure spent YTD vs the annual CAPEX budget. Under-spend may signal delayed projects.</p>
+        <div class="chartbox" style="height:230px"><canvas id="capexGauge"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== REPORTS ===================== -->
+  <section class="page" id="reports">
+    <h2 class="section">Reports</h2>
+    <div class="card"><h3>Balance Sheet — Margins & Ratios<button class="info-tip" onclick="openChatWithQ('Explain our key financial ratios and what they mean for business health')">ℹ</button></h3>
+      <p class="note" style="margin-bottom:12px">Key profitability and liquidity ratios. Gross Margin &gt;50% is strong for fintech. Current Ratio &gt;1 means short-term liabilities are covered.</p>
+      <div class="grid g-kpi" id="ratioKpi"></div>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>P&amp;L — Income &amp; Expense Analysis <span class="tag">ETB Millions</span></h3>
+      <div class="chartbox tall"><canvas id="plWaterfall"></canvas></div></div>
+    <div class="card" style="margin-top:18px"><h3>Monthly Management Report — Summary</h3>
+      <table id="mgmtTable"><thead><tr><th>Metric</th><th>This Month</th><th>Last Month</th><th>YTD</th><th>vs Budget</th></tr></thead><tbody></tbody></table>
+      <p class="note">Auto-generated from Business Central General Ledger. Figures in ETB millions unless stated. Refresh via the snapshot script (see SCHEDULING.md).</p>
+    </div>
+  </section>
+
+  <!-- ===================== HR / PEOPLE ===================== -->
+  <section class="page" id="hr">
+    <h2 class="section">People &amp; HR</h2>
+    <div class="grid g-kpi" id="kpiHR"></div>
+    <div class="grid g-3" style="margin-top:18px">
+      <div class="card"><h3>Employees by Status</h3>
+        <div class="chartbox"><canvas id="hrStatusDonut"></canvas></div></div>
+      <div class="card"><h3>Gender Breakdown</h3>
+        <div class="chartbox"><canvas id="hrGenderDonut"></canvas></div></div>
+      <div class="card"><h3>Employees by Type <span class="tag">Headcount</span></h3>
+        <div class="chartbox"><canvas id="hrTypeBar"></canvas></div></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Kifiya Financial Technology · CEO Dashboard · Data as of <span id="asOf"></span> · Internal &amp; Confidential
+</footer>
+
+<!-- AI Chatbot -->
+<button id="chatBtn" onclick="toggleChat()" title="Ask AI about your dashboard">💬</button>
+<div id="chatPanel">
+  <div id="chatHeader">
+    <div class="ch-title">Kifiya AI Assistant <span>BETA</span></div>
+    <button onclick="toggleChat()">✕</button>
+  </div>
+  <div id="chatMessages">
+    <div class="msg bot">Hi! I can answer questions about Kifiya's financials, headcount, and give year-end forecasts. What would you like to know?</div>
+  </div>
+  <div id="chatSugg">
+    <button onclick="openChatWithQ('Summarise how Kifiya is performing overall')">Overall summary</button>
+    <button onclick="openChatWithQ('What is our YTD revenue and how does it compare to budget?')">Revenue vs budget</button>
+    <button onclick="openChatWithQ('Forecast our full-year revenue and EBITDA')">Year-end forecast</button>
+    <button onclick="openChatWithQ('Give me a headcount and gender breakdown')">Headcount</button>
+  </div>
+  <div id="chatInputRow">
+    <input id="chatBox" type="text" placeholder="Ask about your data…" onkeydown="if(event.key==='Enter')sendChat()"/>
+    <button id="chatSend" onclick="sendChat()">Send</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
