@@ -1040,15 +1040,18 @@ INSTRUCTIONS:
 async function callGroq(userMsg){
   const payload=JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5});
   const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),9000); // 9s total timeout
+  const timer=setTimeout(()=>ctrl.abort(),15000);
+  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
+  const isLocal=window.location.protocol==='file:'||window.location.hostname==='localhost'||window.location.hostname==='127.0.0.1';
   try{
-    // 1. Try Netlify serverless function (works when deployed to Netlify)
-    try{
-      const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
-      if(r.ok){clearTimeout(timer);return (await r.json()).choices?.[0]?.message?.content||null;}
-    }catch(e){if(e.name==='AbortError'){clearTimeout(timer);return null;}}
-    // 2. Fallback: direct Groq call using key from config.js (works locally)
-    const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
+    if(!isLocal){
+      // On Netlify: use serverless function so key stays server-side
+      try{
+        const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
+        if(r.ok){clearTimeout(timer);return (await r.json()).choices?.[0]?.message?.content||null;}
+      }catch(e){if(e.name==='AbortError'){clearTimeout(timer);return null;}}
+    }
+    // Local (or Netlify function unavailable): call Groq directly with config key
     if(!key){clearTimeout(timer);return null;}
     const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
       headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
