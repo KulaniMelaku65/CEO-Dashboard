@@ -182,6 +182,16 @@ async function build() {
     utilizationYTD
   };
 
+  /* ---- GL Account Names: build account No → Name lookup ---- */
+  let glAccountNames = {};
+  try {
+    const glAccts = await bc('KFT_GL_Accounts');
+    glAccts.forEach(a => { if (a.no && a.name) glAccountNames[a.no] = a.name; });
+    console.log(`  GL account names: ${Object.keys(glAccountNames).length} accounts loaded`);
+  } catch(e) {
+    console.warn('  KFT_GL_Accounts not reachable — bank codes will show as numbers:', e.message);
+  }
+
   /* ---- Cash Flow ---- */
   const collections = Math.abs(A('bankCash'));   // net bank movement proxy; refine to debit-only in AL if needed
   const debtUsed    = Math.abs(A('debtShort')) + Math.abs(A('debtLong'));
@@ -280,16 +290,6 @@ async function build() {
     console.log(`  Dimension names: ${Object.keys(dimensionNames).length} values loaded`);
   } catch(e) {
     console.warn('  KFT_Dimension_Values not reachable — names will show as codes:', e.message);
-  }
-
-  /* ---- GL Account Names: build account No → Name lookup ---- */
-  let glAccountNames = {};
-  try {
-    const glAccts = await bc('KFT_GL_Accounts');
-    glAccts.forEach(a => { if (a.no && a.name) glAccountNames[a.no] = a.name; });
-    console.log(`  GL account names: ${Object.keys(glAccountNames).length} accounts loaded`);
-  } catch(e) {
-    console.warn('  KFT_GL_Accounts not reachable — bank codes will show as numbers:', e.message);
   }
 
   const disbursementsYTD = toM(Math.abs(A('disbursements')));
