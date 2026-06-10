@@ -59,6 +59,8 @@ const CONFIG = {
     debtLong:     ['3700', '3749'],
     // CAPEX proxy — Work in Progress
     wip:          ['1500', '1599'],
+    // Loan disbursements (excluded from P&L CoS but real ETB outflows)
+    disbursements:    ['6021', '6022'],
     // Balance-sheet groups for ratios
     currentAssets:    ['2000', '2995'],
     inventory:        ['2410', '2459'],
@@ -67,7 +69,10 @@ const CONFIG = {
     equity:           ['4000', '4999']
   },
   DEBT_FACILITY: null,   // >>> EDIT: approved debt facility in ETB millions (gauge max); null = show used vs used
-  CAPEX_BUDGET: null     // >>> EDIT: annual CAPEX budget in ETB millions; null = show used vs used
+  CAPEX_BUDGET: null,    // >>> EDIT: annual CAPEX budget in ETB millions; null = show used vs used
+
+  // No config needed — snapshot fetches all dimension values from KFT_Dimension_Values
+  // and builds a code → name lookup automatically.
 };
 
 const inRange = (a,[lo,hi]) => a >= lo && a <= hi;
@@ -160,6 +165,15 @@ async function build() {
   budgets.forEach(x=>{ if(isPL(String(x.accountNo))&&x.budgetDate)
     bMonth[new Date(x.budgetDate).getMonth()] += num(x.amount); });
   const lm=new Date().getMonth(); const labels=mN.slice(0,lm+1);
+
+  // Monthly disbursements from loan disbursement accounts (6021/6022)
+  const disbByMonth = Array(12).fill(0);
+  actuals.forEach(x => {
+    const a = String(x.accountNo);
+    if (a >= '6021' && a <= '6022' && x.postingDate)
+      disbByMonth[new Date(x.postingDate).getMonth()] += Math.abs(num(x.amount));
+  });
+
   const budgetOverview = {
     byUnit,
     monthly:{ labels,
@@ -176,6 +190,14 @@ async function build() {
 
   const bank = await bc('KFT_Bank_Ledger', fy);
   bank.sort((a,b)=> new Date(a.postingDate)-new Date(b.postingDate));
+
+  // Monthly bank collections (positive flows = inflows / repayments / collections)
+  const collByMonth = Array(12).fill(0);
+  bank.forEach(x => {
+    if (num(x.amount) > 0 && x.postingDate)
+      collByMonth[new Date(x.postingDate).getMonth()] += num(x.amount);
+  });
+
   let run=0; const dayMap={}, bankMap={};
   bank.forEach(x=>{ run+=num(x.amount); const d=String(x.postingDate).slice(0,10); dayMap[d]=run;
     if(num(x.amount)>0){ const b=x.bankAccountNo||'Other'; bankMap[b]=(bankMap[b]||0)+num(x.amount); }});
@@ -185,7 +207,8 @@ async function build() {
     collectionsByBank:Object.entries(bankMap).map(([bank,a])=>({bank,amount:toM(a)})).sort((a,b)=>b.amount-a.amount).slice(0,6),
     flows:{ collections:toM(collections), otherInflows:0, operatingOut:toM(operatingOut), capexOut:toM(capexOut) },
     debtUtilisation:{ used:toM(debtUsed), facility: CONFIG.DEBT_FACILITY || toM(debtUsed) || 1 },
-    capexUtilisation:{ used:toM(capexOut), budget: CONFIG.CAPEX_BUDGET || toM(capexOut) || 1 }
+    capexUtilisation:{ used:toM(capexOut), budget: CONFIG.CAPEX_BUDGET || toM(capexOut) || 1 },
+    monthlyCollections:{ labels, data: labels.map((_,i)=>toM(collByMonth[i])) }
   };
 
   /* ---- Reports: P&L bridge + ratios (reuse the figures above) ---- */
@@ -233,7 +256,10 @@ async function build() {
   employees.forEach(e=>{
     const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
     const t=e.employeeType||'Unknown';   hrByType[t]=(hrByType[t]||0)+1;
-    const g=e.gender||'Unknown';         hrByGender[g]=(hrByGender[g]||0)+1;
+    // Gender breakdown from active employees only
+    if(s==='Active'){
+      const g=e.gender||'Unknown'; hrByGender[g]=(hrByGender[g]||0)+1;
+    }
   });
   const hr = {
     total: employees.length,
@@ -243,8 +269,29 @@ async function build() {
   };
   console.log(`  HR: ${hr.total} employees — Active ${(hr.byStatus.find(x=>x.status==='Active')||{count:0}).count} | Gender: ${hr.byGender.map(x=>x.gender+' '+x.count).join(', ')}`);
 
+  /* ---- Dimension Names: fetch all values, build code → name map ---- */
+  let dimensionNames = {};
+  try {
+    const dimVals = await bc('KFT_Dimension_Values');
+    dimVals.forEach(d => {
+      if (d.code && d.name && !d.blocked)
+        dimensionNames[d.code] = d.name;
+    });
+    console.log(`  Dimension names: ${Object.keys(dimensionNames).length} values loaded`);
+  } catch(e) {
+    console.warn('  KFT_Dimension_Values not reachable — names will show as codes:', e.message);
+  }
+
+  const disbursementsYTD = toM(Math.abs(A('disbursements')));
+  const lending = {
+    disbursementsYTD,
+    monthlyDisburse: { labels, data: labels.map((_,i)=>toM(disbByMonth[i])) }
+  };
+  console.log(`  Lending disbursements YTD: ${disbursementsYTD}M (accounts 6021/6022)`);
+  console.log(`  Monthly bank collections: ${labels.map((_,i)=>toM(collByMonth[i])+'M').join(', ')}`);
+
   return { asOf: new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),
-           budgetActual, budgetOverview, cashflow, reports, hr };
+           budgetActual, budgetOverview, cashflow, reports, hr, lending, dimensionNames };
 }
 
 (async () => {

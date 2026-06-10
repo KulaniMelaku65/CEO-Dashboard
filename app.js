@@ -174,7 +174,7 @@ function renderCF(d){
     type:'bar',
     data:{labels:['Collections','Other Inflows','Operating Out','CAPEX Out'],
       datasets:[{data:[c.flows.collections,c.flows.otherInflows,-c.flows.operatingOut,-c.flows.capexOut],
-        backgroundColor:[C.green,C.teal,C.red,C.gold],borderRadius:6}]},
+        backgroundColor:[C.teal,C.navy,C.navy3,C.gold],borderRadius:6}]},
     options:baseOpts({})
   });
 

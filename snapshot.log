@@ -1,0 +1,36 @@
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+FAILED: fetch failed
+  data.js was NOT changed (last good snapshot preserved).
+  Check: on VPN/LAN? credentials correct? services published?
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 3813 rows, budget 959 rows
+  HR: 1538 employees — Active 687 | Gender: Male 927, Female 606,   5
+OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
+  as of 09 Jun 2026
+  Revenue        231.9M  (budget 2658.4M)
+  Cost of Sales  87.2M
+  Expenses       110.4M
+  Gross Profit   144.6M
+  EBITDA         34.2M
+  Net Profit     15.3M
+  Margins: GM 62.4% | EBITDA 14.7% | Net 6.6%
+Open index.html to view.
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+FAILED: fetch failed
+  data.js was NOT changed (last good snapshot preserved).
+  Check: on VPN/LAN? credentials correct? services published?
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 3848 rows, budget 959 rows
+  HR: 1539 employees — Active 687 | Gender: Male 928, Female 606,   5
+  Lending disbursements YTD: 450.7M (accounts 6021/6022)
+  Monthly bank collections: 124M, 154.2M, 70.4M, 56.1M, 62.7M, 37.7M
+OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
+  as of 10 Jun 2026
+  Revenue        231.9M  (budget 2658.4M)
+  Cost of Sales  87.2M
+  Expenses       111.4M
+  Gross Profit   144.6M
+  EBITDA         33.3M
+  Net Profit     14.4M
+  Margins: GM 62.4% | EBITDA 14.4% | Net 6.2%
+Open index.html to view.
