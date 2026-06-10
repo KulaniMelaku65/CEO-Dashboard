@@ -204,7 +204,7 @@ async function build() {
   const days=Object.keys(dayMap).sort().slice(-30);
   const cashflow = {
     bankDaily:{ labels:days.map(d=>d.slice(8,10)), balances:days.map(d=>toM(dayMap[d])) },
-    collectionsByBank:Object.entries(bankMap).map(([bank,a])=>({bank,amount:toM(a)})).sort((a,b)=>b.amount-a.amount).slice(0,6),
+    collectionsByBank:Object.entries(bankMap).map(([code,a])=>({bank:glAccountNames[code]||code,amount:toM(a)})).sort((a,b)=>b.amount-a.amount).slice(0,6),
     flows:{ collections:toM(collections), otherInflows:0, operatingOut:toM(operatingOut), capexOut:toM(capexOut) },
     debtUtilisation:{ used:toM(debtUsed), facility: CONFIG.DEBT_FACILITY || toM(debtUsed) || 1 },
     capexUtilisation:{ used:toM(capexOut), budget: CONFIG.CAPEX_BUDGET || toM(capexOut) || 1 },
@@ -280,6 +280,16 @@ async function build() {
     console.log(`  Dimension names: ${Object.keys(dimensionNames).length} values loaded`);
   } catch(e) {
     console.warn('  KFT_Dimension_Values not reachable — names will show as codes:', e.message);
+  }
+
+  /* ---- GL Account Names: build account No → Name lookup ---- */
+  let glAccountNames = {};
+  try {
+    const glAccts = await bc('KFT_GL_Accounts');
+    glAccts.forEach(a => { if (a.no && a.name) glAccountNames[a.no] = a.name; });
+    console.log(`  GL account names: ${Object.keys(glAccountNames).length} accounts loaded`);
+  } catch(e) {
+    console.warn('  KFT_GL_Accounts not reachable — bank codes will show as numbers:', e.message);
   }
 
   const disbursementsYTD = toM(Math.abs(A('disbursements')));
