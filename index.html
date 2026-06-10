@@ -1038,11 +1038,19 @@ INSTRUCTIONS:
 - Always use ETB millions as the unit. Format numbers with commas where helpful.`;
 }
 async function callGroq(userMsg){
+  const payload=JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5});
+  // 1. Try Netlify serverless function (works when deployed to Netlify)
   try{
-    const r=await fetch('/.netlify/functions/chat',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5})});
-    if(!r.ok) return null;
+    const r=await fetch('/.netlify/functions/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+    if(r.ok){const d=await r.json();return d.choices?.[0]?.message?.content||null;}
+  }catch(e){}
+  // 2. Fallback: direct Groq call using key from config.js (works locally)
+  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
+  if(!key)return null;
+  try{
+    const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload});
+    if(!r.ok)return null;
     return (await r.json()).choices?.[0]?.message?.content||null;
   }catch(e){return null;}
 }
