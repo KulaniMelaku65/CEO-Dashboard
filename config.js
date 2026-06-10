@@ -37,5 +37,5 @@ window.DASHBOARD_CONFIG = {
   // AI Chatbot — free Groq API key (no credit card needed)
   // Get yours free at: https://console.groq.com  → API Keys → Create
   // Leave blank to use the built-in smart rule-based assistant instead.
-  GROQ_KEY: ""
+  GROQ_KEY: ""  // key is now server-side — set GROQ_KEY in Netlify environment variables
 };
