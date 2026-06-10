@@ -1013,8 +1013,8 @@ function buildChatContext(){
   const net=d.reports?.pl?.at(-1)?.value;
   const ld=d.lending;
   return `You are Kifiya Intelligence, a professional and polite executive AI assistant embedded in the CEO Dashboard of Kifiya Financial Technology — a leading Ethiopian fintech company.
-You are speaking directly with Munir Duri, Founder and CEO of Kifiya. Always address him respectfully by name when greeting, and maintain an executive, concise, and insightful tone.
-Today's data is as of ${d.asOf}. Financial year: FY2026 (January–December). All monetary figures are in ETB Millions unless stated otherwise.
+You are speaking directly with Munir Duri, Founder and CEO of Kifiya. Maintain an executive, concise, and insightful tone. Only use his name as a salutation when he sends a greeting — for all other questions, answer directly without any "Good morning" or "Hello Munir" opener.
+Today's data is as of ${d.asOf}. Current time: ${(()=>{const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';})()}. Financial year: FY2026 (January–December). All monetary figures are in ETB Millions unless stated otherwise.
 
 LIVE FINANCIAL DATA (${mo} months YTD from Business Central ERP):
 - Revenue: ${rev.actual}M actual vs ${rev.budget}M full-year budget (${pct(rev.actual,rev.budget)} of annual target)
@@ -1079,8 +1079,10 @@ function ruleAnswer(q){
     return hr?`Kifiya currently has ${active} active employees. The gender breakdown of active staff is ${female} female (${(female/(male+female||1)*100).toFixed(1)}%) and ${male} male. Employment types include: ${hr.byType?.slice(0,3).map(x=>x.type+' ('+x.count+')').join(', ')||'N/A'}.`:'HR data is not yet available.';
   if(/net.profit|bottom.line/i.test(q))
     return net!=null?`Net Profit for the first ${mo} months is ${net}M ETB, representing a ${(net/rev.actual*100).toFixed(1)}% net margin. Projected full-year net profit at this run-rate is approximately ${proj(net)}M ETB. ${net<0?'The negative profit position requires immediate attention to cost and revenue recovery strategies.':net/rev.actual<0.05?'The margin is thin — consider reviewing financial costs and depreciation impact.':'The business remains profitable at this stage of the year.'}`:'Net profit data is currently unavailable.';
-  if(/summar|overview|how.are|perform|doing|hello|hi|good/i.test(q))
-    return `Good day, Munir. After ${mo} months, Kifiya is reporting Revenue of ${rev.actual}M ETB (${(rev.actual/rev.budget*100).toFixed(0)}% of budget), a ${(gp.actual/rev.actual*100).toFixed(1)}% gross margin, EBITDA of ${eb.actual}M (${(eb.actual/rev.actual*100).toFixed(1)}% margin), and Net Profit of ${net||'?'}M. The active workforce stands at ${active} employees. Feel free to ask about any specific area.`;
+  if(/summar|overview|how.are|perform|doing|hello|hi|good/i.test(q)){
+    const h=new Date().getHours();const gr=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+    return `${gr}, Munir. After ${mo} months, Kifiya is reporting Revenue of ${rev.actual}M ETB (${(rev.actual/rev.budget*100).toFixed(0)}% of budget), a ${(gp.actual/rev.actual*100).toFixed(1)}% gross margin, EBITDA of ${eb.actual}M (${(eb.actual/rev.actual*100).toFixed(1)}% margin), and Net Profit of ${net||'?'}M. The active workforce stands at ${active} employees. Feel free to ask about any specific area.`;
+  }
   return `I can provide insights on revenue, EBITDA, gross profit, cash flow, lending, workforce, budget variance, and forecasts. Try asking "Summarise Kifiya's performance", "What is our cash position?", or "Forecast full-year net profit".`;
 }
 async function sendChat(){

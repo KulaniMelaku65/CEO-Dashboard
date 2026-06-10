@@ -265,10 +265,9 @@ async function build() {
   const hrByStatus={}, hrByType={}, hrByGender={};
   employees.forEach(e=>{
     const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
-    const t=e.employeeType||'Unknown';   hrByType[t]=(hrByType[t]||0)+1;
-    // Gender breakdown from active employees only
     if(s==='Active'){
-      const g=e.gender||'Unknown'; hrByGender[g]=(hrByGender[g]||0)+1;
+      const t=e.employeeType||'Unknown'; hrByType[t]=(hrByType[t]||0)+1;
+      const g=e.gender||'Unknown';       hrByGender[g]=(hrByGender[g]||0)+1;
     }
   });
   const hr = {
