@@ -145,6 +145,12 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 .chat-inp input:focus{border-color:var(--navy)}
 .chat-inp button{background:var(--gold);border:none;border-radius:50%;width:34px;height:34px;color:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 
+/* ── hamburger (hidden on desktop) ── */
+#menuBtn{display:none;background:none;border:none;color:var(--navy);font-size:22px;cursor:pointer;padding:4px 8px;border-radius:8px;line-height:1;flex-shrink:0}
+#menuBtn:hover{background:var(--bg)}
+#sbBackdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
+#sbBackdrop.open{display:block}
+
 @media(max-width:900px){
   :root{--sw:64px}
   .sb-logo-text,.sb-logo-sub,.nav-label,.nav-dpill,.sb-uname,.sb-urole{display:none}
@@ -153,10 +159,46 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
   .sb-user{justify-content:center}
   .g-kpi5{grid-template-columns:repeat(auto-fit,minmax(175px,1fr))}
 }
+
+@media(max-width:640px){
+  :root{--sw:228px}
+  /* show hamburger, hide date & status in topbar */
+  #menuBtn{display:flex;align-items:center}
+  .tb-date,.status-row{display:none}
+  #topbar{padding:0 14px;gap:10px}
+  /* sidebar becomes a hidden overlay */
+  #sb{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .25s ease;z-index:200}
+  #sb.mob-open{transform:translateX(0)}
+  /* restore sidebar labels when open */
+  #sb.mob-open .sb-logo-text,#sb.mob-open .sb-logo-sub,
+  #sb.mob-open .nav-label,#sb.mob-open .nav-dpill,
+  #sb.mob-open .sb-uname,#sb.mob-open .sb-urole{display:initial}
+  #sb.mob-open .sb-logo{justify-content:flex-start;padding:18px 16px 14px}
+  #sb.mob-open .nav-item{justify-content:flex-start;padding:10px 16px}
+  #sb.mob-open .sb-user{justify-content:flex-start}
+  /* main takes full width */
+  #main{margin-left:0}
+  /* content */
+  #content{padding:14px 12px 80px}
+  /* grids: single column */
+  .g2,.g3{grid-template-columns:1fr}
+  .g-kpi5{grid-template-columns:repeat(2,1fr)}
+  /* kpi cards */
+  .kpi .val{font-size:20px}
+  /* tables scroll horizontally */
+  .card{overflow-x:auto}
+  table{min-width:480px}
+  /* subtabs scroll */
+  .sub-tabs{width:100%;overflow-x:auto;white-space:nowrap;flex-wrap:nowrap}
+  /* chat full-width */
+  #chatPanel{right:8px;left:8px;width:auto;bottom:74px}
+  #chatBtn{bottom:16px;right:16px}
+}
 </style>
 </head>
 <body>
 
+<div id="sbBackdrop" onclick="toggleSidebar()"></div>
 <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
 <aside id="sb">
   <div class="sb-logo">
@@ -221,6 +263,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 
   <!-- TOP BAR -->
   <header id="topbar">
+    <button id="menuBtn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
     <div class="tb-greet">
       <div class="tb-hello" id="greetTxt">Good morning, CEO</div>
       <div class="tb-sub">Here's what's happening at Kifiya today</div>
@@ -962,6 +1005,11 @@ const SEC_RENDER = {
 
 let activeSection='overview';
 
+function toggleSidebar(){
+  document.getElementById('sb').classList.toggle('mob-open');
+  document.getElementById('sbBackdrop').classList.toggle('open');
+}
+
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click',()=>{
     const id=item.dataset.sec;
@@ -971,6 +1019,11 @@ document.querySelectorAll('.nav-item').forEach(item=>{
     document.getElementById('page-'+id).classList.add('active');
     activeSection=id;
     if(LAST_DATA&&SEC_RENDER[id]) requestAnimationFrame(()=>SEC_RENDER[id](LAST_DATA));
+    // close sidebar on mobile after navigation
+    if(window.innerWidth<=640){
+      document.getElementById('sb').classList.remove('mob-open');
+      document.getElementById('sbBackdrop').classList.remove('open');
+    }
   });
 });
 
