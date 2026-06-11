@@ -34,3 +34,7 @@ OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
   Net Profit     14.4M
   Margins: GM 62.4% | EBITDA 14.4% | Net 6.2%
 Open index.html to view.
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+FAILED: fetch failed
+  data.js was NOT changed (last good snapshot preserved).
+  Check: on VPN/LAN? credentials correct? services published?
