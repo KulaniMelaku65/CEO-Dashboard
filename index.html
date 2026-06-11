@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kifiya · CEO Dashboard</title>
+<title>Kifiya Executive Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -155,6 +155,18 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 .chat-inp input:focus{border-color:var(--navy)}
 .chat-inp button{background:var(--gold);border:none;border-radius:50%;width:34px;height:34px;color:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 
+/* ── LOGIN OVERLAY ── */
+#loginOverlay{position:fixed;inset:0;background:linear-gradient(135deg,#02404F 0%,#013B47 55%,#02404F 100%);display:flex;align-items:center;justify-content:center;z-index:9999}
+#loginBox{background:#fff;border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(0,0,0,.35);text-align:center}
+#loginBox .lb-logo{width:60px;height:60px;border-radius:12px;margin:0 auto 16px;display:block;object-fit:contain}
+#loginBox h2{font-size:20px;font-weight:800;color:var(--navy);margin-bottom:4px}
+#loginBox p{font-size:12px;color:var(--muted);margin-bottom:28px}
+.lf{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:12px 16px;font-size:13px;font-family:inherit;color:var(--navy);margin-bottom:12px;outline:none;transition:.15s}
+.lf:focus{border-color:var(--navy)}
+#loginBtn{width:100%;background:var(--navy);border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;margin-top:4px;transition:.15s}
+#loginBtn:hover{background:var(--navy2)}
+#loginErr{color:var(--red);font-size:12px;margin-top:10px;font-weight:600;min-height:18px}
+
 /* ── hamburger (hidden on desktop) ── */
 #menuBtn{display:none;background:none;border:none;color:var(--navy);font-size:22px;cursor:pointer;padding:4px 8px;border-radius:8px;line-height:1;flex-shrink:0}
 #menuBtn:hover{background:var(--bg)}
@@ -208,6 +220,21 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 </head>
 <body>
 
+<!-- ═══ LOGIN OVERLAY ═══ -->
+<div id="loginOverlay">
+  <div id="loginBox">
+    <img class="lb-logo" src="logo.jfif" alt="Kifiya">
+    <h2>Kifiya Executive Dashboard</h2>
+    <p>Sign in with your Kifiya credentials to continue</p>
+    <input id="loginUser" class="lf" type="text" placeholder="Username" autocomplete="username"
+           onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+    <input id="loginPass" class="lf" type="password" placeholder="Password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div id="loginErr"></div>
+  </div>
+</div>
+
 <div id="sbBackdrop" onclick="toggleSidebar()"></div>
 <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
 <aside id="sb">
@@ -260,11 +287,12 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
   </ul>
 
   <div class="sb-user">
-    <div class="sb-avatar">MD</div>
-    <div>
-      <div class="sb-uname">Munir Duri</div>
-      <div class="sb-urole">Chief Executive Officer</div>
+    <div class="sb-avatar" id="sbAvatar">?</div>
+    <div style="flex:1;min-width:0;overflow:hidden">
+      <div class="sb-uname" id="sbUname">—</div>
+      <div class="sb-urole" id="sbUrole">—</div>
     </div>
+    <button onclick="doLogout()" title="Sign out" style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:18px;padding:4px 6px;border-radius:6px;line-height:1;flex-shrink:0" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,.35)'">⏻</button>
   </div>
 </aside>
 
@@ -522,7 +550,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 
   </div><!-- #content -->
 
-  <footer>Kifiya Financial Technology &nbsp;·&nbsp; CEO Dashboard v2 &nbsp;·&nbsp; Data as of <span id="footerAsOf">—</span> &nbsp;·&nbsp; Internal &amp; Confidential</footer>
+  <footer>Kifiya Financial Technology &nbsp;·&nbsp; Executive Dashboard &nbsp;·&nbsp; Data as of <span id="footerAsOf">—</span> &nbsp;·&nbsp; Internal &amp; Confidential</footer>
 </div><!-- #main -->
 
 <!-- ═══════════════════════ CHATBOT ═══════════════════════ -->
@@ -537,7 +565,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
     <button onclick="toggleChat()">✕</button>
   </div>
   <div id="chatMessages">
-    <div class="msg bot">Good day, Munir. I'm your Kifiya Intelligence assistant. Ask me about revenue, EBITDA, lending, workforce, or forecasts — I pull directly from your live ERP data.</div>
+    <div class="msg bot" id="chatWelcome">Welcome. I'm your Kifiya Intelligence assistant. Ask me about revenue, EBITDA, lending, workforce, or forecasts — I pull directly from your live ERP data.</div>
   </div>
   <div class="chat-suggs">
     <button class="chat-sugg" onclick="openChatWithQ('Summarise Kifiya\'s financial performance')">📊 Summary</button>
@@ -552,6 +580,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 </div>
 
 <script src="config.js"></script>
+<script src="users.js"></script>
 <script src="data.js"></script>
 <script>
 /* ═══ CONSTANTS ═══ */
@@ -1086,7 +1115,7 @@ function buildChatContext(){
   const net=d.reports?.pl?.at(-1)?.value;
   const ld=d.lending;
   return `You are Kifiya Intelligence, a professional and polite executive AI assistant embedded in the CEO Dashboard of Kifiya Financial Technology — a leading Ethiopian fintech company.
-You are speaking directly with Munir Duri, Founder and CEO of Kifiya. Maintain an executive, concise, and insightful tone. Only use his name as a salutation when he sends a greeting — for all other questions, answer directly without any "Good morning" or "Hello Munir" opener.
+You are speaking directly with ${(window._DASH_USER||{name:'Munir Duri',title:'CEO'}).name}, ${(window._DASH_USER||{title:'CEO'}).title} at Kifiya. Maintain an executive, concise, and insightful tone. Only use their name as a salutation when they send a greeting — for all other questions, answer directly without any "Good morning" opener.
 Today's data is as of ${d.asOf}. Current time: ${(()=>{const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';})()}. Financial year: FY2026 (January–December). All monetary figures are in ETB Millions unless stated otherwise.
 
 LIVE FINANCIAL DATA (${mo} months YTD from Business Central ERP):
@@ -1154,7 +1183,8 @@ function ruleAnswer(q){
     return net!=null?`Net Profit for the first ${mo} months is ${net}M ETB, representing a ${(net/rev.actual*100).toFixed(1)}% net margin. Projected full-year net profit at this run-rate is approximately ${proj(net)}M ETB. ${net<0?'The negative profit position requires immediate attention to cost and revenue recovery strategies.':net/rev.actual<0.05?'The margin is thin — consider reviewing financial costs and depreciation impact.':'The business remains profitable at this stage of the year.'}`:'Net profit data is currently unavailable.';
   if(/summar|overview|how.are|perform|doing|hello|hi|good/i.test(q)){
     const h=new Date().getHours();const gr=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-    return `${gr}, Munir. After ${mo} months, Kifiya is reporting Revenue of ${rev.actual}M ETB (${(rev.actual/rev.budget*100).toFixed(0)}% of budget), a ${(gp.actual/rev.actual*100).toFixed(1)}% gross margin, EBITDA of ${eb.actual}M (${(eb.actual/rev.actual*100).toFixed(1)}% margin), and Net Profit of ${net||'?'}M. The active workforce stands at ${active} employees. Feel free to ask about any specific area.`;
+    const fn=(window._DASH_USER||{name:'Munir'}).name.split(' ')[0];
+    return `${gr}, ${fn}. After ${mo} months, Kifiya is reporting Revenue of ${rev.actual}M ETB (${(rev.actual/rev.budget*100).toFixed(0)}% of budget), a ${(gp.actual/rev.actual*100).toFixed(1)}% gross margin, EBITDA of ${eb.actual}M (${(eb.actual/rev.actual*100).toFixed(1)}% margin), and Net Profit of ${net||'?'}M. The active workforce stands at ${active} employees. Feel free to ask about any specific area.`;
   }
   return `I can provide insights on revenue, EBITDA, gross profit, cash flow, lending, workforce, budget variance, and forecasts. Try asking "Summarise Kifiya's performance", "What is our cash position?", or "Forecast full-year net profit".`;
 }
@@ -1218,13 +1248,55 @@ async function refresh(){
   requestAnimationFrame(()=>{ if(SEC_RENDER[activeSection]) SEC_RENDER[activeSection](d); });
 }
 
+/* ═══ AUTH ═══ */
+window._DASH_USER = null;
+
+function _applyUser(user){
+  window._DASH_USER = user;
+  const initials = user.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('sbAvatar').textContent = initials;
+  document.getElementById('sbUname').textContent = user.name;
+  document.getElementById('sbUrole').textContent = user.title || '';
+  const fn = user.name.split(' ')[0];
+  const h = new Date().getHours();
+  const gr = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  document.getElementById('chatWelcome').textContent = `${gr}, ${fn}. I'm your Kifiya Intelligence assistant. Ask me about revenue, EBITDA, lending, workforce, or forecasts — I pull directly from your live ERP data.`;
+}
+
+function doLogin(){
+  const u = document.getElementById('loginUser').value.trim().toLowerCase();
+  const p = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginErr');
+  errEl.textContent = '';
+  const users = window.DASHBOARD_USERS;
+  if(!users || !users.length){ errEl.textContent='users.js not loaded — contact admin.'; return; }
+  const found = users.find(x => x.username.toLowerCase() === u && x.password === p);
+  if(!found){ errEl.textContent = 'Incorrect username or password.'; return; }
+  sessionStorage.setItem('kifiya_user', JSON.stringify(found));
+  document.getElementById('loginOverlay').style.display = 'none';
+  _applyUser(found);
+}
+
+function doLogout(){
+  sessionStorage.removeItem('kifiya_user');
+  location.reload();
+}
+
 function boot(tries=0){
   if(typeof Chart!=='undefined'){
     Chart.defaults.font.family="'Montserrat',sans-serif";
     Chart.defaults.color=C.muted;
-    // greeting
-    const h=new Date().getHours();
-    document.getElementById('greetTxt').textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', Munir';
+    // check saved session
+    const saved = sessionStorage.getItem('kifiya_user');
+    if(saved){
+      document.getElementById('loginOverlay').style.display = 'none';
+      _applyUser(JSON.parse(saved));
+    }
+    // top-bar greeting
+    const user = window._DASH_USER || {name:'CEO'};
+    const fn = user.name.split(' ')[0];
+    const h = new Date().getHours();
+    document.getElementById('greetTxt').textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', '+fn;
     document.getElementById('dateBadge').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
     refresh();
     if(CFG.REFRESH_SECONDS>0) setInterval(refresh,CFG.REFRESH_SECONDS*1000);
@@ -1234,6 +1306,12 @@ function boot(tries=0){
     document.getElementById('statusTxt').textContent='Chart library failed to load';
   }
 }
+// Show login immediately if no session
+(function(){
+  if(!sessionStorage.getItem('kifiya_user')){
+    document.getElementById('loginOverlay').style.display='flex';
+  }
+})();
 boot();
 </script>
 </body>
