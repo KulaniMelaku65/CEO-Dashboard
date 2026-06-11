@@ -119,6 +119,16 @@ tbody tr:hover{background:#FAFBFE}
 .row-total td{font-weight:800;background:#EEF3F9;color:var(--navy)}
 .row-sub td{font-weight:700;color:var(--navy3)}
 
+/* ── HISTORICAL PICKER ── */
+.hist-picker{display:flex;align-items:center;gap:6px;flex-shrink:0}
+#histDate{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--navy);background:var(--bg);cursor:pointer;font-family:inherit}
+#histDate:focus{outline:none;border-color:var(--navy)}
+#todayBtn{display:none;border:1px solid var(--gold);background:rgba(235,125,35,.08);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--gold);cursor:pointer;font-family:inherit}
+#todayBtn:hover{background:var(--gold);color:#fff}
+#histBanner{display:none;align-items:center;gap:10px;background:rgba(235,125,35,.08);border:1px solid rgba(235,125,35,.3);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:12px;font-weight:600;color:var(--gold)}
+#histBanner span{color:var(--navy);font-weight:800}
+#histBanner button{margin-left:auto;background:var(--gold);border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}
+
 /* ── FOOTER ── */
 footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-top:1px solid var(--line);background:#fff;margin-top:10px}
 
@@ -273,10 +283,20 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
       <span class="dot" id="statusDot"></span>
       <span id="statusTxt">Loading…</span>
     </div>
+    <div class="hist-picker">
+      <input type="date" id="histDate" title="View a past snapshot" onchange="loadArchive(this.value)">
+      <button id="todayBtn" onclick="loadToday()">↩ Today</button>
+    </div>
     <button class="tb-btn" onclick="refresh()">↻ Refresh</button>
   </header>
 
   <div id="content">
+
+    <!-- Historical data banner (shown when viewing a past snapshot) -->
+    <div id="histBanner">
+      📅 Viewing historical snapshot: <span id="histBannerDate"></span>
+      <button onclick="loadToday()">↩ Back to live data</button>
+    </div>
 
     <!-- ══════════════ PAGE: OVERVIEW ══════════════ -->
     <section class="page active" id="page-overview">
@@ -539,7 +559,7 @@ const CFG = window.DASHBOARD_CONFIG;
 const C = { navy:'#02404F', navy3:'#3A4656', gold:'#EB7D23', goldsft:'#F5A870',
             teal:'#1FB6A6', green:'#2EBD85', red:'#E5544B', muted:'#6B7C93', line:'#E3E9F2' };
 const PAL = [C.navy, C.gold, C.teal, C.navy3, C.goldsft, C.green, C.muted, '#9B59B6'];
-let CHARTS = {}, LAST_DATA = null;
+let CHARTS = {}, LAST_DATA = null, LIVE_DATA = null;
 
 /* Department names come from BC via snapshot.js (dimensionNames field).
    Falls back to the raw code if the web service isn't connected yet. */
@@ -1160,9 +1180,39 @@ async function sendChat(){
 }
 
 /* ═══ BOOT ═══ */
+async function loadArchive(dateStr){
+  if(!dateStr) return;
+  try{
+    const r=await fetch(`archive/${dateStr}.json`);
+    if(!r.ok){alert(`No snapshot found for ${dateStr}.\nSnapshots are saved each time you run refresh-and-deploy.bat.`);document.getElementById('histDate').value='';return;}
+    const d=await r.json();
+    LAST_DATA=d;
+    window.DEMO_DATA=d;
+    document.querySelectorAll('.asof-lbl').forEach(el=>el.textContent=d.asOf);
+    document.getElementById('footerAsOf').textContent=d.asOf;
+    const label=new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    document.getElementById('histBannerDate').textContent=label;
+    document.getElementById('histBanner').style.display='flex';
+    document.getElementById('todayBtn').style.display='inline-block';
+    requestAnimationFrame(()=>{if(SEC_RENDER[activeSection])SEC_RENDER[activeSection](d);});
+  }catch(e){alert('Could not load archive for '+dateStr);}
+}
+
+function loadToday(){
+  if(!LIVE_DATA) return;
+  LAST_DATA=LIVE_DATA;
+  window.DEMO_DATA=LIVE_DATA;
+  document.querySelectorAll('.asof-lbl').forEach(el=>el.textContent=LIVE_DATA.asOf);
+  document.getElementById('footerAsOf').textContent=LIVE_DATA.asOf;
+  document.getElementById('histBanner').style.display='none';
+  document.getElementById('todayBtn').style.display='none';
+  document.getElementById('histDate').value='';
+  requestAnimationFrame(()=>{if(SEC_RENDER[activeSection])SEC_RENDER[activeSection](LIVE_DATA);});
+}
+
 async function refresh(){
   const d=await getData();
-  LAST_DATA=d;
+  LAST_DATA=d; LIVE_DATA=d;
   document.querySelectorAll('.asof-lbl').forEach(el=>el.textContent=d.asOf);
   document.getElementById('footerAsOf').textContent=d.asOf;
   requestAnimationFrame(()=>{ if(SEC_RENDER[activeSection]) SEC_RENDER[activeSection](d); });

@@ -338,6 +338,14 @@ async function build() {
     const target = path.join(__dirname, 'data.js');
     fs.writeFileSync(target, out);
     console.log('OK - snapshot written to', target);
+
+    // Save daily archive for historical picker
+    const archiveDir = path.join(__dirname, 'archive');
+    if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir);
+    const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const archiveTarget = path.join(archiveDir, `${dateKey}.json`);
+    fs.writeFileSync(archiveTarget, JSON.stringify(data, null, 2));
+    console.log('  Archive saved:', archiveTarget);
     const L = data.budgetActual.lines;
     console.log('  as of', data.asOf);
     console.log('  Revenue       ', L[0].actual + 'M  (budget ' + L[0].budget + 'M)');
