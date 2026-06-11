@@ -244,8 +244,19 @@ async function build() {
     { name:'Net Profit',     value: toM(netA),     type:'total' }
   ];
 
-  const bs = await bc('KFT_GL_Balances');
-  const G=k=>bs.filter(x=>inRange(String(x.accountNo),CONFIG.ranges[k])).reduce((s,x)=>s+num(x.balance),0);
+  // For historical runs use KFT_GL_Entries (sum all entries up to TARGET_DATE).
+  // For today use KFT_GL_Balances (faster, current balance per account).
+  let bsRows;
+  if (IS_HISTORICAL) {
+    const glE = await bc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${TARGET_DATE}`);
+    const bsMap = {};
+    glE.forEach(e => { const k=String(e.accountNo); bsMap[k]=(bsMap[k]||0)+num(e.amount); });
+    bsRows = Object.entries(bsMap).map(([accountNo,balance])=>({accountNo,balance}));
+    console.log(`  Historical balance sheet: ${glE.length} GL entries aggregated`);
+  } else {
+    bsRows = await bc('KFT_GL_Balances');
+  }
+  const G=k=>bsRows.filter(x=>inRange(String(x.accountNo),CONFIG.ranges[k])).reduce((s,x)=>s+num(x.balance),0);
   const ca=G('currentAssets'), inv=G('inventory'), cl=Math.abs(G('currentLiab'));
   const liab=Math.abs(G('totalLiabilities')), eq=Math.abs(G('equity'));
 
@@ -270,21 +281,47 @@ async function build() {
 
   /* ---- HR / People ---- */
   const employees = await bc('GetEmployee');
+  // Build lookup: employeeNo → { gender, employeeType } for cross-referencing history
+  const empLookup = {};
+  employees.forEach(e => { if (e.no) empLookup[e.no] = e; });
+
   const hrByStatus={}, hrByType={}, hrByGender={};
-  employees.forEach(e=>{
-    const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
-    if(s==='Active'){
-      const t=e.employeeType||'Unknown'; hrByType[t]=(hrByType[t]||0)+1;
-      const g=e.gender||'Unknown';       hrByGender[g]=(hrByGender[g]||0)+1;
-    }
-  });
+
+  if (IS_HISTORICAL) {
+    // KFT_Employment_History gives accurate headcount for any past date
+    const empHist = await bc('KFT_Employment_History');
+    const NULL_DATE = '0001-01-01';
+    // Find unique employees active on TARGET_DATE (dateHired on or before, not yet separated)
+    const activeNos = new Set();
+    empHist.forEach(e => {
+      if (e.dateHired <= TARGET_DATE && (e.dateSeparated === NULL_DATE || e.dateSeparated > TARGET_DATE))
+        activeNos.add(e.employeeNo);
+    });
+    hrByStatus['Active'] = activeNos.size;
+    // Use GetEmployee for type/gender of those employees (best available approximation)
+    activeNos.forEach(no => {
+      const e = empLookup[no] || {};
+      const t = e.employeeType || 'Unknown'; hrByType[t]  = (hrByType[t]  || 0) + 1;
+      const g = e.gender        || 'Unknown'; hrByGender[g]= (hrByGender[g]|| 0) + 1;
+    });
+    console.log(`  Historical HR: ${activeNos.size} active employees on ${TARGET_DATE}`);
+  } else {
+    employees.forEach(e=>{
+      const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
+      if(s==='Active'){
+        const t=e.employeeType||'Unknown'; hrByType[t]=(hrByType[t]||0)+1;
+        const g=e.gender||'Unknown';       hrByGender[g]=(hrByGender[g]||0)+1;
+      }
+    });
+    console.log(`  HR: ${employees.length} employees — Active ${hrByStatus['Active']||0} | Gender: ${Object.entries(hrByGender).map(([g,c])=>g+' '+c).join(', ')}`);
+  }
+
   const hr = {
     total: employees.length,
     byStatus: Object.entries(hrByStatus).map(([status,count])=>({status,count})).sort((a,b)=>b.count-a.count),
     byType:   Object.entries(hrByType).map(([type,count])=>({type,count})).sort((a,b)=>b.count-a.count),
     byGender: Object.entries(hrByGender).map(([gender,count])=>({gender,count})).sort((a,b)=>b.count-a.count)
   };
-  console.log(`  HR: ${hr.total} employees — Active ${(hr.byStatus.find(x=>x.status==='Active')||{count:0}).count} | Gender: ${hr.byGender.map(x=>x.gender+' '+x.count).join(', ')}`);
 
   /* ---- Dimension Names: fetch all values, build code → name map ---- */
   let dimensionNames = {};
