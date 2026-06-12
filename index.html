@@ -121,8 +121,9 @@ tbody tr:hover{background:#FAFBFE}
 
 /* ── HISTORICAL PICKER ── */
 .hist-picker{display:flex;align-items:center;gap:6px;flex-shrink:0}
-#histDate{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--navy);background:var(--bg);cursor:pointer;font-family:inherit}
-#histDate:focus{outline:none;border-color:var(--navy)}
+.hist-sep{font-size:10px;color:var(--muted);font-weight:600}
+#histDate,#histMonth{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--navy);background:var(--bg);cursor:pointer;font-family:inherit}
+#histDate:focus,#histMonth:focus{outline:none;border-color:var(--navy)}
 #todayBtn{display:none;border:1px solid var(--gold);background:rgba(235,125,35,.08);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;color:var(--gold);cursor:pointer;font-family:inherit}
 #todayBtn:hover{background:var(--gold);color:#fff}
 #histBanner{display:none;align-items:center;gap:10px;background:rgba(235,125,35,.08);border:1px solid rgba(235,125,35,.3);border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:12px;font-weight:600;color:var(--gold)}
@@ -312,7 +313,9 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
       <span id="statusTxt">Loading…</span>
     </div>
     <div class="hist-picker">
-      <input type="date" id="histDate" title="View a past snapshot" onchange="loadArchive(this.value)">
+      <input type="month" id="histMonth" title="View end-of-month snapshot" onchange="loadArchiveMonth(this.value)">
+      <span class="hist-sep">or</span>
+      <input type="date" id="histDate" title="View a specific day's snapshot" onchange="document.getElementById('histMonth').value='';loadArchive(this.value)">
       <button id="todayBtn" onclick="loadToday()">↩ Today</button>
     </div>
     <button class="tb-btn" onclick="refresh()">↻ Refresh</button>
@@ -1210,22 +1213,46 @@ async function sendChat(){
 }
 
 /* ═══ BOOT ═══ */
-async function loadArchive(dateStr){
+async function loadArchive(dateStr, bannerLabel){
   if(!dateStr) return;
   try{
     const r=await fetch(`archive/${dateStr}.json`);
-    if(!r.ok){alert(`No snapshot found for ${dateStr}.\nSnapshots are saved each time you run refresh-and-deploy.bat.`);document.getElementById('histDate').value='';return;}
+    if(!r.ok){
+      alert(`No snapshot found for ${dateStr}.\nSnapshots are saved each time you run refresh-and-deploy.bat.`);
+      document.getElementById('histDate').value='';
+      document.getElementById('histMonth').value='';
+      return;
+    }
     const d=await r.json();
     LAST_DATA=d;
     window.DEMO_DATA=d;
     document.querySelectorAll('.asof-lbl').forEach(el=>el.textContent=d.asOf);
     document.getElementById('footerAsOf').textContent=d.asOf;
-    const label=new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    const label=bannerLabel||new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
     document.getElementById('histBannerDate').textContent=label;
     document.getElementById('histBanner').style.display='flex';
     document.getElementById('todayBtn').style.display='inline-block';
     requestAnimationFrame(()=>{if(SEC_RENDER[activeSection])SEC_RENDER[activeSection](d);});
   }catch(e){alert('Could not load archive for '+dateStr);}
+}
+
+async function loadArchiveMonth(monthStr){
+  if(!monthStr) return;
+  document.getElementById('histDate').value='';
+  // Find the last day of the selected month, then walk back up to 5 days to find an existing archive
+  const [yr,mo]=monthStr.split('-').map(Number);
+  const lastDay=new Date(yr,mo,0).getDate(); // day 0 of next month = last day of this month
+  const monthLabel=new Date(yr,mo-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  for(let d=lastDay;d>=lastDay-5;d--){
+    const dateStr=`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const r=await fetch(`archive/${dateStr}.json`).catch(()=>null);
+    if(r&&r.ok){
+      await loadArchive(dateStr, `${monthLabel} (end of month)`);
+      return;
+    }
+  }
+  alert(`No snapshot found for ${monthLabel}.\nRun the backfill to generate historical archives.`);
+  document.getElementById('histMonth').value='';
 }
 
 function loadToday(){
@@ -1237,6 +1264,7 @@ function loadToday(){
   document.getElementById('histBanner').style.display='none';
   document.getElementById('todayBtn').style.display='none';
   document.getElementById('histDate').value='';
+  document.getElementById('histMonth').value='';
   requestAnimationFrame(()=>{if(SEC_RENDER[activeSection])SEC_RENDER[activeSection](LIVE_DATA);});
 }
 
