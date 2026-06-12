@@ -1,6 +1,11 @@
 node_modules/
 config.js
 users.js
+.env
+snapshot/.env
+snapshot.js
+backfill.ps1
+refresh-and-deploy.bat
 refresh.log
 peek_accounts.js
 fix_secret.js
