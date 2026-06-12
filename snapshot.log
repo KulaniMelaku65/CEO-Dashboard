@@ -39,3 +39,22 @@ FAILED: fetch failed
   data.js was NOT changed (last good snapshot preserved).
   Check: on VPN/LAN? credentials correct? services published?
 Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 3855 rows, budget 959 rows
+  GL account names: 499 accounts loaded
+  HR: 1539 employees — Active 690 | Gender: Male 418, Female 272
+  Dimension names: 385 values loaded
+  Loan portfolio: 934M gross, 31 borrowers, PAR 100% (934M overdue)
+  Lending disbursements YTD: 450.7M (accounts 6021/6022)
+  Monthly bank collections: 124M, 154.2M, 70.4M, 56.1M, 62.7M, 37.7M
+OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
+  Archive saved: C:\Users\kmelaku\Documents\CEO Dashboard\archive\2026-06-12.json
+  as of 12 Jun 2026
+  Revenue        231.9M  (budget 2658.4M)
+  Cost of Sales  87.2M
+  Expenses       111.8M
+  Gross Profit   144.6M
+  EBITDA         32.8M
+  Net Profit     13.9M
+  Margins: GM 62.4% | EBITDA 14.2% | Net 6.0%
+Open index.html to view.
