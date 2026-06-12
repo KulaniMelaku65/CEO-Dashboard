@@ -58,3 +58,6 @@ OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
   Net Profit     13.9M
   Margins: GM 62.4% | EBITDA 14.2% | Net 6.0%
 Open index.html to view.
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 3858 rows, budget 959 rows
+^C

@@ -17,7 +17,7 @@
       {
         "name": "Expenses",
         "budget": 464.1,
-        "actual": 111.8,
+        "actual": 112,
         "higherIsBetter": false
       },
       {
@@ -29,7 +29,7 @@
       {
         "name": "EBITDA",
         "budget": 1672.9,
-        "actual": 32.8,
+        "actual": 32.6,
         "higherIsBetter": true
       }
     ]
@@ -164,7 +164,7 @@
         6.4,
         46.5,
         5.7,
-        2.8
+        3
       ]
     },
     "utilizationYTD": [
@@ -190,7 +190,7 @@
       },
       {
         "unit": "TEC-004",
-        "used": 47.4,
+        "used": 47.6,
         "budget": 138.2
       },
       {
@@ -364,7 +364,7 @@
         -138.7,
         -140.2,
         -141.2,
-        -141.2
+        -141.4
       ]
     },
     "collectionsByBank": [
@@ -394,9 +394,9 @@
       }
     ],
     "flows": {
-      "collections": 676.7,
+      "collections": 676.9,
       "otherInflows": 0,
-      "operatingOut": 199,
+      "operatingOut": 199.3,
       "capexOut": 7.7
     },
     "debtUtilisation": {
@@ -435,12 +435,12 @@
       },
       {
         "label": "EBITDA Margin",
-        "value": "14.2%",
+        "value": "14.1%",
         "trend": 0
       },
       {
         "label": "Net Margin",
-        "value": "6.0%",
+        "value": "5.9%",
         "trend": 0
       },
       {
@@ -482,12 +482,12 @@
       },
       {
         "name": "Operating Exp.",
-        "value": -86.3,
+        "value": -86.5,
         "type": "neg"
       },
       {
         "name": "EBITDA",
-        "value": 32.8,
+        "value": 32.6,
         "type": "subtotal"
       },
       {
@@ -502,7 +502,7 @@
       },
       {
         "name": "Net Profit",
-        "value": 13.9,
+        "value": 13.7,
         "type": "total"
       }
     ],
@@ -525,59 +525,59 @@
         "metric": "EBITDA",
         "month": 0,
         "last": 0,
-        "ytd": 32.8,
-        "vsBudget": -98
+        "ytd": 32.6,
+        "vsBudget": -98.1
       },
       {
         "metric": "Operating Exp.",
         "month": 0,
         "last": 0,
-        "ytd": 111.8,
+        "ytd": 112,
         "vsBudget": -75.9
       },
       {
         "metric": "Net Profit",
         "month": 0,
         "last": 0,
-        "ytd": 13.9,
+        "ytd": 13.7,
         "vsBudget": -99.2
       }
     ]
   },
   "hr": {
-    "total": 1539,
+    "total": 690,
     "byStatus": [
       {
         "status": "Active",
-        "count": 13
+        "count": 690
       }
     ],
     "byType": [
       {
+        "type": "Contract",
+        "count": 353
+      },
+      {
         "type": "Permanent",
-        "count": 11
+        "count": 295
       },
       {
         "type": "Individual Consultant",
-        "count": 1
+        "count": 32
       },
       {
-        "type": "Unknown",
-        "count": 1
+        "type": "Internship",
+        "count": 10
       }
     ],
     "byGender": [
       {
         "gender": "Male",
-        "count": 9
+        "count": 418
       },
       {
         "gender": "Female",
-        "count": 3
-      },
-      {
-        "gender": "Unknown",
-        "count": 1
+        "count": 272
       }
     ]
   },

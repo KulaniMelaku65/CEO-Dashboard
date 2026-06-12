@@ -288,23 +288,33 @@ async function build() {
   const hrByStatus={}, hrByType={}, hrByGender={};
 
   if (IS_HISTORICAL) {
-    // KFT_Employment_History gives accurate headcount for any past date
+    // employmentDate (hire date) is now available on GetEmployee — fully accurate historical count.
+    // Step 1: active employees hired on or before TARGET_DATE (they were at the company then)
+    const currentActiveNos = new Set();
+    employees.forEach(e => {
+      if (e.employeeStatus !== 'Active') return;
+      const hired = String(e.employmentDate || '').slice(0, 10);
+      if (!hired || hired > TARGET_DATE) return; // joined after TARGET_DATE, don't count
+      currentActiveNos.add(e.no);
+      hrByStatus['Active'] = (hrByStatus['Active'] || 0) + 1;
+      const t = e.employeeType || 'Unknown'; hrByType[t]   = (hrByType[t]   || 0) + 1;
+      const g = e.gender        || 'Unknown'; hrByGender[g] = (hrByGender[g] || 0) + 1;
+    });
+
+    // Step 2: employees who left AFTER TARGET_DATE (active then, gone now) — from KFT_Employment_History
     const empHist = await bc('KFT_Employment_History');
     const NULL_DATE = '0001-01-01';
-    // Find unique employees active on TARGET_DATE (dateHired on or before, not yet separated)
-    const activeNos = new Set();
+    const addedBack = new Set();
     empHist.forEach(e => {
-      if (e.dateHired <= TARGET_DATE && (e.dateSeparated === NULL_DATE || e.dateSeparated > TARGET_DATE))
-        activeNos.add(e.employeeNo);
+      if (currentActiveNos.has(e.employeeNo)) return; // already counted
+      const hired     = String(e.dateHired     || '').slice(0, 10);
+      const separated = String(e.dateSeparated || '').slice(0, 10);
+      if (separated !== NULL_DATE && separated !== '' && separated > TARGET_DATE && hired <= TARGET_DATE)
+        addedBack.add(e.employeeNo);
     });
-    hrByStatus['Active'] = activeNos.size;
-    // Use GetEmployee for type/gender of those employees (best available approximation)
-    activeNos.forEach(no => {
-      const e = empLookup[no] || {};
-      const t = e.employeeType || 'Unknown'; hrByType[t]  = (hrByType[t]  || 0) + 1;
-      const g = e.gender        || 'Unknown'; hrByGender[g]= (hrByGender[g]|| 0) + 1;
-    });
-    console.log(`  Historical HR: ${activeNos.size} active employees on ${TARGET_DATE}`);
+    hrByStatus['Active'] = (hrByStatus['Active'] || 0) + addedBack.size;
+
+    console.log(`  Historical HR: ${hrByStatus['Active']} active on ${TARGET_DATE} (${currentActiveNos.size} hired by then, still active + ${addedBack.size} since departed)`);
   } else {
     employees.forEach(e=>{
       const s=e.employeeStatus||'Unknown'; hrByStatus[s]=(hrByStatus[s]||0)+1;
@@ -317,7 +327,7 @@ async function build() {
   }
 
   const hr = {
-    total: employees.length,
+    total: IS_HISTORICAL ? (hrByStatus['Active'] || 0) : employees.filter(e => e.employeeStatus === 'Active').length,
     byStatus: Object.entries(hrByStatus).map(([status,count])=>({status,count})).sort((a,b)=>b.count-a.count),
     byType:   Object.entries(hrByType).map(([type,count])=>({type,count})).sort((a,b)=>b.count-a.count),
     byGender: Object.entries(hrByGender).map(([gender,count])=>({gender,count})).sort((a,b)=>b.count-a.count)

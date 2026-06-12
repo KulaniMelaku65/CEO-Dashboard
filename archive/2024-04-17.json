@@ -448,39 +448,35 @@
     ]
   },
   "hr": {
-    "total": 1539,
+    "total": 253,
     "byStatus": [
       {
         "status": "Active",
-        "count": 25
+        "count": 253
       }
     ],
     "byType": [
       {
         "type": "Permanent",
-        "count": 21
+        "count": 140
       },
       {
         "type": "Contract",
-        "count": 3
+        "count": 91
       },
       {
-        "type": "Unknown",
-        "count": 1
+        "type": "Individual Consultant",
+        "count": 3
       }
     ],
     "byGender": [
       {
         "gender": "Male",
-        "count": 15
+        "count": 140
       },
       {
         "gender": "Female",
-        "count": 9
-      },
-      {
-        "gender": "Unknown",
-        "count": 1
+        "count": 94
       }
     ]
   },
