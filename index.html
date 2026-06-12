@@ -262,12 +262,12 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
 
     <li class="nav-item" data-sec="lending">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-      <span class="nav-label">Lending</span>
+      <span class="nav-label">Loan Operations</span>
     </li>
 
     <li class="nav-item" data-sec="collections">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-      <span class="nav-label">Collections</span>
+      <span class="nav-label">Receivables</span>
     </li>
 
     <li class="nav-item" data-sec="hr">
@@ -430,7 +430,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
     <!-- ══════════════ PAGE: LENDING ══════════════ -->
     <section class="page" id="page-lending">
       <div class="sec-hdr">
-        <h2>Lending &amp; Disbursements</h2>
+        <h2>Loan Operations &amp; Disbursements</h2>
         <span class="asof-tag">As of <span class="asof-lbl"></span></span>
       </div>
 
@@ -453,7 +453,7 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
     <!-- ══════════════ PAGE: COLLECTIONS ══════════════ -->
     <section class="page" id="page-collections">
       <div class="sec-hdr">
-        <h2>Collections</h2>
+        <h2>Receivables</h2>
         <span class="asof-tag">As of <span class="asof-lbl"></span></span>
       </div>
 
@@ -1128,7 +1128,7 @@ LIVE FINANCIAL DATA (${mo} months YTD from Business Central ERP):
 - Net Profit: ${net||'?'}M (net margin: ${pct(net,rev.actual)})
 - Year-end projections (linear run-rate): Revenue ~${proj(rev.actual)}M | EBITDA ~${proj(eb.actual)}M | Net Profit ~${proj(net)}M
 
-LENDING & COLLECTIONS:
+LOAN OPERATIONS & RECEIVABLES:
 - Loan disbursements YTD (GL accts 6021/6022): ${ld?.disbursementsYTD||'?'}M
 - Gross Loan Portfolio: ${ld?.loanPortfolio?.grossPortfolio||'?'}M | Active borrowers: ${ld?.loanPortfolio?.activeBorrowers||'?'}
 - Overdue/PAR balance: ${ld?.loanPortfolio?.overdueBalance||'?'}M | PAR ratio: ${ld?.loanPortfolio?.parPct||'?'}%
