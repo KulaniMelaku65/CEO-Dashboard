@@ -10,3 +10,4 @@ refresh.log
 peek_accounts.js
 fix_secret.js
 backend/.env
+data/

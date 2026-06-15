@@ -8,7 +8,7 @@ const COOKIE = {
   httpOnly: true,
   secure:   process.env.NODE_ENV === 'production',
   sameSite: 'strict',
-  maxAge:   8 * 60 * 60 * 1000   // 8-hour working-day session
+  maxAge:   8 * 60 * 60 * 1000   // 8-hour session
 };
 
 // POST /api/auth/login
@@ -17,11 +17,8 @@ router.post('/login', async (req, res) => {
   if (!username || !password)
     return res.status(400).json({ error: 'Username and password are required.' });
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM users WHERE username = $1',
-      [String(username).toLowerCase().trim()]
-    );
-    const user = rows[0];
+    const user = db.prepare('SELECT * FROM users WHERE username = ?')
+                   .get(String(username).toLowerCase().trim());
     const valid = user && await bcrypt.compare(String(password), user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Incorrect username or password.' });
 
@@ -44,7 +41,7 @@ router.post('/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/auth/me — check current session
+// GET /api/auth/me — check current session (called on every page load)
 router.get('/me', requireAuth, (req, res) => {
   res.json({ username: req.user.username, name: req.user.name, title: req.user.title });
 });
