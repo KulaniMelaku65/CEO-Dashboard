@@ -582,12 +582,9 @@ footer{text-align:center;padding:14px;font-size:10px;color:var(--muted);border-t
   </div>
 </div>
 
-<script src="config.js"></script>
-<script src="users.js"></script>
-<script src="data.js"></script>
 <script>
 /* ═══ CONSTANTS ═══ */
-const CFG = window.DASHBOARD_CONFIG;
+const CFG = { REFRESH_SECONDS: 0 };
 const C = { navy:'#02404F', navy3:'#3A4656', gold:'#EB7D23', goldsft:'#F5A870',
             teal:'#1FB6A6', green:'#2EBD85', red:'#E5544B', muted:'#6B7C93', line:'#E3E9F2' };
 const PAL = [C.navy, C.gold, C.teal, C.navy3, C.goldsft, C.green, C.muted, '#9B59B6'];
@@ -630,28 +627,21 @@ function simpleKpiCard({label,val,sub,color}){
 
 /* ═══ DATA ACQUISITION ═══ */
 async function getData(){
-  if(CFG.MODE==='live'&&CFG.PROXY_BASE){
-    setStatus('loading');
-    try{
-      const e=CFG.ENDPOINTS,b=CFG.PROXY_BASE;
-      const [ba,bo,cf,rp]=await Promise.all([
-        fetch(b+e.budgetActual).then(r=>r.json()),
-        fetch(b+e.budgetOverview).then(r=>r.json()),
-        fetch(b+e.cashflow).then(r=>r.json()),
-        fetch(b+e.reports).then(r=>r.json())
-      ]);
-      setStatus('live');
-      return {asOf:ba.asOf||new Date().toLocaleDateString(),budgetActual:ba,budgetOverview:bo,cashflow:cf,reports:rp};
-    }catch(err){setStatus('error');return window.DEMO_DATA;}
-  }
-  setStatus('demo');
-  return window.DEMO_DATA;
+  try{
+    const r=await fetch('/api/snapshots/latest',{credentials:'include'});
+    if(r.status===401){doLogout();return null;}
+    if(!r.ok){setStatus('error');return window.DEMO_DATA;}
+    const d=await r.json();
+    window.DEMO_DATA=d;
+    setStatus('live');
+    return d;
+  }catch(err){setStatus('error');return window.DEMO_DATA;}
 }
 
 function setStatus(s){
   const dot=document.getElementById('statusDot'),txt=document.getElementById('statusTxt');
   dot.className='dot'+((s==='live'||s==='demo')?' live':'');
-  txt.textContent={live:'Live · Business Central',demo:'ERP snapshot',loading:'Loading…',error:'Live failed — snapshot'}[s]||s;
+  txt.textContent={live:'Live · Business Central',loading:'Loading…',error:'Connection error — check server'}[s]||s;
 }
 
 /* ═══ RENDER: OVERVIEW ═══ */
@@ -1145,14 +1135,13 @@ INSTRUCTIONS:
 - Always use ETB millions as the unit. Format numbers with commas where helpful.`;
 }
 async function callGroq(userMsg){
-  const key=(window.DASHBOARD_CONFIG||{}).GROQ_KEY;
-  if(!key) return null;
-  const payload=JSON.stringify({model:'llama-3.1-8b-instant',messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}],max_tokens:400,temperature:0.5});
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),15000);
   try{
-    const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',
-      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:payload,signal:ctrl.signal});
+    const r=await fetch('/api/ai/chat',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({messages:[{role:'system',content:buildChatContext()},{role:'user',content:userMsg}]}),
+      signal:ctrl.signal});
     clearTimeout(timer);
     if(!r.ok)return null;
     return (await r.json()).choices?.[0]?.message?.content||null;
@@ -1216,16 +1205,16 @@ async function sendChat(){
 async function loadArchive(dateStr, bannerLabel){
   if(!dateStr) return;
   try{
-    const r=await fetch(`archive/${dateStr}.json`);
+    const r=await fetch(`/api/snapshots/${dateStr}`,{credentials:'include'});
+    if(r.status===401){doLogout();return;}
     if(!r.ok){
-      alert(`No snapshot found for ${dateStr}.\nSnapshots are saved each time you run refresh-and-deploy.bat.`);
+      alert(`No snapshot found for ${dateStr}.`);
       document.getElementById('histDate').value='';
       document.getElementById('histMonth').value='';
       return;
     }
     const d=await r.json();
-    LAST_DATA=d;
-    window.DEMO_DATA=d;
+    LAST_DATA=d; window.DEMO_DATA=d;
     document.querySelectorAll('.asof-lbl').forEach(el=>el.textContent=d.asOf);
     document.getElementById('footerAsOf').textContent=d.asOf;
     const label=bannerLabel||new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
@@ -1239,20 +1228,22 @@ async function loadArchive(dateStr, bannerLabel){
 async function loadArchiveMonth(monthStr){
   if(!monthStr) return;
   document.getElementById('histDate').value='';
-  // Find the last day of the selected month, then walk back up to 5 days to find an existing archive
   const [yr,mo]=monthStr.split('-').map(Number);
-  const lastDay=new Date(yr,mo,0).getDate(); // day 0 of next month = last day of this month
   const monthLabel=new Date(yr,mo-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  for(let d=lastDay;d>=lastDay-5;d--){
-    const dateStr=`${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const r=await fetch(`archive/${dateStr}.json`).catch(()=>null);
-    if(r&&r.ok){
-      await loadArchive(dateStr, `${monthLabel} (end of month)`);
-      return;
-    }
+  const prefix=`${yr}-${String(mo).padStart(2,'0')}`;
+  try{
+    const r=await fetch('/api/snapshots/dates',{credentials:'include'});
+    if(r.status===401){doLogout();return;}
+    if(!r.ok){alert('Could not fetch snapshot list.');return;}
+    const dates=await r.json();
+    const match=dates.find(d=>d.startsWith(prefix));
+    if(match){await loadArchive(match,`${monthLabel} (end of month)`);return;}
+    alert(`No snapshot found for ${monthLabel}.`);
+    document.getElementById('histMonth').value='';
+  }catch(e){
+    alert('Could not load snapshots.');
+    document.getElementById('histMonth').value='';
   }
-  alert(`No snapshot found for ${monthLabel}.\nRun the backfill to generate historical archives.`);
-  document.getElementById('histMonth').value='';
 }
 
 function loadToday(){
@@ -1291,55 +1282,63 @@ function _applyUser(user){
   document.getElementById('chatWelcome').textContent = `${gr}, ${fn}. I'm your Kifiya Intelligence assistant. Ask me about revenue, EBITDA, lending, workforce, or forecasts — I pull directly from your live ERP data.`;
 }
 
-function doLogin(){
-  const u = document.getElementById('loginUser').value.trim().toLowerCase();
-  const p = document.getElementById('loginPass').value;
-  const errEl = document.getElementById('loginErr');
-  errEl.textContent = '';
-  const users = window.DASHBOARD_USERS;
-  if(!users || !users.length){ errEl.textContent='users.js not loaded — contact admin.'; return; }
-  const found = users.find(x => x.username.toLowerCase() === u && x.password === p);
-  if(!found){ errEl.textContent = 'Incorrect username or password.'; return; }
-  sessionStorage.setItem('kifiya_user', JSON.stringify(found));
-  document.getElementById('loginOverlay').style.display = 'none';
-  _applyUser(found);
+async function doLogin(){
+  const u=document.getElementById('loginUser').value.trim().toLowerCase();
+  const p=document.getElementById('loginPass').value;
+  const errEl=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  errEl.textContent=''; btn.disabled=true;
+  try{
+    const r=await fetch('/api/auth/login',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const j=await r.json();
+    if(!r.ok){errEl.textContent=j.error||'Incorrect username or password.';return;}
+    document.getElementById('loginOverlay').style.display='none';
+    _applyUser({name:j.name,title:j.title});
+    const fn=j.name.split(' ')[0];
+    const h=new Date().getHours();
+    document.getElementById('greetTxt').textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', '+fn;
+    await refresh();
+  }catch(e){errEl.textContent='Could not reach server — try again.';}
+  finally{btn.disabled=false;}
 }
 
-function doLogout(){
-  sessionStorage.removeItem('kifiya_user');
+async function doLogout(){
+  await fetch('/api/auth/logout',{method:'POST',credentials:'include'}).catch(()=>{});
   location.reload();
 }
 
+async function checkSession(){
+  try{
+    const r=await fetch('/api/auth/me',{credentials:'include'});
+    if(r.ok){
+      const user=await r.json();
+      document.getElementById('loginOverlay').style.display='none';
+      _applyUser(user);
+      const fn=user.name.split(' ')[0];
+      const h=new Date().getHours();
+      document.getElementById('greetTxt').textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', '+fn;
+      await refresh();
+      if(CFG.REFRESH_SECONDS>0) setInterval(refresh,CFG.REFRESH_SECONDS*1000);
+    }else{
+      document.getElementById('loginOverlay').style.display='flex';
+    }
+  }catch(e){
+    document.getElementById('loginOverlay').style.display='flex';
+  }
+}
 function boot(tries=0){
   if(typeof Chart!=='undefined'){
     Chart.defaults.font.family="'Montserrat',sans-serif";
     Chart.defaults.color=C.muted;
-    // check saved session
-    const saved = sessionStorage.getItem('kifiya_user');
-    if(saved){
-      document.getElementById('loginOverlay').style.display = 'none';
-      _applyUser(JSON.parse(saved));
-    }
-    // top-bar greeting
-    const user = window._DASH_USER || {name:'CEO'};
-    const fn = user.name.split(' ')[0];
-    const h = new Date().getHours();
-    document.getElementById('greetTxt').textContent=(h<12?'Good morning':h<17?'Good afternoon':'Good evening')+', '+fn;
     document.getElementById('dateBadge').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-    refresh();
-    if(CFG.REFRESH_SECONDS>0) setInterval(refresh,CFG.REFRESH_SECONDS*1000);
-  } else if(tries<50){
+    checkSession();
+  }else if(tries<50){
     setTimeout(()=>boot(tries+1),100);
-  } else {
+  }else{
     document.getElementById('statusTxt').textContent='Chart library failed to load';
   }
 }
-// Show login immediately if no session
-(function(){
-  if(!sessionStorage.getItem('kifiya_user')){
-    document.getElementById('loginOverlay').style.display='flex';
-  }
-})();
 boot();
 </script>
 </body>
