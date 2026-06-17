@@ -1,0 +1,40 @@
+# ================================================================
+# Kifiya CEO Dashboard — Scheduled Snapshot Job
+#
+# This runs snapshot.js twice a day to pull fresh data from BC
+# and push it to the backend database.
+#
+# SETUP CHECKLIST (one-time, done in GitLab UI):
+#
+# 1. Settings → CI/CD → Variables — add these as Protected + Masked:
+#      BC_BASE          = http://10.253.99.143:7048/ERP/ODataV4
+#      BC_COMPANY       = KIFIYA FINANCIAL TECHNOLOGY
+#      BC_USER          = TestESS
+#      BC_KEY           = (the BC password)
+#      BC_ALLOW_SELF_SIGNED = true
+#      SERVICE_KEY      = (from backend/.env)
+#      BACKEND_URL      = http://<backend-host>:<port>  ← fill in when known
+#
+# 2. CI/CD → Schedules — create two schedules, both targeting main:
+#      "Morning snapshot"   cron: 0 4 * * *   (= 7:00 AM EAT / UTC+3)
+#      "Afternoon snapshot" cron: 0 10 * * *  (= 1:00 PM EAT / UTC+3)
+#      Timezone: UTC (or pick Africa/Addis_Ababa if your GitLab supports it)
+#
+# ================================================================
+
+stages:
+  - snapshot
+
+snapshot:
+  stage: snapshot
+  before_script:
+    - node --version
+    - npm install --prefix . 2>/dev/null || true
+  script:
+    - node snapshot.js
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  # Remove the 'tags' line below if you want to use any available runner.
+  # Add a tag if you need to target a specific runner (e.g. one with BC access):
+  # tags:
+  #   - kifiya-internal
