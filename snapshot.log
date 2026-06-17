@@ -83,3 +83,54 @@ OK - snapshot written to C:\Users\kmelaku\Documents\CEO Dashboard\data.js
   Net Profit     13.1M
   Margins: GM 62.4% | EBITDA 13.8% | Net 5.6%
 Open index.html to view.
+FAILED: BACKEND_URL and SERVICE_KEY must be set in .env
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 4082 rows, budget 959 rows
+  GL account names: 501 accounts loaded
+  HR: 1539 employees — Active 690 | Gender: Male 418, Female 272
+  Dimension names: 385 values loaded
+  Loan portfolio: 934M gross, 31 borrowers, PAR 100% (934M overdue)
+  Lending disbursements YTD: 470.8M (accounts 6021/6022)
+  Monthly bank collections: 124M, 154.2M, 70.4M, 56.1M, 62.7M, 37.7M
+  as of 16 Jun 2026
+  Revenue        231.9M  (budget 2658.4M)
+  Gross Profit   120.4M
+  EBITDA         -3.3M
+  Net Profit     -22.4M
+  Posting to http://localhost:4000/api/snapshots ...
+FAILED: fetch failed
+  Check: on VPN/LAN? BC credentials correct? backend reachable?
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+FAILED: fetch failed
+  Check: on VPN/LAN? BC credentials correct? backend reachable?
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 4087 rows, budget 959 rows
+  GL account names: 501 accounts loaded
+  HR: 1558 employees — Active 690 | Gender: Male 418, Female 272
+  Dimension names: 385 values loaded
+  Loan portfolio: 934M gross, 31 borrowers, PAR 100% (934M overdue)
+  Lending disbursements YTD: 470.8M (accounts 6021/6022)
+  Monthly bank collections: 124M, 154.2M, 70.4M, 56.1M, 62.7M, 37.7M
+  as of 17 Jun 2026
+  Revenue        231.9M  (budget 2658.4M)
+  Gross Profit   120.4M
+  EBITDA         -3.6M
+  Net Profit     -22.7M
+  Posting to http://localhost:4000/api/snapshots ...
+OK — snapshot for 2026-06-17 saved to database.
+Fetching from BC: http://10.253.99.143:7048/ERP/ODataV4 (KIFIYA FINANCIAL TECHNOLOGY)...
+  fetched: actuals 4095 rows, budget 959 rows
+  GL account names: 501 accounts loaded
+  HR: 1558 employees — Active 690 | Gender: Male 418, Female 272
+  Dimension names: 385 values loaded
+  Loan portfolio: 934M gross, 31 borrowers, PAR 100% (934M overdue)
+  Lending disbursements YTD: 470.8M (accounts 6021/6022)
+  Monthly bank collections: 124M, 154.2M, 70.4M, 56.1M, 62.7M, 37.7M
+  as of 17 Jun 2026
+  Revenue        266.9M  (budget 2658.4M)
+  Gross Profit   155.5M
+  EBITDA         31.4M
+  Net Profit     12.3M
+  Posting to http://localhost:4000/api/snapshots ...
+FAILED: fetch failed
+  Check: on VPN/LAN? BC credentials correct? backend reachable?

@@ -35,10 +35,12 @@ app.use('/api/auth',      authRoutes);
 app.use('/api/snapshots', snapshotRoutes);
 app.use('/api/ai',        aiRoutes);
 
-// Serve the frontend static files
-const frontendDir = path.join(__dirname, '..', 'frontend');
-app.use(express.static(frontendDir));
-app.get('*', (_req, res) => res.sendFile(path.join(frontendDir, 'index.html')));
+// Serve the built React frontend (run `cd frontend && npm run build` first)
+const distDir = path.join(__dirname, '..', 'frontend', 'dist');
+if (require('fs').existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
+}
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Kifiya Dashboard running on http://localhost:${PORT}`));

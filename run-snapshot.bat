@@ -1,3 +1,5 @@
 @echo off
-cd /d "C:\Users\kmelaku\Documents\CEO Dashboard"
-"C:\Program Files\nodejs\node.exe" snapshot.js >> snapshot.log 2>&1
+REM Kifiya CEO Dashboard — Daily Snapshot Runner
+REM Task Scheduler runs this twice a day (7 AM and 1 PM).
+cd /d "%~dp0"
+node snapshot.js >> logs\snapshot.log 2>&1
