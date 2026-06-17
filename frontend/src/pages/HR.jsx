@@ -8,11 +8,18 @@ import { fmtNum, fmtPct } from '../lib/fmt.js'
 const COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#E5544B']
 
 export default function HR({ data }) {
-  const hr = data.hr || {}
+  const hr   = data.hr || {}
+  const dims = data.dimensionNames || {}
 
   const genderData = hr.byGender || []
-  const statusData = hr.byStatus || []
   const typeData   = hr.byType   || []
+  const deptData   = (hr.byDept  || []).map(d => ({
+    ...d,
+    name: dims[d.dept] || d.dept || 'Unknown'
+  }))
+
+  const male   = genderData.find(g => g.gender === 'Male')?.count   || 0
+  const female = genderData.find(g => g.gender === 'Female')?.count || 0
 
   return (
     <div className="space-y-6">
@@ -23,9 +30,9 @@ export default function HR({ data }) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Total Employees" value={fmtNum(hr.total)} sub="Active workforce" />
-        {statusData.slice(0, 3).map(s => (
-          <KpiCard key={s.status} label={s.status} value={fmtNum(s.count)} sub="employees" />
-        ))}
+        <KpiCard label="Male" value={fmtNum(male)} sub={hr.total ? fmtPct((male / hr.total) * 100) + ' of workforce' : 'employees'} />
+        <KpiCard label="Female" value={fmtNum(female)} sub={hr.total ? fmtPct((female / hr.total) * 100) + ' of workforce' : 'employees'} />
+        <KpiCard label="Employment Types" value={fmtNum(typeData.length)} sub="distinct categories" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -87,23 +94,23 @@ export default function HR({ data }) {
         </div>
       </div>
 
-      {/* Status breakdown bars */}
-      {statusData.length > 0 && (
+      {/* Headcount by department */}
+      {deptData.length > 0 && deptData.some(d => d.name !== 'Unknown') ? (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Employee Status Breakdown</h3>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={statusData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-              <XAxis dataKey="status" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+          <h3 className="text-sm font-bold text-navy mb-4">Headcount by Department</h3>
+          <ResponsiveContainer width="100%" height={Math.max(220, deptData.length * 32)}>
+            <BarChart data={deptData} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={130} />
               <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={44}>
-                {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              <Bar dataKey="count" name="Employees" radius={[0, 4, 4, 0]} maxBarSize={18}>
+                {deptData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
