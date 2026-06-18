@@ -7,7 +7,8 @@ const db     = require('./db');
 const USERS = [
   { username: 'munir',  password: 'Kifiya@CEO1',   full_name: 'Munir Duri',    title: 'Founder & CEO' },
   { username: 'kulani', password: 'Kifiya@Admin2',  full_name: 'Kulani Melaku', title: 'Administrator' },
-  { username: 'alazar', password: 'Kifiya@Admin3',  full_name: 'Alazar Negesu', title: 'Administrator' }
+  { username: 'alazar', password: 'Kifiya@Admin3',  full_name: 'Alazar Negesu', title: 'Administrator' },
+  { username: 'admin', password: 'Kifiya@Admin4',  full_name: 'Administrator', title: 'Administrator' }
 ];
 
 const upsert = db.prepare(
