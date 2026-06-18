@@ -53,7 +53,7 @@ export default function LoanOps({ data }) {
           </>
         ) : (
           <div className="col-span-3 bg-white rounded-2xl border border-border p-5 text-muted text-sm flex items-center">
-            Portfolio data not available — run snapshot.js with lending integration.
+            Portfolio data not available — sync from Business Central to load lending data.
           </div>
         )}
       </div>

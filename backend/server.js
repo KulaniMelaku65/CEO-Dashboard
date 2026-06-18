@@ -9,10 +9,12 @@ const path = require('path');
 const authRoutes      = require('./routes/auth');
 const snapshotRoutes  = require('./routes/snapshots');
 const aiRoutes        = require('./routes/ai');
+const { startScheduler } = require('./services/scheduler');
+const { runStartup }     = require('./services/startup');
 
 const app = express();
 
-// Security headers (disable CSP so inline scripts in index.html work)
+// Security headers (CSP off — Vite build uses inline style chunks in dev)
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // CORS — allow frontend origin (same host in prod; add localhost during dev)
@@ -43,4 +45,8 @@ if (require('fs').existsSync(distDir)) {
 }
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Kifiya Dashboard running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Kifiya Dashboard running on http://localhost:${PORT}`);
+  runStartup().catch(e => console.error('[startup] Failed:', e.message));
+  startScheduler();
+});

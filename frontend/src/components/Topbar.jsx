@@ -110,7 +110,7 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
                 {recentDates.length === 0 ? (
                   <div className="px-4 py-4 text-xs text-muted text-center">
                     <p className="font-semibold mb-1">No snapshots yet</p>
-                    <p className="font-mono text-[10px]">node snapshot.js</p>
+                    <p className="text-[10px]">Use refresh to pull from BC</p>
                   </div>
                 ) : recentDates.map((d, i) => (
                   <button
@@ -157,7 +157,7 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onRefresh}
-          title="Refresh data"
+          title={histDate ? 'Reload snapshot' : 'Sync from Business Central'}
           className="p-2 rounded-xl hover:bg-bg text-muted hover:text-navy transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

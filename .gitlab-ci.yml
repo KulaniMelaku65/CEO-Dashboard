@@ -1,40 +1,44 @@
-# ================================================================
-# Kifiya CEO Dashboard — Scheduled Snapshot Job
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   DOCKER_REGISTRY_URL
+#   DOCKER_REGISTRY_USER
+#   DOCKER_REGISTRY_PASS  (masked)
 #
-# This runs snapshot.js twice a day to pull fresh data from BC
-# and push it to the backend database.
-#
-# SETUP CHECKLIST (one-time, done in GitLab UI):
-#
-# 1. Settings → CI/CD → Variables — add these as Protected + Masked:
-#      BC_BASE          = http://10.253.99.143:7048/ERP/ODataV4
-#      BC_COMPANY       = KIFIYA FINANCIAL TECHNOLOGY
-#      BC_USER          = TestESS
-#      BC_KEY           = (the BC password)
-#      BC_ALLOW_SELF_SIGNED = true
-#      SERVICE_KEY      = (from backend/.env)
-#      BACKEND_URL      = http://<backend-host>:<port>  ← fill in when known
-#
-# 2. CI/CD → Schedules — create two schedules, both targeting main:
-#      "Morning snapshot"   cron: 0 4 * * *   (= 7:00 AM EAT / UTC+3)
-#      "Afternoon snapshot" cron: 0 10 * * *  (= 1:00 PM EAT / UTC+3)
-#      Timezone: UTC (or pick Africa/Addis_Ababa if your GitLab supports it)
-#
-# ================================================================
+# Branch: main
+# Runner tag: kft_build_server01
 
 stages:
-  - snapshot
+  - build
+  - deploy
+  - cleanup
 
-snapshot:
-  stage: snapshot
-  before_script:
-    - node --version
-    - npm install --prefix . 2>/dev/null || true
+main-build:
+  stage: build
+  only:
+    - main
+  tags:
+    - kft_build_server01
   script:
-    - node snapshot.js
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-  # Remove the 'tags' line below if you want to use any available runner.
-  # Add a tag if you need to target a specific runner (e.g. one with BC access):
-  # tags:
-  #   - kifiya-internal
+    - docker build -t "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img -t "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img:"${CI_COMMIT_SHORT_SHA}" .
+    - echo "$DOCKER_REGISTRY_PASS" | docker login "$DOCKER_REGISTRY_URL" --username $DOCKER_REGISTRY_USER --password-stdin
+    - docker push "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img --all-tags
+  retry: 2
+
+deploy:
+  stage: deploy
+  only:
+    - main
+  tags:
+    - kft_build_server01
+  script:
+    - ansible-playbook ~/../kifiya/workspace/ansible-playbooks/Others/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}".yml
+  retry: 2
+
+cleanup:
+  stage: cleanup
+  only:
+    - main
+  tags:
+    - kft_build_server01
+  script:
+    - docker image prune -af
+  retry: 2

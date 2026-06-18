@@ -105,7 +105,7 @@ export default function Risk({ data }) {
         </>
       ) : (
         <div className="bg-white rounded-2xl border border-border p-8 text-center text-muted text-sm">
-          Loan portfolio data not available. Run snapshot.js with lending module enabled.
+          Loan portfolio data not available. Sync from Business Central with lending module enabled.
         </div>
       )}
 

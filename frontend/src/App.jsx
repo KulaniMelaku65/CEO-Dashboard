@@ -103,6 +103,14 @@ export default function App() {
     await loadData(date || undefined)
   }
 
+  const handleRefresh = async () => {
+    if (!histDate) {
+      setStatus('loading')
+      try { await snapshots.sync() } catch { /* may still reload last snapshot */ }
+    }
+    await loadData(histDate || undefined)
+  }
+
   if (booting) {
     return (
       <div className="flex items-center justify-center h-screen bg-bg font-sans">
@@ -132,7 +140,7 @@ export default function App() {
           paused={paused}
           histDate={histDate}
           onTogglePause={togglePause}
-          onRefresh={() => loadData(histDate || undefined)}
+          onRefresh={handleRefresh}
           onHistDate={handleHistDate}
           onMenuToggle={() => setSidebar(o => !o)}
         />
@@ -156,7 +164,7 @@ export default function App() {
                 </div>
                 <p className="text-navy font-bold text-sm mb-1">No snapshot available yet</p>
                 <p className="text-muted text-xs leading-relaxed">
-                  Run <code className="font-mono bg-bg px-1.5 py-0.5 rounded text-navy">node snapshot.js</code> on a machine with Business Central access to populate the dashboard.
+                  The server pulls data from Business Central automatically. Use the refresh button above to sync now, or wait for the next scheduled run.
                 </p>
               </div>
             </div>

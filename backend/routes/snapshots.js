@@ -1,13 +1,34 @@
 const router      = require('express').Router();
+const rateLimit   = require('express-rate-limit');
 const db          = require('../db');
 const requireAuth = require('../middleware/auth');
+const { syncSnapshot, getSyncStatus } = require('../services/snapshot-sync');
 
-function serviceKeyAuth(req, res, next) {
-  const key = req.headers['x-service-key'];
-  if (!key || key !== process.env.SERVICE_KEY)
-    return res.status(401).json({ error: 'Invalid service key.' });
-  next();
-}
+const syncLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 3,
+  message: { error: 'Too many sync requests — try again in a few minutes.' }
+});
+
+// GET /api/snapshots/status — sync health (auth required)
+router.get('/status', requireAuth, (_req, res) => {
+  res.json(getSyncStatus());
+});
+
+// POST /api/snapshots/sync — pull from BC now (auth required)
+// Body: { date?: "YYYY-MM-DD" }  (omit for today)
+router.post('/sync', requireAuth, syncLimiter, async (req, res) => {
+  const { date } = req.body || {};
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD.' });
+  try {
+    const summary = await syncSnapshot(date);
+    res.json({ ok: true, ...summary });
+  } catch (e) {
+    console.error('[sync]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
 
 // GET /api/snapshots/dates — list all available dates, newest first
 router.get('/dates', requireAuth, (req, res) => {
@@ -24,7 +45,7 @@ router.get('/dates', requireAuth, (req, res) => {
 router.get('/latest', requireAuth, (req, res) => {
   try {
     const row = db.prepare('SELECT data FROM snapshots ORDER BY snapshot_date DESC LIMIT 1').get();
-    if (!row) return res.status(404).json({ error: 'No snapshots yet.' });
+    if (!row) return res.status(404).json({ error: 'No snapshots yet — waiting for BC sync.' });
     res.json(JSON.parse(row.data));
   } catch (e) {
     console.error(e.message);
@@ -43,26 +64,6 @@ router.get('/:date', requireAuth, (req, res) => {
     res.json(JSON.parse(row.data));
   } catch (e) {
     console.error(e.message);
-    res.status(500).json({ error: 'Database error.' });
-  }
-});
-
-// POST /api/snapshots — upsert a snapshot (called by snapshot.js using SERVICE_KEY)
-router.post('/', serviceKeyAuth, (req, res) => {
-  const { date, data } = req.body || {};
-  if (!date || !data)
-    return res.status(400).json({ error: 'Body must contain { date, data }.' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
-    return res.status(400).json({ error: 'Invalid date — use YYYY-MM-DD.' });
-  try {
-    db.prepare(
-      `INSERT INTO snapshots (snapshot_date, data)
-       VALUES (?, ?)
-       ON CONFLICT(snapshot_date) DO UPDATE SET data = excluded.data, created_at = datetime('now')`
-    ).run(date, JSON.stringify(data));
-    res.json({ ok: true, date });
-  } catch (e) {
-    console.error('Snapshot save error:', e.message);
     res.status(500).json({ error: 'Database error.' });
   }
 });

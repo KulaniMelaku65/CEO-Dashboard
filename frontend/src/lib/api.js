@@ -15,6 +15,12 @@ export const snapshots = {
   latest: ()  => req('/api/snapshots/latest'),
   dates:  ()  => req('/api/snapshots/dates'),
   byDate: d   => req(`/api/snapshots/${d}`),
+  status: ()  => req('/api/snapshots/status'),
+  sync:   (date) => req('/api/snapshots/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(date ? { date } : {})
+  }),
 }
 
 export const ai = {

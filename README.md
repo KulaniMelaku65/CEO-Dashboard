@@ -1,61 +1,94 @@
 # Kifiya CEO Financial Dashboard
 
-A self-contained, Power BI–free CEO dashboard. Branded for Kifiya Financial Technology.
-Works **today** with embedded demo data; flips to **live Microsoft Dynamics 365** by editing one file.
+Executive dashboard for Kifiya Financial Technology. The **backend** connects to **Microsoft Dynamics 365 Business Central**, stores daily snapshots in SQLite, and serves a React slideshow UI.
 
-## What's inside
+## Project structure
+
 ```
-index.html          The dashboard (open directly in a browser)
-config.js           ← THE ONLY FILE YOU EDIT to go demo → live
-data.js             Demo data + the exact JSON shapes live data must match
-app.js              Rendering & charts (no build step, pure JS + Chart.js CDN)
-proxy/              Node server that bridges browser ↔ Dynamics 365
+kifiya-executive-dashboard/
+├── backend/           Express API, BC sync, SQLite, JWT auth
+├── frontend/          React + Vite + Tailwind + Recharts
+├── data/              SQLite DB + local archive copies (gitignored)
+├── docs/              Deployment and operations guides
+└── legacy/v1-static/  Old no-build dashboard (reference only)
 ```
 
-## Tabs (matches your spec)
-- **Budget vs Actual** — Revenue, Cost of Sales, Expenses, GP, EBITDA (KPIs + bars + variance + table)
-- **Budget Overview** — allocation by business unit, month-to-month, YTD utilization
-- **Cash Flow** — collections per bank, daily bank balances, other inflows, debt utilisation, operating outflows, CAPEX utilisation
-- **Reports** — balance-sheet margins & ratios, P&L income/expense bridge, monthly management summary
+## Quick start
 
-## Use it RIGHT NOW (0 setup)
-Just open `index.html` in any browser. It runs on realistic demo numbers so you have
-something to present this afternoon. Edit the numbers in `data.js` if you want them closer to reality.
+**Prerequisites:** Node.js 18+, server must reach Business Central (VPN/LAN)
 
-## Going live with Business Central ON-PREM (why you need the proxy)
-A browser page **cannot** call BC OData directly: cross-origin (CORS) calls are blocked,
-and you must never put the BC username / web access key in client-side JS. The `proxy/`
-server solves this — it runs on a machine that can reach your BC server, holds the
-credentials, queries OData, and returns clean JSON the dashboard reads.
+```bash
+npm run setup
 
-**On-prem is simpler than cloud:** no Azure AD, no OAuth. Your server uses
-NavUserPassword (Basic Auth) — username + a Web Service Access Key, over HTTPS,
-against your own server (e.g. `https://bc-server:7048/BC/ODataV4/`). The proxy and
-dashboard just need network line-of-sight to the BC server (same LAN / VPN).
+cp backend/.env.example backend/.env
+# Set JWT_SECRET, GROQ_KEY, and BC_* credentials
 
-### Steps
-1. **In BC**: open the Users page → pick the integration user → under "Web Service
-   Access" generate a **Web Service Access Key** (this is the password the proxy uses,
-   NOT the Windows login password). Copy it.
-2. **In BC**: search the "Web Services" page → publish the pages/queries you need →
-   note each Service Name (that's what goes in the OData URL).
-3. `cd proxy && cp .env.example .env` → fill in `BC_BASE`, `BC_COMPANY`, `BC_USER`,
-   `BC_KEY`. Set `BC_ALLOW_SELF_SIGNED=true` only if your server uses a self-signed cert.
-4. `npm install && npm start`. Then hit `http://localhost:8080/probe` — if it returns
-   your company list, auth + connectivity are working before you touch any GL mapping.
-5. In each `app.get('/api/...')` handler in `server.js`, replace the `SAMPLE.*` return
-   with a real `bc("<YourServiceName>", "?$select=...")` call and map your fields into
-   the documented output keys. Shapes are in `data.js` and `proxy/sample-shapes.json`.
-6. In `config.js` set `MODE: "live"` and `PROXY_BASE` to the proxy URL. Done.
+npm run seed
+npm run migrate-archives   # one-time: import existing data/archives/*.json
 
-> Ask IT for the exact host, instance name, and OData port (7048 is the default).
-
-If a live fetch ever fails, the dashboard automatically falls back to demo data and
-shows "Live failed — demo" in the status indicator, so it never breaks in front of the CEO.
-
-## Notes
-- Auto-refresh every 5 min (change `REFRESH_SECONDS` in config.js).
-- All figures ETB millions; logo & colors approximate Kifiya brand (navy + gold).
-  Swap the inline SVG in `index.html` for the official logo file if you have it.
+npm run build
+npm start
+# → http://localhost:4000
 ```
+
+### Development
+
+```bash
+npm run dev:backend      # API on :4000 (starts BC sync scheduler)
+npm run dev:frontend     # Vite on :5173 (proxies /api → backend)
 ```
+
+Set `SNAPSHOT_ON_STARTUP=false` in `backend/.env` only if you do not want a BC pull on every server start.
+
+On every start the backend automatically:
+1. Seeds default users if the database has none
+2. Pulls the latest snapshot from Business Central (when configured)
+3. Falls back to `data/archives/*.json` if BC is unreachable and the DB is empty
+
+## Docker (production)
+
+Secrets stay **outside the image** — inject via `backend/.env` at runtime.
+
+```bash
+cp backend/.env.docker.example backend/.env   # or use your existing backend/.env
+# Fill JWT_SECRET, GROQ_KEY, BC_* — never commit this file
+
+docker compose up -d --build
+# → http://localhost:4000
+```
+
+The container must reach Business Central (`BC_BASE`). If BC is on the office LAN, run on a host with VPN access or use `network_mode: host` in `docker-compose.yml` (Linux).
+
+Data persists in the `dashboard-data` volume (`/app/data` — SQLite + archives).
+
+```bash
+docker compose logs -f dashboard
+docker compose down
+```
+
+## Architecture
+
+```
+Business Central (OData)
+        ↓  backend services (scheduled + on-demand)
+SQLite (data/kifiya.db)
+        ↓
+React SPA (served by Express)
+```
+
+The backend syncs automatically via cron (default: 7 AM & 1 PM EAT). Logged-in users can also trigger a sync from the refresh button or `POST /api/snapshots/sync`.
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [docs/deployment.md](docs/deployment.md) | Production deployment |
+| [docs/scheduling.md](docs/scheduling.md) | Automatic sync schedule |
+| [docs/changelog.md](docs/changelog.md) | Version history |
+
+## Security checklist
+
+- [ ] Set `JWT_SECRET` in `backend/.env`
+- [ ] Change default passwords in `backend/seed-users.js`, then `npm run seed`
+- [ ] Use a read-only BC web service account
+- [ ] Deploy backend on a host with BC network access

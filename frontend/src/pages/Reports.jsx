@@ -20,7 +20,7 @@ export default function Reports({ data }) {
 
       {noData && (
         <div className="bg-white rounded-2xl border border-border p-10 text-center text-muted text-sm">
-          No report data available yet. Run snapshot.js to populate.
+          No report data available yet. Sync from Business Central to populate.
         </div>
       )}
 
