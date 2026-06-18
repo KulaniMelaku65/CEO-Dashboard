@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+backend/.env
+scripts/snapshot/.env
+
+# Runtime data (SQLite DB + local archive copies)
+data/*
+!data/.gitkeep
+
+# Build output
+frontend/dist/
+
+# Logs
+logs/
+*.log
+
+# Legacy / local-only (kept out of git)
+config.js
+users.js
+backfill.ps1
+refresh-and-deploy.bat
+peek_accounts.js
+fix_secret.js
+
+# OS / editor
+.DS_Store
+.vscode/*
+!.vscode/settings.json

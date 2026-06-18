@@ -1,0 +1,19 @@
+services:
+  dashboard:
+    build: .
+    image: kifiya-executive-dashboard:latest
+    ports:
+      - "${PORT:-4000}:4000"
+    env_file:
+      - backend/.env
+    environment:
+      # Override paths for the container layout
+      DB_PATH: /app/data/kifiya.db
+      NODE_ENV: production
+    volumes:
+      # SQLite DB + optional archive fallback (persists across restarts)
+      - dashboard-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  dashboard-data:

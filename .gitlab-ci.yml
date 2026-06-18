@@ -1,0 +1,44 @@
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   DOCKER_REGISTRY_URL
+#   DOCKER_REGISTRY_USER
+#   DOCKER_REGISTRY_PASS  (masked)
+#
+# Branch: main
+# Runner tag: kft_build_server01
+
+stages:
+  - build
+  - deploy
+  - cleanup
+
+main-build:
+  stage: build
+  only:
+    - main
+  tags:
+    - kft_build_server01
+  script:
+    - docker build -t "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img -t "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img:"${CI_COMMIT_SHORT_SHA}" .
+    - echo "$DOCKER_REGISTRY_PASS" | docker login "$DOCKER_REGISTRY_URL" --username $DOCKER_REGISTRY_USER --password-stdin
+    - docker push "$DOCKER_REGISTRY_URL"/kifiya-dashboards/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}"_img --all-tags
+  retry: 2
+
+deploy:
+  stage: deploy
+  only:
+    - main
+  tags:
+    - kft_build_server01
+  script:
+    - ansible-playbook ~/../kifiya/workspace/ansible-playbooks/Others/"${CI_PROJECT_NAME}"_"${CI_COMMIT_BRANCH}".yml
+  retry: 2
+
+cleanup:
+  stage: cleanup
+  only:
+    - main
+  tags:
+    - kft_build_server01
+  script:
+    - docker image prune -af
+  retry: 2
