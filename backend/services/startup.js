@@ -1,7 +1,7 @@
 const { ensureUsers } = require('./ensure-users');
 const { importArchives, snapshotCount } = require('./import-archives');
 const { syncSnapshot } = require('./snapshot-sync');
-const { isBcConfigured } = require('./bc-client');
+const { isBcConfigured, missingBcVars } = require('./bc-client');
 
 function startupSyncEnabled() {
   return process.env.SNAPSHOT_ON_STARTUP !== 'false';
@@ -32,7 +32,7 @@ async function runStartup() {
       }
     }
   } else if (!isBcConfigured()) {
-    console.log('[startup] BC not configured — skipping live pull.');
+    console.warn('[startup] BC not configured — missing:', missingBcVars().join(', '));
   }
 
   if (snapshotCount() === 0) {

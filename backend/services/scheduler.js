@@ -1,10 +1,10 @@
 const cron = require('node-cron');
 const { syncSnapshot } = require('./snapshot-sync');
-const { isBcConfigured } = require('./bc-client');
+const { isBcConfigured, missingBcVars } = require('./bc-client');
 
 function startScheduler() {
   if (!isBcConfigured()) {
-    console.log('[scheduler] BC not configured — automatic sync disabled.');
+    console.warn('[scheduler] BC not configured — missing:', missingBcVars().join(', '));
     return;
   }
 
