@@ -2,22 +2,32 @@ const https = require('https');
 
 function bcEnv() {
   return {
-    base:     process.env.BC_BASE,
+    base:     process.env.BC_BASE     || process.env.BC_BASE_URL,
     company:  process.env.BC_COMPANY,
-    user:     process.env.BC_USER,
-    key:      process.env.BC_KEY,
+    user:     process.env.BC_USER     || process.env.BC_USERNAME,
+    key:      process.env.BC_KEY      || process.env.BC_ACCESS_KEY,
     allowSelfSigned: process.env.BC_ALLOW_SELF_SIGNED === 'true'
   };
 }
 
-function isBcConfigured() {
+function missingBcVars() {
   const { base, company, user, key } = bcEnv();
-  return Boolean(base && company && user && key);
+  const missing = [];
+  if (!base)    missing.push('BC_BASE (or BC_BASE_URL)');
+  if (!company) missing.push('BC_COMPANY');
+  if (!user)    missing.push('BC_USER (or BC_USERNAME)');
+  if (!key)     missing.push('BC_KEY (or BC_ACCESS_KEY)');
+  return missing;
+}
+
+function isBcConfigured() {
+  return missingBcVars().length === 0;
 }
 
 function assertBcConfigured() {
-  if (!isBcConfigured())
-    throw new Error('Business Central not configured — set BC_BASE, BC_COMPANY, BC_USER, BC_KEY in backend/.env');
+  if (!isBcConfigured()) {
+    throw new Error(`Business Central not configured — missing: ${missingBcVars().join(', ')}`);
+  }
 }
 
 const httpsAgent = () => new https.Agent({ rejectUnauthorized: !bcEnv().allowSelfSigned });
@@ -49,4 +59,4 @@ async function bc(service, query = '') {
   return all;
 }
 
-module.exports = { bc, isBcConfigured, assertBcConfigured };
+module.exports = { bc, isBcConfigured, assertBcConfigured, missingBcVars };
