@@ -1,4 +1,4 @@
-import { fmtETB } from '../lib/fmt.js'
+import { fmtETB, fmtPct } from '../lib/fmt.js'
 
 const trendArrow = t => t === 'up' ? '↑' : t === 'down' ? '↓' : '→'
 const trendColor = t => t === 'up' ? '#2EBD85' : t === 'down' ? '#E5544B' : '#6B7C93'
@@ -31,11 +31,11 @@ export default function Reports({ data }) {
             <div key={ratio.label} className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">{ratio.label}</p>
               <p className="text-2xl font-extrabold text-navy">{ratio.value}</p>
-              {ratio.trend && (
+              {ratio.trend ? (
                 <p className="text-xs font-semibold mt-1" style={{ color: trendColor(ratio.trend) }}>
                   {trendArrow(ratio.trend)} {ratio.trend === 'up' ? 'Improving' : ratio.trend === 'down' ? 'Declining' : 'Stable'}
                 </p>
-              )}
+              ) : null}
             </div>
           ))}
         </div>
@@ -92,13 +92,18 @@ export default function Reports({ data }) {
                 {management.map((row, i) => {
                   const vs  = parseFloat(row.vsBudget)
                   const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
+                  const fmt = (v) => row.isPercent
+                    ? (v != null ? `${v.toFixed(1)}%` : '—')
+                    : (v  != null ? `ETB ${fmtETB(v)}` : '—')
                   return (
                     <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
-                      <td className="px-5 py-3 font-bold text-navy">{row.metric}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{row.month}</td>
-                      <td className="px-5 py-3 text-right text-muted font-medium">{row.last}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{row.ytd}</td>
-                      <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>{row.vsBudget}</td>
+                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmt(row.month)}</td>
+                      <td className="px-5 py-3 text-right text-muted font-medium">{fmt(row.last)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmt(row.ytd)}</td>
+                      <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>
+                        {isNaN(vs) ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)}%`}
+                      </td>
                     </tr>
                   )
                 })}
