@@ -1,0 +1,965 @@
+{
+  "asOf": "05 Jul 2024",
+  "budgetActual": {
+    "lines": [
+      {
+        "name": "Revenue",
+        "budget": 2658.4,
+        "actual": 0,
+        "higherIsBetter": true
+      },
+      {
+        "name": "Cost of Sales",
+        "budget": 521.4,
+        "actual": 0,
+        "higherIsBetter": false
+      },
+      {
+        "name": "Expenses",
+        "budget": 464.1,
+        "actual": 0,
+        "higherIsBetter": false
+      },
+      {
+        "name": "Gross Profit",
+        "budget": 2137,
+        "actual": 0,
+        "higherIsBetter": true
+      },
+      {
+        "name": "EBITDA",
+        "budget": 1672.9,
+        "actual": 0,
+        "higherIsBetter": true
+      }
+    ]
+  },
+  "budgetOverview": {
+    "byUnit": [
+      {
+        "unit": "BUS-007",
+        "budget": 1871.7
+      },
+      {
+        "unit": "BUS-003",
+        "budget": 396.6
+      },
+      {
+        "unit": "BUS-006",
+        "budget": 461.8
+      },
+      {
+        "unit": "BUS-004",
+        "budget": 93.7
+      },
+      {
+        "unit": "TEC-004",
+        "budget": 138.2
+      },
+      {
+        "unit": "HRA-001",
+        "budget": 169.2
+      },
+      {
+        "unit": "TEC-010",
+        "budget": 63.4
+      },
+      {
+        "unit": "TEC-011",
+        "budget": 37.3
+      },
+      {
+        "unit": "TEC-012",
+        "budget": 3.9
+      },
+      {
+        "unit": "TEC-013",
+        "budget": 29
+      },
+      {
+        "unit": "TEC-014",
+        "budget": 22.2
+      },
+      {
+        "unit": "TEC-015",
+        "budget": 4.3
+      },
+      {
+        "unit": "TEC-016",
+        "budget": 10
+      },
+      {
+        "unit": "TEC-017",
+        "budget": 11.8
+      },
+      {
+        "unit": "CSO-001",
+        "budget": 18.1
+      },
+      {
+        "unit": "CSO-002",
+        "budget": 119.9
+      },
+      {
+        "unit": "CSO-003",
+        "budget": 4.8
+      },
+      {
+        "unit": "CSO-004",
+        "budget": 6.9
+      },
+      {
+        "unit": "CEO-003",
+        "budget": 66
+      },
+      {
+        "unit": "CEO-001",
+        "budget": 28.9
+      },
+      {
+        "unit": "CEO-005",
+        "budget": 3
+      },
+      {
+        "unit": "CEO-006",
+        "budget": 2.3
+      },
+      {
+        "unit": "FIN-001",
+        "budget": 48.7
+      },
+      {
+        "unit": "HRA-002",
+        "budget": 15.2
+      },
+      {
+        "unit": "HRA-003",
+        "budget": 4.6
+      },
+      {
+        "unit": "Unassigned",
+        "budget": 12.2
+      }
+    ],
+    "monthly": {
+      "labels": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul"
+      ],
+      "budget": [
+        111.1,
+        147.1,
+        199,
+        284.3,
+        310,
+        326.4,
+        359.4
+      ],
+      "actual": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "utilizationYTD": [
+      {
+        "unit": "BUS-007",
+        "used": 0,
+        "budget": 1871.7
+      },
+      {
+        "unit": "BUS-003",
+        "used": 0,
+        "budget": 396.6
+      },
+      {
+        "unit": "BUS-006",
+        "used": 0,
+        "budget": 461.8
+      },
+      {
+        "unit": "BUS-004",
+        "used": 0,
+        "budget": 93.7
+      },
+      {
+        "unit": "TEC-004",
+        "used": 0,
+        "budget": 138.2
+      },
+      {
+        "unit": "HRA-001",
+        "used": 0,
+        "budget": 169.2
+      },
+      {
+        "unit": "TEC-010",
+        "used": 0,
+        "budget": 63.4
+      },
+      {
+        "unit": "TEC-011",
+        "used": 0,
+        "budget": 37.3
+      },
+      {
+        "unit": "TEC-012",
+        "used": 0,
+        "budget": 3.9
+      },
+      {
+        "unit": "TEC-013",
+        "used": 0,
+        "budget": 29
+      },
+      {
+        "unit": "TEC-014",
+        "used": 0,
+        "budget": 22.2
+      },
+      {
+        "unit": "TEC-015",
+        "used": 0,
+        "budget": 4.3
+      },
+      {
+        "unit": "TEC-016",
+        "used": 0,
+        "budget": 10
+      },
+      {
+        "unit": "TEC-017",
+        "used": 0,
+        "budget": 11.8
+      },
+      {
+        "unit": "CSO-001",
+        "used": 0,
+        "budget": 18.1
+      },
+      {
+        "unit": "CSO-002",
+        "used": 0,
+        "budget": 119.9
+      },
+      {
+        "unit": "CSO-003",
+        "used": 0,
+        "budget": 4.8
+      },
+      {
+        "unit": "CSO-004",
+        "used": 0,
+        "budget": 6.9
+      },
+      {
+        "unit": "CEO-003",
+        "used": 0,
+        "budget": 66
+      },
+      {
+        "unit": "CEO-001",
+        "used": 0,
+        "budget": 28.9
+      },
+      {
+        "unit": "CEO-005",
+        "used": 0,
+        "budget": 3
+      },
+      {
+        "unit": "CEO-006",
+        "used": 0,
+        "budget": 2.3
+      },
+      {
+        "unit": "FIN-001",
+        "used": 0,
+        "budget": 48.7
+      },
+      {
+        "unit": "HRA-002",
+        "used": 0,
+        "budget": 15.2
+      },
+      {
+        "unit": "HRA-003",
+        "used": 0,
+        "budget": 4.6
+      },
+      {
+        "unit": "Unassigned",
+        "used": 0,
+        "budget": 12.2
+      }
+    ]
+  },
+  "cashflow": {
+    "bankDaily": {
+      "labels": [],
+      "balances": []
+    },
+    "collectionsByBank": [],
+    "flows": {
+      "collections": 0,
+      "otherInflows": 0,
+      "operatingOut": 0,
+      "capexOut": 0
+    },
+    "debtUtilisation": {
+      "used": 0,
+      "facility": 1
+    },
+    "capexUtilisation": {
+      "used": 0,
+      "budget": 1
+    },
+    "monthlyCollections": {
+      "labels": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul"
+      ],
+      "data": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "reports": {
+    "ratios": [
+      {
+        "label": "Gross Margin",
+        "value": "n/a",
+        "trend": 0
+      },
+      {
+        "label": "EBITDA Margin",
+        "value": "n/a",
+        "trend": 0
+      },
+      {
+        "label": "Net Margin",
+        "value": "n/a",
+        "trend": 0
+      },
+      {
+        "label": "Current Ratio",
+        "value": "n/a",
+        "trend": 0
+      },
+      {
+        "label": "Quick Ratio",
+        "value": "n/a",
+        "trend": 0
+      },
+      {
+        "label": "Debt / Equity",
+        "value": "n/a",
+        "trend": 0
+      }
+    ],
+    "pl": [
+      {
+        "name": "Revenue",
+        "value": 0,
+        "type": "total"
+      },
+      {
+        "name": "Cost of Sales",
+        "value": 0,
+        "type": "neg"
+      },
+      {
+        "name": "Gross Profit",
+        "value": 0,
+        "type": "subtotal"
+      },
+      {
+        "name": "Salaries",
+        "value": 0,
+        "type": "neg"
+      },
+      {
+        "name": "Operating Exp.",
+        "value": 0,
+        "type": "neg"
+      },
+      {
+        "name": "EBITDA",
+        "value": 0,
+        "type": "subtotal"
+      },
+      {
+        "name": "Depreciation",
+        "value": 0,
+        "type": "neg"
+      },
+      {
+        "name": "Financial Costs",
+        "value": 0,
+        "type": "neg"
+      },
+      {
+        "name": "Net Profit",
+        "value": 0,
+        "type": "total"
+      }
+    ],
+    "management": [
+      {
+        "metric": "Revenue",
+        "month": 0,
+        "last": 0,
+        "ytd": 0,
+        "vsBudget": -100
+      },
+      {
+        "metric": "Gross Profit",
+        "month": 0,
+        "last": 0,
+        "ytd": 0,
+        "vsBudget": -100
+      },
+      {
+        "metric": "EBITDA",
+        "month": 0,
+        "last": 0,
+        "ytd": 0,
+        "vsBudget": -100
+      },
+      {
+        "metric": "Operating Exp.",
+        "month": 0,
+        "last": 0,
+        "ytd": 0,
+        "vsBudget": -100
+      },
+      {
+        "metric": "Net Profit",
+        "month": 0,
+        "last": 0,
+        "ytd": 0,
+        "vsBudget": -100
+      }
+    ]
+  },
+  "hr": {
+    "total": 270,
+    "byStatus": [
+      {
+        "status": "Active",
+        "count": 270
+      }
+    ],
+    "byType": [
+      {
+        "type": "Permanent",
+        "count": 153
+      },
+      {
+        "type": "Contract",
+        "count": 92
+      },
+      {
+        "type": "Individual Consultant",
+        "count": 4
+      }
+    ],
+    "byGender": [
+      {
+        "gender": "Male",
+        "count": 148
+      },
+      {
+        "gender": "Female",
+        "count": 101
+      }
+    ]
+  },
+  "lending": {
+    "disbursementsYTD": 0,
+    "monthlyDisburse": {
+      "labels": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul"
+      ],
+      "data": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "loanPortfolio": {
+      "grossPortfolio": 934,
+      "activeBorrowers": 31,
+      "overdueBalance": 934,
+      "overdueBorrowers": 31,
+      "parPct": 100,
+      "portfolioByUnit": [
+        {
+          "unit": "BUS-002",
+          "balance": 599.5
+        },
+        {
+          "unit": "BUS-007",
+          "balance": 92.3
+        },
+        {
+          "unit": "BUS-004",
+          "balance": 79.6
+        },
+        {
+          "unit": "PRB-001",
+          "balance": 68.2
+        },
+        {
+          "unit": "PRB-005",
+          "balance": 33.4
+        },
+        {
+          "unit": "PRB-006",
+          "balance": 28.2
+        },
+        {
+          "unit": "PRB-004",
+          "balance": 17.3
+        },
+        {
+          "unit": "PRB-002",
+          "balance": 11
+        },
+        {
+          "unit": "PRB-003",
+          "balance": 3
+        },
+        {
+          "unit": "BUS-005",
+          "balance": 0.9
+        },
+        {
+          "unit": "Other",
+          "balance": 0.6
+        },
+        {
+          "unit": "BUS-001",
+          "balance": 0
+        }
+      ]
+    }
+  },
+  "dimensionNames": {
+    "10": "Year 1",
+    "11": "E-Commerce",
+    "12": "UNCDF1",
+    "13": "UNCDF2",
+    "14": "KFW/ISF",
+    "505": "Enterprise Growth",
+    "506": "Intelligent Financial Services",
+    "507": "Agency Banking and Customer Acquistion",
+    "508": "Embeded Financing ",
+    "509": "Embeded Financing B2B B2C and E-commerce",
+    "510": "Invoice Financing ",
+    "511": "BNPL",
+    "512": "IFB",
+    "513": "Device Financing",
+    "514": "Agri-Payment",
+    "515": "OVC",
+    "516": "Disbursement",
+    "517": "Ticketing",
+    "518": "Asset Financing",
+    "530": "Product",
+    "531": "Engineering",
+    "532": "Tech-Hub",
+    "533": "AI Credit Scoring",
+    "534": "CA Region 1",
+    "535": "CA Region 2",
+    "536": "CA Region 3",
+    "537": "CA Region 4",
+    "540": "CA Region 5",
+    "545": "CA Region 6",
+    "550": "MERL",
+    "551": "Direct People Costs",
+    "552": "Indirect People Cost",
+    "553": "Event Costs",
+    "554": "Travel Costs",
+    "555": "Individual Beneficiary Costs",
+    "556": "Other Specific Program Costs ",
+    "557": "Capital Expenditure",
+    "558": "Delivery Fee",
+    "559": "Training Cost",
+    "560": "Gender & Strategy",
+    "610": "Commercial Management",
+    "611": "Business Analysis",
+    "612": "Capital Expenditure",
+    "650": "Sales - Bank 1",
+    "651": "Sales - Bank 2",
+    "652": "Sales - Bank 3",
+    "653": "Sales - Bank 4",
+    "654": "Sales - Bank 5",
+    "655": "Sales - Bank 6",
+    "699": "Sales - General",
+    "700": "Cost of Sales",
+    "710": "Marketing",
+    "750": "Goods store 1",
+    "751": "Goods store 2",
+    "752": "Goods store 3",
+    "810": "Senior Leadership",
+    "815": "Legal and Compliance",
+    "820": "Internal Audit",
+    "825": "Project Management Office",
+    "826": "Communications",
+    "827": "Transaction Readiness",
+    "828": "Sponsership & Donation",
+    "830": "People and Culture",
+    "831": "Procurement",
+    "832": "Office Administration",
+    "833": "Facilities Management",
+    "834": "Business Intelligence",
+    "835": "Information Office",
+    "840": "Finance",
+    "845": "CEO Office",
+    "910": "Corporate services recharges",
+    "000": "GENERAL",
+    "000.00": "General",
+    "0831 - LOAN": "Mesawit Antehunegn  ",
+    "505.00": "Enterprise Growth",
+    "506.00": "Intelligent Financial Services",
+    "507.00": "Agency Banking and Customer Acquistion",
+    "508.00": "Embeded Financing ",
+    "509.00": "Embeded Financing B2B B2C and E-commerce",
+    "510.00": "Invoice Financing ",
+    "511.00": "BNPL",
+    "512.00": "IFB",
+    "513.00": "Device Financing",
+    "514.00": "Agri-Payment",
+    "515.00": "OVC",
+    "516.00": "Disbursement",
+    "517.00": "Ticketing",
+    "518.00": "Asset Financing",
+    "530.00": "Product",
+    "531.00": "Engineering",
+    "532.00": "Tech-Hub",
+    "533.00": "AI Credit Scoring",
+    "534.00": "CA Region 1",
+    "535.00": "CA Region 2",
+    "536.00": "CA Region 3",
+    "537.00": "CA Region 4",
+    "540.00": "CA Region 5",
+    "545.00": "CA Region 6",
+    "550.00": "MERL",
+    "551.00": "Direct People Costs",
+    "551.01": "Program Director ",
+    "551.02": "Program Manager",
+    "551.03": "Program Assistants",
+    "551.04": "Program Finance Manager",
+    "551.05": "Gender Specialist ",
+    "551.06": "MEL Manager",
+    "551.07": "MEL Officer ",
+    "551.08": "Communications and partnership Manager ",
+    "551.09": "Communications and Partnership Officer",
+    "551.10": "Safeguarding Manager",
+    "551.11": "Risk and Compliance Manager",
+    "551.12": "Data Scientist",
+    "551.13": "Data Science Analyst (1)(2)(2)",
+    "551.14": "Gender and youth  Specialist",
+    "551.15": "Financial literacy Manager",
+    "551.16": "Financial literacy Expert",
+    "551.17": "Digital BDS Manager",
+    "551.18": "Digital BDS Expert",
+    "551.19": "Senior Finance Officer",
+    "551.20": "Junior Accountant",
+    "551.21": "Procurement and Contract Manger ",
+    "551.22": "MEL Senior officers (4)",
+    "551.23": "Regional Program manager (6)",
+    "551.24": "Regional Program Assistant  (6)",
+    "551.25": "Senior Cyber Security Officer",
+    "551.26": "Junior Cyber Security Officer",
+    "551.27": "Program Partnership Manager (2)",
+    "551.28": "Technical Manager",
+    "551.29": "Digital MERL Officer",
+    "551.30": "Data Governance",
+    "551.31": "Support manager  (2 )",
+    "551.32": "Creation of tools to manage our Partner Relations.",
+    "551.99": "Direct People Costs Totals",
+    "552.00": "Indirect People Cost",
+    "552.01": "Chief Executive Officer",
+    "552.02": "Chief Finance Officer",
+    "552.03": "Chief Technology Officer",
+    "552.04": "People and culture manager   ",
+    "552.99": "Indirect People Cost Totals",
+    "553.00": "Event Costs",
+    "553.01": "3.4. Workshop for product design (Focus group disc",
+    "553.02": "6.1. Knowledge series workshops ",
+    "553.03": "Quarterly Review Meeting",
+    "553.04": "Youth advisory council Review meeting",
+    "553.05": "Safeguarding trainings to the employees and partne",
+    "553.99": "Event Costs Totals",
+    "554.00": "Travel Costs",
+    "554.01": "Experience sharing visit",
+    "554.02": "Monitoring Visit",
+    "554.03": "5.3.2. Travel- TLF Team  Consultant Travel",
+    "554.99": "Travel Costs Totals",
+    "555.00": "Individual Beneficiary Costs",
+    "555.01": "5.1.1. Transitional Liquidity facility for 6 banks",
+    "555.02": "5.1.2. Transitional Guarantee facility for 6 banks",
+    "555.03": "2.2.1 Avail 20 certified data scientists through t",
+    "555.04": "4.3.1. Avail 730 Data scientists for the program-1",
+    "555.99": "Individual Beneficiary Costs",
+    "556.00": "Other Specific Program Costs ",
+    "556.01": "2.1.1. MEL Consulting Firm",
+    "556.02": "2.3. Gender & Inclusion Consulting Firm for All In",
+    "556.03": "1.1. Train the Trainer (TOT) on Digital Financial ",
+    "556.04": "1.2. Capacity building for 40 leaders  across 4 gr",
+    "556.05": "1.3. Training content development,  customization ",
+    "556.06": "1.1.4. Assessment on digital skills level and fina",
+    "556.07": "1.1.5. Design and develop Digital skills and finan",
+    "556.08": "1.1.6. Implement Digital skills and Financial lite",
+    "556.09": "1.1.7. Monitor the rollout of the curriculum ",
+    "556.10": "1.2.1. Train the Trainer (TOT) delivery for BDS  a",
+    "556.11": "1.2.2. Capacity building for 15 leaders in 4 local",
+    "556.12": "1.2.3. Training content development,  customizatio",
+    "556.13": "1.2.4. Assess the skills level of MSMEs ",
+    "556.14": "1.2.5. Design and Develop BDS skills curriculum",
+    "556.15": "1.2.6. Implement BDS skills curriculum ",
+    "556.16": "1.2.7. Monitor the rollout of the BDS curriculum ",
+    "556.17": "3.1.1. Provide banks, MFIs and FinTechs access to ",
+    "556.18": "3.1.3. Senior Data Science Consultant (2): interna",
+    "556.19": "3.1.3. Senior Data Science Consultant (2): interna",
+    "556.20": "3.1.2. Data Governance ",
+    "556.21": "3.2.1.  Solution Delivery Manager Consultant to Ba",
+    "556.22": "3.2.2. Solution Delivery Manager Consultant - MFI",
+    "556.23": "3.3.3. Solution Delivery Manager Consultant - FinT",
+    "556.24": "3.3.1. Avail Innovative Finance products",
+    "556.25": "3.3.2. Avail Invoice Financing Products ",
+    "556.26": "3.3.3. Avail Interest Free Bank Products",
+    "556.27": " 4.1.1. TA capacity building to  Banks",
+    "556.28": "4.1.2 TA capacity building MFIs ",
+    "556.29": "4.1.3.  TA capacity building FinTech",
+    "556.30": "4.2.1 TA - Banks Change Management",
+    "556.31": "4.2.2. TA - MFI - Change Management ",
+    "556.32": "4.2.3.TA - FinTech - Change Management ",
+    "556.33": "Vehicles rent  ",
+    "556.34": "5.2.1 Ensure the liquidity is mobilized and coll",
+    "556.35": "5.2.2. Design and customize the TLF in terms of al",
+    "556.36": "5.2.3. Develop various products with customized an",
+    "556.37": "5.2.4. Ensure banks use the liquidity for the inte",
+    "556.38": "5.3.1. Explore opportunities for securitizing MSME",
+    "556.39": "Office rent",
+    "556.40": "Office rent for Regional Offices",
+    "556.41": "Communication ",
+    "556.42": "Local Capacity Building for Kifiya /Operational Ex",
+    "556.43": "6.2.1Lowering the capital cost & extending reach",
+    "556.44": "Research and Evalutio",
+    "556.99": "Other Specific Program Costs ",
+    "557.00": "Capital Expenditure",
+    "557.01": "Laptops",
+    "557.02": "Regional Office equipment and Furniture",
+    "557.99": "Capital Expenditure Totals",
+    "558.00": "Delivery Fee",
+    "558.01": "Delivery fee",
+    "558.99": "Delivery Fee Totals",
+    "559.00": "Training Cost",
+    "560.00": "Gender & Strategy",
+    "610.00": "Commercial Management",
+    "611.00": "Business Analysis",
+    "612.00": "Capital Expenditure",
+    "650.00": "Sales - Bank 1",
+    "651.00": "Sales - Bank 2",
+    "652.00": "Sales - Bank 3",
+    "653.00": "Sales - Bank 4",
+    "654.00": "Sales - Bank 5",
+    "655.00": "Sales - Bank 6",
+    "699.00": "Sales - General",
+    "700.00": "Cost of Sales",
+    "710.00": "Marketing",
+    "750.00": "Goods store 1",
+    "751.00": "Goods store 2",
+    "752.00": "Goods store 3",
+    "810.00": "Senior Leadership",
+    "815.00": "Legal and Compliance",
+    "820.00": "Internal Audit",
+    "825.00": "Project Management Office",
+    "826.00": "Communications",
+    "827.00": "Transaction Readiness",
+    "828.00": "Sponsership & Donation",
+    "830.00": "People and Culture",
+    "831.00": "Procurement",
+    "832.00": "Office Administration",
+    "833.00": "Facilities Management",
+    "834.00": "Business Intelligence",
+    "835.00": "Information Office",
+    "840.00": "Finance",
+    "845.00": "CEO Office",
+    "910.00": "Corporate services recharges",
+    "942 - LOAN": "Delegn Asmare",
+    "KFT0007 - LOAN": "Frew Hunde",
+    "KFT0053": "Zemedkun Mulugeta",
+    "KFT0071": "Tensae Tilahun",
+    "KFT0124 - LOAN": "Kebron Daniel",
+    "KFT0136 - LOAN": "Habte  Getachew  Tesema ",
+    "KFT0145 - LOAN": "Henan Solomon",
+    "KFT0165 - LOAN": "Rediet Mesfin Bekele",
+    "KFT0166": "Dawit Mulugeta",
+    "KFT02020 - LOAN": "Yohannes Assefa",
+    "KFT0220 - LOAN": "Yohaness Assefa",
+    "KFT0674 - LOAN": "Ephrem Kitila Negasa",
+    "KFT0818 - LOAN": "Bethlehem Chane",
+    "KFT0825": "Bete Aberra",
+    "KFT0825 - LOAN": "Bete Aberra",
+    "KFT0844 - LOAN": "Tesfamichael Aboset",
+    "KFT0847": "Asnake Getaneh",
+    "KFT0847 - LOAN": "Asnake Getaneh",
+    "KFT0858 - LOAN": "Tariku",
+    "KFT0861 - LOAN": "Yonathan Tsedeke",
+    "KFT0875 - LOAN": "Tesfanesh Tamirat Haile",
+    "KFT0876 - LOAN": "Mariamawit Degefu",
+    "KFT0892 - LOAN": "Mulugeta",
+    "KFT0893 - LOAN": "Fikeru Saka",
+    "KFT0914 - LOAN": "Tihitina Eyob",
+    "KFT0921 - LOAN": "Natnael Gatechew",
+    "KFT0925 - LOAN": "Birhanu",
+    "KFT0936 - LOAN": "Adiam Ambaye",
+    "KFT0946 - LOAN": "Salem Gezu",
+    "KFT0985 - LOAN": "Habeake\t Seyoum",
+    "KFT0994 - LOAN": "Menen Shewarega",
+    "KFT1008 - LOAN": "Tadios Tarekegn",
+    "KFT1014": "Tobiyew Degu",
+    "KFT1028 - LOAN": "Haiget Adhana",
+    "KFT1035 - LOAN": "Melkam Abrham",
+    "KFT1040 - LOAN": "Nardos Melkanu",
+    "KFT1047 - LOAN": "Abdulhafiz Mohammed",
+    "KFT1082": "Sara  Abraham",
+    "KFT1082 - LOAN": "Sara Abraham",
+    "KFT1082 -LOAN": "Sara  Abraham",
+    "KFT1095 - LOAN": "Zuber Momoniat",
+    "KFT1096 - LOAN": "Eyerusalem Teshome",
+    "KFT1099 - LOAN": "Melese Tiruneh",
+    "KFT1119 - LOAN": "Alemu Asefa",
+    "KFT1154": "Abubeker Husen",
+    "KFT1154 - LOAN": "Abubeker   Hussen",
+    "KFT1157 _ LOAN": " Selome  Simur",
+    "KFT1158": "Abiy  Getachew",
+    "KFT1158 - LOAN": "Abiy  Getachew",
+    "KFT1207": "Thomas Getachew",
+    "KFT1207 - LOAN": "Thomas Getachew",
+    "KTC035": "Bunna Bank",
+    "KTC036": "Amhara Bank S.C",
+    "BUS-000": "Business",
+    "BUS-003": "Sharia compliant FMLS",
+    "BUS-004": "Smart Mobility",
+    "BUS-006": "Capital Solution",
+    "BUS-007": "Financial And Market Linkage Solution",
+    "BUS-008": "Tele cloud",
+    "BUS-999": "Business Totals",
+    "CEO-000": "CEO Office Business Unit",
+    "CEO-001": "Executive Office",
+    "CEO-003": "CEO Delivery Unit",
+    "CEO-005": "Legal,Risk and Gevernance",
+    "CEO-006": "Internal Audit and Compliance",
+    "CEO-999": "CEO Totals",
+    "CSO-000": "CISO",
+    "CSO-001": "Office of the CISO",
+    "CSO-002": "Cyber Security",
+    "CSO-003": "IT Operations",
+    "CSO-004": "Digitization",
+    "CSO-999": "CISO Totals",
+    "FIN-000": "Finance",
+    "FIN-001": "Finance",
+    "FIN-002": "Program Finance",
+    "FIN-003": "Country Finance",
+    "FIN-999": "Finance Totals",
+    "HRA-000": "HR & Admin",
+    "HRA-001": "Admin",
+    "HRA-002": "People & Culture",
+    "HRA-003": "Admin support",
+    "HRA-999": "HR & Admin",
+    "MSP-000": "MSP",
+    "MSP-001": "Program Finance",
+    "MSP-002": "Research & Strategy",
+    "MSP-006": "MERL",
+    "MSP-010": "Programme delivery",
+    "MSP-011": "Skills & Fiinancial Literacy",
+    "MSP-999": "MSP Totals",
+    "PRB-000": "Program Budgeting",
+    "PRB-001": "MCF - SAFEE",
+    "PRB-002": "UNCDF",
+    "PRB-003": "GOA - ACCION",
+    "PRB-004": "SCBF",
+    "PRB-005": "PRB - ISF",
+    "PRB-006": "MCF - ECOM",
+    "PRB-999": "Program Budgeting Totals",
+    "TEC-000": "Technology",
+    "TEC-004": "IDD (Intelligent Data Decision)",
+    "TEC-010": "IFI Core",
+    "TEC-011": "AGRIFIN TECH",
+    "TEC-012": "Learning,insights and Experience",
+    "TEC-013": "Customer Experience",
+    "TEC-014": "Engineering and Technology",
+    "TEC-015": "Customer Support Excellence",
+    "TEC-016": "Group Tech Office",
+    "TEC-017": "Captech",
+    "TEC-999": "Technology Totals",
+    "ACC-000": "ACCION PROGRAM INTERVENTIONS",
+    "ACC-001": "ACCION Milestone 1",
+    "ACC-002": "ACCION Milestone 2",
+    "ACC-003": "ACCION Milestone 3",
+    "ACC-004": "ACCION Milestone 4",
+    "ACC-005": "ACCION Milestone 5",
+    "ACC-999": "ACCION PROGRAM INTERVENTIONS TOTALS",
+    "SAF-I000": "SAFFE PROGRAM INTERVENTIONS",
+    "SAF-I001": "Improve young, vulnerable women and men's digital ",
+    "SAF-I002": "Enhance track record as a pathway to accessing unc",
+    "SAF-I003": "Scale, strengthen, and avail tech that enables inc",
+    "SAF-I004": "Capacitate and provide TA to Banks, MFIs & FinTech",
+    "SAF-I005": "Design and implement an inclusive transitional liq",
+    "SAF-I006": "Support enabling environment and continue to infor",
+    "SAF-I999": "SAFFE PROGRAM INTERVENTIONS TOTALS",
+    "SCB-000": "SCBF PROGRAM INTERVENTIONS",
+    "SCB-001": "SCBF Milestone 1",
+    "SCB-002": "SCBF Milestone 2",
+    "SCB-003": "SCBF Milestone 3",
+    "SCB-004": "SCBF Milestone 4",
+    "SCB-999": "SCBF PROGRAM INTERVENTIONS TOTALS",
+    "UNC-000": "UNCDF PROGRAM INTERVENTIONS",
+    "UNC-001": "UNCDF Milestone 1",
+    "UNC-002": "UNCDF Milestone 2",
+    "UNC-003": "UNCDF Milestone 3",
+    "UNC-004": "UNCDF Milestone 4",
+    "UNC-999": "UNCDF PROGRAM INTERVENTIONS TOTALS",
+    "10.2": "Year 2",
+    "10.3": "Year 3",
+    "10.4": "Year 4",
+    "10.5": "Year 5",
+    "2024/2025": "2024/2025",
+    "ETH": "Ethiopia",
+    "HUB": "HUB"
+  }
+}
