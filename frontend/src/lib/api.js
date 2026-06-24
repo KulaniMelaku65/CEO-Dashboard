@@ -23,6 +23,10 @@ export const snapshots = {
   }),
 }
 
+export const superset = {
+  chart: (id) => req(`/api/superset/${id}`),
+}
+
 export const ai = {
   chat: (messages) => req('/api/ai/chat', {
     method: 'POST',

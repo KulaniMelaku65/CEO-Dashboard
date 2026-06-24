@@ -2,33 +2,52 @@ import { useState, useEffect, useRef } from 'react'
 import { snapshots } from '../lib/api.js'
 import { fmtDate } from '../lib/fmt.js'
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
 export default function Topbar({ data, status, paused, histDate, onTogglePause, onRefresh, onHistDate, onMenuToggle }) {
   const [dates, setDates]       = useState([])
   const [pickerOpen, setPicker] = useState(false)
+  const [selYear, setSelYear]   = useState(null)
   const pickerRef               = useRef(null)
 
   useEffect(() => {
     snapshots.dates()
       .then(r => r.ok ? r.json() : [])
-      .then(setDates)
+      .then(d => {
+        setDates(d)
+        if (d.length) setSelYear(new Date(d[0] + 'T12:00:00').getFullYear())
+      })
       .catch(() => {})
   }, [])
 
-  // Close picker when clicking outside
   useEffect(() => {
     const handler = e => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPicker(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-  const firstName = (data?.user?.name || '').split(' ')[0]
-
   const statusColor = status === 'live' ? '#2EBD85' : status === 'loading' ? '#EB7D23' : '#E5544B'
   const statusLabel = histDate ? `Snapshot · ${fmtDate(histDate)}` : status === 'live' ? 'Live' : status === 'loading' ? 'Loading…' : 'No Data'
 
-  const recentDates = dates.slice(0, 8)
+  // Build year → month → [dates] index
+  const byYear = dates.reduce((acc, d) => {
+    const dt = new Date(d + 'T12:00:00')
+    const y  = dt.getFullYear()
+    const m  = dt.getMonth()
+    if (!acc[y]) acc[y] = {}
+    if (!acc[y][m]) acc[y][m] = []
+    acc[y][m].push(d)
+    return acc
+  }, {})
+  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a)
+
+  const pickMonth = (year, month) => {
+    const datesInMonth = byYear[year]?.[month] || []
+    if (!datesInMonth.length) return
+    const latest = datesInMonth[0] // dates are sorted latest-first from API
+    onHistDate(latest === dates[0] ? null : latest)
+    setPicker(false)
+  }
 
   return (
     <header className="flex-shrink-0 flex items-center gap-2 md:gap-3 px-3 md:px-6 bg-white border-b border-border h-14 shadow-sm z-30">
@@ -57,6 +76,7 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
 
       {/* Period picker */}
       <div className="flex items-center gap-1.5 flex-shrink-0" ref={pickerRef}>
+
         {/* Latest pill */}
         <button
           onClick={() => { onHistDate(null); setPicker(false) }}
@@ -68,21 +88,7 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
           Latest
         </button>
 
-        {/* Recent snapshot quick pills — desktop only */}
-        {recentDates.filter((_, i) => i > 0).slice(0, 2).map(d => (
-          <button
-            key={d}
-            onClick={() => { onHistDate(d); setPicker(false) }}
-            className="hidden lg:block text-xs font-bold px-2.5 py-1.5 rounded-xl border transition-all"
-            style={histDate === d
-              ? { background: '#EB7D23', color: '#fff', borderColor: '#EB7D23' }
-              : { borderColor: '#E3E9F2', color: '#6B7C93' }}
-          >
-            {new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-          </button>
-        ))}
-
-        {/* Calendar dropdown */}
+        {/* History dropdown */}
         <div className="relative">
           <button
             onClick={() => setPicker(o => !o)}
@@ -100,53 +106,68 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
           </button>
 
           {pickerOpen && (
-            <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl border border-border shadow-xl z-50 w-64 overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-bg">
-                <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Snapshot History</p>
-                <p className="text-[9px] text-muted/70 font-medium mt-0.5">Select a date to view all pages for that period</p>
-              </div>
+            <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl border border-border shadow-xl z-50 overflow-hidden" style={{ width: 300 }}>
 
-              <div className="max-h-52 overflow-y-auto py-1">
-                {recentDates.length === 0 ? (
-                  <div className="px-4 py-4 text-xs text-muted text-center">
-                    <p className="font-semibold mb-1">No snapshots yet</p>
-                    <p className="text-[10px]">Use refresh to pull from BC</p>
-                  </div>
-                ) : recentDates.map((d, i) => (
-                  <button
-                    key={d}
-                    onClick={() => { onHistDate(d === dates[0] ? null : d); setPicker(false) }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-bg transition-colors text-left"
-                  >
-                    <span className="text-xs font-semibold text-navy">{fmtDate(d)}</span>
-                    {i === 0 && (
-                      <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full" style={{ background: '#2EBD8518', color: '#2EBD85' }}>
-                        LATEST
-                      </span>
-                    )}
-                    {histDate === d && i !== 0 && (
-                      <span className="text-[9px] font-extrabold" style={{ color: '#EB7D23' }}>● ACTIVE</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Custom date */}
-              <div className="px-4 py-3 border-t border-border">
-                <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-1.5">Custom Date</p>
+              {/* Date input */}
+              <div className="px-4 pt-4 pb-3 border-b border-border">
+                <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Jump to date</p>
                 <input
                   type="date"
                   className="w-full text-xs border border-border rounded-xl px-3 py-2 text-navy font-medium outline-none focus:border-navy bg-bg"
+                  value={histDate || ''}
                   onChange={e => { if (e.target.value) { onHistDate(e.target.value); setPicker(false) } }}
                 />
               </div>
 
-              {/* All pages note */}
+              {/* Year tabs */}
+              {years.length > 0 && (
+                <div className="px-4 pt-3 pb-2">
+                  <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Browse by month</p>
+                  <div className="flex gap-1.5 mb-3">
+                    {years.map(y => (
+                      <button
+                        key={y}
+                        onClick={() => setSelYear(y)}
+                        className="flex-1 text-xs font-bold py-1.5 rounded-xl border transition-all"
+                        style={selYear === y
+                          ? { background: '#02404F', color: '#fff', borderColor: '#02404F' }
+                          : { borderColor: '#E3E9F2', color: '#6B7C93' }}
+                      >
+                        {y}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Month grid */}
+                  <div className="grid grid-cols-4 gap-1.5 pb-3">
+                    {MONTHS.map((name, m) => {
+                      const datesInMonth = byYear[selYear]?.[m] || []
+                      const hasData = datesInMonth.length > 0
+                      const latest  = datesInMonth[0]
+                      const active  = histDate && latest === histDate
+                      return (
+                        <button
+                          key={m}
+                          disabled={!hasData}
+                          onClick={() => pickMonth(selYear, m)}
+                          className="text-xs font-bold py-2 rounded-xl border transition-all"
+                          style={active
+                            ? { background: '#EB7D23', color: '#fff', borderColor: '#EB7D23' }
+                            : hasData
+                              ? { borderColor: '#E3E9F2', color: '#02404F' }
+                              : { borderColor: '#F4F6FA', color: '#C8D1DC', cursor: 'default' }}
+                        >
+                          {name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="px-4 py-2.5 border-t border-border flex items-center gap-2" style={{ background: '#02404F08' }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#02404F" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <p className="text-[10px] font-semibold" style={{ color: '#02404F' }}>
-                  Applies to all dashboard pages
-                </p>
+                <p className="text-[10px] font-semibold" style={{ color: '#02404F' }}>Applies to all dashboard pages</p>
               </div>
             </div>
           )}

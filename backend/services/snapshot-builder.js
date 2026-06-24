@@ -102,6 +102,53 @@ async function buildSnapshot(targetDate) {
   const lm = new Date(targetDate + 'T12:00:00').getMonth();
   const labels = mN.slice(0, lm + 1);
 
+  // M-MGT-RPT exact account lists (matches BC account schedule definition)
+  const MGT_REV = new Set(['5013','5014','5015','5016','5017','5018','5019','5020','5021','5022','5023','5024','5025']);
+  const MGT_COS = new Set(['6011','6013','6014','6015','6016','6051','6052','6053','6054','6055','6056','6057']);
+  const MGT_SAL = new Set(['8101','8102','8103','8104','8105','8106']);
+  const sumAccts = (rows, accts) =>
+    rows.filter(x => accts.has(String(x.accountNo))).reduce((s, x) => s + num(x.amount), 0);
+
+  // Per-metric monthly arrays using M-MGT-RPT account sets
+  const revM = Array(12).fill(0), cosM = Array(12).fill(0);
+  const salM = Array(12).fill(0), opM  = Array(12).fill(0);
+  const daM  = Array(12).fill(0), finM = Array(12).fill(0);
+  actuals.forEach(x => {
+    const a = String(x.accountNo);
+    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    if (mi < 0) return;
+    if (MGT_REV.has(a)) { revM[mi] += num(x.amount); return; }
+    if (MGT_COS.has(a)) { cosM[mi] += num(x.amount); return; }
+    if (MGT_SAL.has(a)) { salM[mi] += num(x.amount); return; }
+    if (inRange(a, CONFIG.ranges.depAmort)) { daM[mi] += num(x.amount); return; }
+    if (inRange(a, CONFIG.ranges.finCosts)) { finM[mi] += num(x.amount); return; }
+    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opM[mi] += num(x.amount);
+  });
+  const curM = lm;
+  const prvM = curM > 0 ? curM - 1 : null;
+
+  // Monthly metric helpers — revenue accounts are credits (stored negative), negate for display
+  const mRev  = i => toM(-revM[i]);
+  const mCos  = i => toM(cosM[i]);
+  const mGP   = i => toM(-revM[i] - cosM[i]);
+  const mOpex = i => toM(salM[i] + opM[i]);
+  const mEB   = i => toM(-revM[i] - cosM[i] - salM[i] - opM[i]);
+  const mNet  = i => toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]);
+  const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
+  const mEBMgn = i => mRev(i) ? parseFloat((mEB(i) / mRev(i) * 100).toFixed(1)) : null;
+
+  // YTD using M-MGT-RPT specific accounts
+  const mgtRevA     = -sumAccts(actuals, MGT_REV);
+  const mgtCosA     =  sumAccts(actuals, MGT_COS);
+  const mgtGpA      = mgtRevA - mgtCosA;
+  const mgtSalA     =  sumAccts(actuals, MGT_SAL);
+  const mgtOpexA    = A('opexA') + A('opexB');
+  const mgtTotOpexA = mgtSalA + mgtOpexA;
+  const mgtEbA      = mgtGpA - mgtTotOpexA;
+  const mgtNetA     = mgtEbA - daA - finA;
+  const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
+  const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
+
   const disbByMonth = Array(12).fill(0);
   actuals.forEach(x => {
     const a = String(x.accountNo);
@@ -205,11 +252,14 @@ async function buildSnapshot(targetDate) {
     ],
     pl: plBridge,
     management: [
-      { metric: 'Revenue',        month: 0, last: 0, ytd: toM(revA),      vsBudget: revB ? +(((revA - revB) / revB) * 100).toFixed(1) : 0 },
-      { metric: 'Gross Profit',   month: 0, last: 0, ytd: toM(gpA),       vsBudget: gpB ? +(((gpA - gpB) / gpB) * 100).toFixed(1) : 0 },
-      { metric: 'EBITDA',         month: 0, last: 0, ytd: toM(ebA),       vsBudget: ebB ? +(((ebA - ebB) / ebB) * 100).toFixed(1) : 0 },
-      { metric: 'Operating Exp.', month: 0, last: 0, ytd: toM(totOpexA),  vsBudget: totOpexB ? +(((totOpexA - totOpexB) / totOpexB) * 100).toFixed(1) : 0 },
-      { metric: 'Net Profit',     month: 0, last: 0, ytd: toM(netA),      vsBudget: netB ? +(((netA - netB) / netB) * 100).toFixed(1) : 0 }
+      { metric: 'Total Revenue',   month: mRev(curM),      last: prvM !== null ? mRev(prvM)      : null, ytd: toM(mgtRevA),     vsBudget: revB      ? +((mgtRevA     - revB)      / revB      * 100).toFixed(1) : null },
+      { metric: 'Cost of Sales',   month: mCos(curM),      last: prvM !== null ? mCos(prvM)      : null, ytd: toM(mgtCosA),     vsBudget: cosB      ? +((mgtCosA     - cosB)      / cosB      * 100).toFixed(1) : null },
+      { metric: 'Gross Profit',    month: mGP(curM),       last: prvM !== null ? mGP(prvM)       : null, ytd: toM(mgtGpA),      vsBudget: gpB       ? +((mgtGpA      - gpB)       / gpB       * 100).toFixed(1) : null },
+      { metric: 'Gross Margin %',  month: mGPMgn(curM),    last: prvM !== null ? mGPMgn(prvM)    : null, ytd: ytdGPMgn,         vsBudget: null,  isPercent: true },
+      { metric: 'Total OPEX',      month: mOpex(curM),     last: prvM !== null ? mOpex(prvM)     : null, ytd: toM(mgtTotOpexA), vsBudget: totOpexB  ? +((mgtTotOpexA - totOpexB)  / totOpexB  * 100).toFixed(1) : null },
+      { metric: 'EBITDA',          month: mEB(curM),       last: prvM !== null ? mEB(prvM)       : null, ytd: toM(mgtEbA),      vsBudget: ebB       ? +((mgtEbA      - ebB)       / ebB       * 100).toFixed(1) : null },
+      { metric: 'EBITDA Margin %', month: mEBMgn(curM),    last: prvM !== null ? mEBMgn(prvM)    : null, ytd: ytdEBMgn,         vsBudget: null,  isPercent: true },
+      { metric: 'Net Profit',      month: mNet(curM),      last: prvM !== null ? mNet(prvM)      : null, ytd: toM(mgtNetA),     vsBudget: netB      ? +((mgtNetA     - netB)      / netB      * 100).toFixed(1) : null },
     ]
   };
 
@@ -268,34 +318,9 @@ async function buildSnapshot(targetDate) {
 
   const disbursementsYTD = toM(Math.abs(A('disbursements')));
 
-  let loanPortfolio = null;
-  try {
-    const [loanAccts, overdueLoans] = await Promise.all([
-      bc('KFT_Loan_Accounts'),
-      bc('KFT_Overdue_Loans')
-    ]);
-    const grossPortfolio = toM(loanAccts.reduce((s, x) => s + num(x.outstandingBalance), 0));
-    const activeBorrowers = new Set(loanAccts.map(x => x.customerNo)).size;
-    const overdueBalance  = toM(overdueLoans.reduce((s, x) => s + num(x.overdueBalance), 0));
-    const overdueBorrowers = new Set(overdueLoans.map(x => x.customerNo)).size;
-    const parPct = grossPortfolio > 0 ? +(overdueBalance / grossPortfolio * 100).toFixed(1) : 0;
-    const byUnitMap = {};
-    loanAccts.forEach(x => {
-      const u = x.globalDim2 || 'Other';
-      byUnitMap[u] = (byUnitMap[u] || 0) + num(x.outstandingBalance);
-    });
-    const portfolioByUnit = Object.entries(byUnitMap)
-      .map(([unit, bal]) => ({ unit, balance: toM(bal) }))
-      .sort((a, b) => b.balance - a.balance);
-    loanPortfolio = { grossPortfolio, activeBorrowers, overdueBalance, overdueBorrowers, parPct, portfolioByUnit };
-  } catch (e) {
-    console.warn('  Loan portfolio not loaded:', e.message);
-  }
-
   const lending = {
     disbursementsYTD,
-    monthlyDisburse: { labels, data: labels.map((_, i) => toM(disbByMonth[i])) },
-    ...(loanPortfolio ? { loanPortfolio } : {})
+    monthlyDisburse: { labels, data: labels.map((_, i) => toM(disbByMonth[i])) }
   };
 
   return {
