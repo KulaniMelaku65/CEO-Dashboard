@@ -9,6 +9,7 @@ scripts/snapshot/.env
 # Runtime data (SQLite DB + local archive copies)
 data/*
 !data/.gitkeep
+!data/archives/
 
 # Build output
 frontend/dist/
