@@ -14,7 +14,11 @@ export default function LoanOps({ data }) {
     Amount: monthly.data?.[i] || 0,
   }))
 
-  const portfolioByUnit = lp?.portfolioByUnit || []
+  const dims = data.dimensionNames || {}
+  const portfolioByUnit = (lp?.portfolioByUnit || []).map(d => ({
+    ...d,
+    name: dims[d.unit] || d.unit
+  }))
 
   return (
     <div className="space-y-6">
@@ -82,14 +86,14 @@ export default function LoanOps({ data }) {
         {/* Portfolio by unit */}
         {portfolioByUnit.length > 0 && (
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-4">Portfolio by Unit (ETB)</h3>
+            <h3 className="text-sm font-bold text-navy mb-4">Disbursements by Bank (ETB)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={portfolioByUnit} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
                 <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="unit" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={72} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={110} />
                 <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-                <Bar dataKey="amount" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={18} />
+                <Bar dataKey="balance" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>

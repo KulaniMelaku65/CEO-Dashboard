@@ -10,7 +10,7 @@ const BANK_COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#F5
 export default function Overview({ data }) {
   const lines   = data.budgetActual?.lines || []
   const rev     = lines.find(l => l.name === 'Revenue')
-  const gp      = lines.find(l => l.name === 'GP')
+  const gp      = lines.find(l => l.name === 'Gross Profit')
   const ebitda  = lines.find(l => l.name === 'EBITDA')
   const lp      = data.lending?.loanPortfolio
   const monthly = data.budgetOverview?.monthly

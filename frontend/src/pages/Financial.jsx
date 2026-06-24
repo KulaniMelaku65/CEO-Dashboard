@@ -275,7 +275,7 @@ export default function Financial({ data }) {
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-navy">Income Statement</h3>
-          <span className="text-xs text-muted font-medium">YTD · amounts in ETB millions</span>
+          <span className="text-xs text-muted font-medium">YTD · amounts in ETB (M = millions, B = billions)</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
