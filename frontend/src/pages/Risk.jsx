@@ -74,16 +74,16 @@ export default function Risk({ data }) {
                   unit: '%',
                 },
               ].map(ind => {
-                const barW = Math.min((ind.value / ind.max) * 100, 100)
-                const bad  = ind.value > ind.threshold
+                const barW  = ind.value != null ? Math.min((ind.value / ind.max) * 100, 100) : 0
+                const bad   = ind.value != null && ind.value > ind.threshold
                 const color = bad ? '#E5544B' : '#2EBD85'
                 return (
                   <div key={ind.label}>
                     <div className="flex justify-between text-xs font-semibold mb-2">
                       <span className="text-navy">{ind.label}</span>
                       <span style={{ color }}>
-                        {ind.value.toFixed(2)}{ind.unit}
-                        &nbsp;{bad ? '⚠ Above threshold' : '✓ Within limits'}
+                        {ind.value != null ? ind.value.toFixed(2) + ind.unit : '—'}
+                        &nbsp;{ind.value != null ? (bad ? '⚠ Above threshold' : '✓ Within limits') : 'No data'}
                       </span>
                     </div>
                     <div className="relative h-3 rounded-full overflow-hidden bg-bg">

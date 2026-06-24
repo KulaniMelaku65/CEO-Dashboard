@@ -1,11 +1,10 @@
+// All snapshot values are stored in ETB millions (via toM). Scale: ≥1000M → B, else → M.
 export const fmtETB = (n, dec = 1) => {
   if (n == null || isNaN(n)) return '—'
   const v = Number(n)
   const abs = Math.abs(v)
-  if (abs >= 1e9) return (v / 1e9).toFixed(dec) + 'B'
-  if (abs >= 1e6) return (v / 1e6).toFixed(dec) + 'M'
-  if (abs >= 1e3) return (v / 1e3).toFixed(dec) + 'K'
-  return v.toFixed(0)
+  if (abs >= 1000) return (v / 1000).toFixed(dec) + 'B'
+  return v.toFixed(dec) + 'M'
 }
 
 export const fmtPct = (n, dec = 1) =>

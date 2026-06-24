@@ -26,7 +26,8 @@ export default function ChatBot({ data }) {
 Current data snapshot: ${JSON.stringify(data).slice(0, 4000)}`
       const r = await ai.chat([{ role: 'system', content: system }, ...next])
       const j = await r.json()
-      setMessages(m => [...m, { role: 'assistant', content: j.reply || j.error || 'No response.' }])
+      const reply = j.choices?.[0]?.message?.content || j.error || 'No response.'
+      setMessages(m => [...m, { role: 'assistant', content: reply }])
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'Connection error — is the backend running?' }])
     } finally {
