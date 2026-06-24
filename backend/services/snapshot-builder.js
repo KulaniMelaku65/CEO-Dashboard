@@ -1,5 +1,21 @@
 const { bc } = require('./bc-client');
 
+const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
+
+async function fetchSuperset(chartId) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(`${SUPERSET_BASE}/api/v1/chart/${chartId}/data/`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.result?.[0]?.data || null;
+  } catch {
+    return null;
+  }
+}
+
 const CONFIG = {
   BUDGET_NAME: process.env.BC_BUDGET_NAME || '20.1',
   FY_START:    process.env.BC_FY_START    || '2026-01-01',
@@ -324,6 +340,49 @@ async function buildSnapshot(targetDate) {
     monthlyDisburse: { labels, data: labels.map((_, i) => toM(disbByMonth[i])) }
   };
 
+  // Superset charts — fetched daily alongside BC, stored in SQLite
+  const [c1, c10, c15, c19, c23, c27, c29, c37, c38] = await Promise.all([
+    fetchSuperset(1),  fetchSuperset(10), fetchSuperset(15), fetchSuperset(19),
+    fetchSuperset(23), fetchSuperset(27), fetchSuperset(29), fetchSuperset(37), fetchSuperset(38)
+  ]);
+  console.log(`  Superset: ${[c1,c10,c15,c19,c23,c27,c29,c37,c38].filter(Boolean).length}/9 charts loaded`);
+
+  const safeM = v => v != null ? toM(v) : null;
+
+  const capDepSS = c38?.[0] ? {
+    committed: safeM(c38[0]['Committed Amount']),
+    deployed:  safeM(c38[0]['Deployed Amount']),
+    undrawn:   safeM(c38[0]['Undrawn Amount']),
+  } : null;
+  const opIncomeSS = safeM(c23?.[0]?.['SUM(total_operating_income::NUMERIC)'] ?? null);
+
+  const loanOps = {
+    disbYTD:           safeM(c15?.[0]?.['SUM(approved_amount::NUMERIC)'] ?? null),
+    disbYest:          safeM(c19?.[0]?.['SUM(approved_amount::NUMERIC)'] ?? null),
+    kifiyaShare:       safeM(c29?.[0]?.['SUM(total_kifiya_share::NUMERIC)'] ?? null),
+    opIncome:          opIncomeSS,
+    capitalDeployment: capDepSS,
+    cashflowProjection: (c37 || []).map(row => ({
+      label:  new Date(row.projection_month).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      Amount: safeM(row['Projected Cashflow'])
+    }))
+  };
+
+  const rarRaw = c1?.[0] ? (Object.values(c1[0])[0] ?? null) : null;
+  const risk = {
+    riskAdjRevenueLTM:  safeM(rarRaw),
+    riskAdjRevenueYTD:  (c10 || [])
+      .filter(r => r.maturity_date != null)
+      .sort((a, b) => new Date(a.maturity_date) - new Date(b.maturity_date))
+      .map(r => ({
+        label:   new Date(r.maturity_date).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+        Revenue: safeM(r.Revenue)
+      })),
+    netProfitBeforeTax: safeM(c27?.[0]?.['SUM(net_profit_before_tax::NUMERIC)'] ?? null),
+    opIncome:           opIncomeSS,
+    capitalDeployment:  capDepSS,
+  };
+
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
@@ -332,6 +391,8 @@ async function buildSnapshot(targetDate) {
     reports,
     hr,
     lending,
+    loanOps,
+    risk,
     dimensionNames
   };
 }

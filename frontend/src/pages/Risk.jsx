@@ -1,60 +1,29 @@
-import { useState, useEffect } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts'
 import KpiCard from '../components/KpiCard.jsx'
-import { fmtETB, fmtPct } from '../lib/fmt.js'
-import { superset } from '../lib/api.js'
-
-const toM = v => v != null ? Math.round(v / 1e6 * 10) / 10 : null
-
-function useChart(id) {
-  const [data, setData]       = useState(null)
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    superset.chart(id)
-      .then(r => r.ok ? r.json() : null)
-      .then(j => setData(j?.result?.[0]?.data || null))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
-  }, [id])
-  return { data, loading }
-}
-
-const RAR_KEY = '(SUM(interest_collected::NUMERIC) + SUM(penality_collected::NUMERIC) + SUM(access_fee::NUMERIC)\n\n) \n\n- \nSUM(\n    outstanding_principal::NUMERIC * CASE \n        WHEN (CURRENT_DATE - DATE(maturity_date)) > 360 THEN 1.0\n        WHEN (CURRENT_DATE - DATE(maturity_date)) BETWEEN 180 AND 360 THEN 0.5\n        WHEN (CURRENT_DATE - DATE(maturity_date)) BETWEEN 90 AND 179 THEN 0.2\n        WHEN (CURRENT_DATE - DATE(maturity_date)) BETWEEN 31 AND 89 THEN 0.03\n        WHEN (CURRENT_DATE - DATE(maturity_date)) BETWEEN 0 AND 30 THEN 0.01\n        ELSE 0 -- For loans not yet due (Current)\n    END\n)'
+import { fmtETB } from '../lib/fmt.js'
 
 export default function Risk({ data: snapData }) {
-  const { data: riskAdjLTM }  = useChart(1)   // LTM Risk-Adjusted Revenue
-  const { data: riskAdjYTD }  = useChart(10)  // YTD Risk-Adjusted Revenue (by maturity date)
-  const { data: capitalDep }  = useChart(38)  // Capital Deployment
-  const { data: netProfit }   = useChart(27)  // Net Profit Before Tax
-  const { data: opIncome }    = useChart(23)  // Total Operating Income
+  const ss = snapData.risk || {}
+
+  const rarLTM     = ss.riskAdjRevenueLTM
+  const netProfVal = ss.netProfitBeforeTax
+  const opIncVal   = ss.opIncome
+  const rarTrend   = ss.riskAdjRevenueYTD || []
+
+  const capDep    = ss.capitalDeployment
+  const committed = capDep?.committed
+  const deployed  = capDep?.deployed
+  const undrawn   = capDep?.undrawn
+  const deployPct = committed ? (deployed / committed * 100) : null
 
   const bankDaily = snapData.cashflow?.bankDaily
   const bankData  = (bankDaily?.labels || []).map((label, i) => ({
     label,
     Balance: bankDaily.balances?.[i] || 0,
   }))
-
-  const rarLTM     = riskAdjLTM?.[0]?.[RAR_KEY]
-  const netProfVal = netProfit?.[0]?.['SUM(net_profit_before_tax::NUMERIC)']
-  const opIncVal   = opIncome?.[0]?.['SUM(total_operating_income::NUMERIC)']
-
-  const capDep    = capitalDep?.[0]
-  const committed = capDep?.['Committed Amount']
-  const deployed  = capDep?.['Deployed Amount']
-  const undrawn   = capDep?.['Undrawn Amount']
-  const deployPct = committed ? (deployed / committed * 100) : null
-
-  // YTD risk-adjusted revenue trend (Chart 10 returns rows by maturity_date bucket)
-  const rarTrend = (riskAdjYTD || [])
-    .filter(r => r.maturity_date != null)
-    .map(r => ({
-      label: new Date(r.maturity_date).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
-      Revenue: toM(r.Revenue)
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label))
 
   return (
     <div className="space-y-6">
@@ -67,26 +36,26 @@ export default function Risk({ data: snapData }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           label="Risk-Adj. Revenue (LTM)"
-          value={rarLTM != null ? `ETB ${fmtETB(toM(rarLTM))}` : '—'}
+          value={rarLTM != null ? `ETB ${fmtETB(rarLTM)}` : '—'}
           sub="Last 12 months"
           trend={rarLTM != null ? (rarLTM > 0 ? 'up' : 'down') : null}
           accent={rarLTM != null ? (rarLTM > 0 ? '#2EBD85' : '#E5544B') : undefined}
         />
         <KpiCard
           label="Net Profit Before Tax"
-          value={netProfVal != null ? `ETB ${fmtETB(toM(netProfVal))}` : '—'}
+          value={netProfVal != null ? `ETB ${fmtETB(netProfVal)}` : '—'}
           sub="YTD"
           trend={netProfVal != null ? (netProfVal > 0 ? 'up' : 'down') : null}
         />
         <KpiCard
           label="Total Operating Income"
-          value={opIncVal != null ? `ETB ${fmtETB(toM(opIncVal))}` : '—'}
+          value={opIncVal != null ? `ETB ${fmtETB(opIncVal)}` : '—'}
           sub="YTD"
           trend="up"
         />
         <KpiCard
           label="Capital Deployed"
-          value={deployed != null ? `ETB ${fmtETB(toM(deployed))}` : '—'}
+          value={deployed != null ? `ETB ${fmtETB(deployed)}` : '—'}
           sub={deployPct != null ? `${deployPct.toFixed(1)}% of committed` : 'of committed capital'}
           trend="up"
         />
@@ -100,9 +69,9 @@ export default function Risk({ data: snapData }) {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart
                 data={[
-                  { name: 'Committed', value: toM(committed) },
-                  { name: 'Deployed',  value: toM(deployed)  },
-                  { name: 'Undrawn',   value: toM(undrawn)   },
+                  { name: 'Committed', value: committed },
+                  { name: 'Deployed',  value: deployed  },
+                  { name: 'Undrawn',   value: undrawn   },
                 ]}
                 margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
               >
