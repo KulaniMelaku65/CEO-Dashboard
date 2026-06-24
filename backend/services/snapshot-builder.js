@@ -127,13 +127,14 @@ async function buildSnapshot(targetDate) {
   const curM = lm;
   const prvM = curM > 0 ? curM - 1 : null;
 
-  // Monthly metric helpers — revenue accounts are credits (stored negative), negate for display
-  const mRev  = i => toM(-revM[i]);
-  const mCos  = i => toM(cosM[i]);
-  const mGP   = i => toM(-revM[i] - cosM[i]);
-  const mOpex = i => toM(salM[i] + opM[i]);
-  const mEB   = i => toM(-revM[i] - cosM[i] - salM[i] - opM[i]);
-  const mNet  = i => toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]);
+  // Monthly metric helpers — null when no revenue data for that month (guards against old archives)
+  const hasData = i => revM[i] !== 0;
+  const mRev  = i => hasData(i) ? toM(-revM[i]) : null;
+  const mCos  = i => hasData(i) ? toM(cosM[i]) : null;
+  const mGP   = i => hasData(i) ? toM(-revM[i] - cosM[i]) : null;
+  const mOpex = i => hasData(i) ? toM(salM[i] + opM[i]) : null;
+  const mEB   = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i]) : null;
+  const mNet  = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]) : null;
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
   const mEBMgn = i => mRev(i) ? parseFloat((mEB(i) / mRev(i) * 100).toFixed(1)) : null;
 

@@ -92,15 +92,18 @@ export default function Reports({ data }) {
                 {management.map((row, i) => {
                   const vs  = parseFloat(row.vsBudget)
                   const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
-                  const fmt = (v) => row.isPercent
+                  const fmtMth = (v) => row.isPercent
+                    ? (v != null && v !== 0 ? `${v.toFixed(1)}%` : '—')
+                    : (v  != null && v !== 0 ? `ETB ${fmtETB(v)}` : '—')
+                  const fmtYtd = (v) => row.isPercent
                     ? (v != null ? `${v.toFixed(1)}%` : '—')
                     : (v  != null ? `ETB ${fmtETB(v)}` : '—')
                   return (
                     <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
                       <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmt(row.month)}</td>
-                      <td className="px-5 py-3 text-right text-muted font-medium">{fmt(row.last)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmt(row.ytd)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtMth(row.month)}</td>
+                      <td className="px-5 py-3 text-right text-muted font-medium">{fmtMth(row.last)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtYtd(row.ytd)}</td>
                       <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>
                         {isNaN(vs) ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)}%`}
                       </td>
