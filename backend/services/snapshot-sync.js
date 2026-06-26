@@ -28,11 +28,8 @@ function persistSnapshot(date, data) {
   saveArchive(date, data);
 }
 
-/** Fetch from BC and store snapshot for the given date (defaults to today). */
+/** Fetch from BC (if configured) and Superset, then store snapshot for the given date (defaults to today). */
 async function syncSnapshot(date) {
-  if (!isBcConfigured())
-    throw new Error('Business Central not configured in backend/.env');
-
   const targetDate = date || new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))
     throw new Error('Invalid date — use YYYY-MM-DD.');
