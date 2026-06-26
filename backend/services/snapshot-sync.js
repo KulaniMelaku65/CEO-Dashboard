@@ -42,6 +42,21 @@ async function syncSnapshot(date) {
 
   try {
     const data = await buildSnapshot(targetDate);
+
+    // When BC is unavailable, preserve BC-sourced fields from the most recent prior snapshot
+    // so that a Superset-only sync does not wipe the financial/HR data.
+    if (!isBcConfigured()) {
+      const prev = db.prepare(
+        'SELECT snapshot_date, data FROM snapshots WHERE snapshot_date < ? ORDER BY snapshot_date DESC LIMIT 1'
+      ).get(targetDate);
+      if (prev) {
+        const p = JSON.parse(prev.data);
+        const BC_KEYS = ['budgetActual', 'budgetOverview', 'cashflow', 'reports', 'hr', 'lending', 'dimensionNames'];
+        BC_KEYS.forEach(k => { if (p[k]) data[k] = p[k]; });
+        console.log(`[sync] BC not configured — carried forward BC fields from ${prev.snapshot_date}`);
+      }
+    }
+
     persistSnapshot(targetDate, data);
 
     const L = data.budgetActual.lines;
