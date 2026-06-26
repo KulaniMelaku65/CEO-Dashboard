@@ -1,11 +1,11 @@
-const { bc } = require('./bc-client');
+const { bc, isBcConfigured } = require('./bc-client');
 
 const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 
 async function fetchSuperset(chartId) {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 15000);
+    const t = setTimeout(() => ctrl.abort(), 45000);
     const r = await fetch(`${SUPERSET_BASE}/api/v1/chart/${chartId}/data/`, { signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return null;
@@ -63,11 +63,18 @@ async function buildSnapshot(targetDate) {
     : `?$filter=postingDate ge ${CONFIG.FY_START}`;
   const budF = `?$filter=budgetName eq '${encodeURIComponent(CONFIG.BUDGET_NAME)}'`;
 
-  const actuals = await bc('KFT_GL_Actuals', fy);
-  const budgets = await bc('KFT_GL_Budget', budF);
-  console.log(`  BC: actuals ${actuals.length} rows, budget ${budgets.length} rows`);
-  if (actuals.length === 0) console.warn('  WARNING: 0 actual rows — check FY_START / postingDate filter.');
-  if (budgets.length === 0) console.warn(`  WARNING: 0 budget rows — check BUDGET_NAME='${CONFIG.BUDGET_NAME}'.`);
+  const bcAvail = isBcConfigured();
+
+  let actuals = [], budgets = [];
+  if (bcAvail) {
+    actuals = await bc('KFT_GL_Actuals', fy);
+    budgets = await bc('KFT_GL_Budget', budF);
+    console.log(`  BC: actuals ${actuals.length} rows, budget ${budgets.length} rows`);
+    if (actuals.length === 0) console.warn('  WARNING: 0 actual rows — check FY_START / postingDate filter.');
+    if (budgets.length === 0) console.warn(`  WARNING: 0 budget rows — check BUDGET_NAME='${CONFIG.BUDGET_NAME}'.`);
+  } else {
+    console.warn('  BC not configured — skipping BC data, Superset-only snapshot');
+  }
 
   const A = k => sumRange(actuals, k);
   const B = k => sumRange(budgets, k);
@@ -196,7 +203,7 @@ async function buildSnapshot(targetDate) {
   const capexOut    = Math.abs(A('wip'));
   const operatingOut = Math.abs(cosA) + Math.abs(totOpexA);
 
-  const bank = await bc('KFT_Bank_Ledger', fy);
+  const bank = bcAvail ? await bc('KFT_Bank_Ledger', fy) : [];
   bank.sort((a, b) => new Date(a.postingDate) - new Date(b.postingDate));
 
   const collByMonth = Array(12).fill(0);
@@ -244,13 +251,13 @@ async function buildSnapshot(targetDate) {
 
   let bsRows;
   if (IS_HISTORICAL) {
-    const glE = await bc('KFT_GL_Entries',
-      `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`);
+    const glE = bcAvail ? await bc('KFT_GL_Entries',
+      `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`) : [];
     const bsMap = {};
     glE.forEach(e => { const k = String(e.accountNo); bsMap[k] = (bsMap[k] || 0) + num(e.amount); });
     bsRows = Object.entries(bsMap).map(([accountNo, balance]) => ({ accountNo, balance }));
   } else {
-    bsRows = await bc('KFT_GL_Balances');
+    bsRows = bcAvail ? await bc('KFT_GL_Balances') : [];
   }
   const G = k => bsRows
     .filter(x => inRange(String(x.accountNo), CONFIG.ranges[k]))
@@ -280,7 +287,7 @@ async function buildSnapshot(targetDate) {
     ]
   };
 
-  const employees = await bc('GetEmployee');
+  const employees = bcAvail ? await bc('GetEmployee') : [];
   const hrByStatus = {}, hrByType = {}, hrByGender = {};
 
   if (IS_HISTORICAL) {
@@ -294,7 +301,7 @@ async function buildSnapshot(targetDate) {
       const t = e.employeeType || 'Unknown'; hrByType[t] = (hrByType[t] || 0) + 1;
       const g = e.gender || 'Unknown';       hrByGender[g] = (hrByGender[g] || 0) + 1;
     });
-    const empHist = await bc('KFT_Employment_History');
+    const empHist = bcAvail ? await bc('KFT_Employment_History') : [];
     const NULL_DATE = '0001-01-01';
     const addedBack = new Set();
     empHist.forEach(e => {
