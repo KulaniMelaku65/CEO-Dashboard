@@ -1,9 +1,11 @@
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts'
 import KpiCard from '../components/KpiCard.jsx'
 import { fmtETB } from '../lib/fmt.js'
+
+const BANK_COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#F5A870', '#6B7C93']
 
 export default function LoanOps({ data: snapData }) {
   const ss = snapData.loanOps || {}
@@ -12,6 +14,7 @@ export default function LoanOps({ data: snapData }) {
   const disbYestVal    = ss.disbYest
   const kifiyaShareVal = ss.kifiyaShare
   const opIncomeVal    = ss.opIncome
+  const avgLoanSize    = ss.avgLoanSize
 
   const capDep    = ss.capitalDeployment
   const committed = capDep?.committed
@@ -19,13 +22,10 @@ export default function LoanOps({ data: snapData }) {
   const undrawn   = capDep?.undrawn
   const deployPct = committed ? (deployed / committed * 100) : null
 
-  const cashflowData = ss.cashflowProjection || []
-
-  const monthly     = snapData.lending?.monthlyDisburse
-  const monthlyData = (monthly?.labels || []).map((label, i) => ({
-    label,
-    Amount: monthly.data?.[i] || 0,
-  }))
+  const cashflowData     = ss.cashflowProjection || []
+  const kifiyaMonthly    = ss.kifiyaMonthly || []
+  const disbByBank       = ss.disbByBank || []
+  const weeklyDisbTrend  = ss.weeklyDisbTrend || []
 
   return (
     <div className="space-y-6">
@@ -35,7 +35,7 @@ export default function LoanOps({ data: snapData }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard
           label="Disbursements YTD"
           value={disbYTDVal != null ? `ETB ${fmtETB(disbYTDVal)}` : '—'}
@@ -49,15 +49,20 @@ export default function LoanOps({ data: snapData }) {
           trend="up"
         />
         <KpiCard
+          label="Kifiya Share YTD"
+          value={kifiyaShareVal != null ? `ETB ${fmtETB(kifiyaShareVal)}` : '—'}
+          sub="Total Kifiya share"
+          trend="up"
+        />
+        <KpiCard
           label="Total Operating Income"
           value={opIncomeVal != null ? `ETB ${fmtETB(opIncomeVal)}` : '—'}
           sub="YTD"
         />
         <KpiCard
-          label="Kifiya Share"
-          value={kifiyaShareVal != null ? `ETB ${fmtETB(kifiyaShareVal)}` : '—'}
-          sub="Total Kifiya share"
-          trend="up"
+          label="Avg Loan Size"
+          value={avgLoanSize != null ? `ETB ${avgLoanSize.toLocaleString()}` : '—'}
+          sub="Per loan · all banks"
         />
       </div>
 
@@ -93,25 +98,56 @@ export default function LoanOps({ data: snapData }) {
         </div>
       )}
 
+      {/* Disbursements by Partner Bank */}
+      {disbByBank.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <h3 className="text-sm font-bold text-navy mb-1">Disbursements by Partner Bank — YTD (ETB)</h3>
+          <p className="text-[10px] text-muted font-medium mb-3">FY 2026 · all banks · from Superset</p>
+          <ResponsiveContainer width="100%" height={Math.max(180, disbByBank.length * 36)}>
+            <BarChart data={disbByBank} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={80} />
+              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <Bar dataKey="Amount" radius={[0, 4, 4, 0]} maxBarSize={24}>
+                {disbByBank.map((_, i) => <Cell key={i} fill={BANK_COLORS[i % BANK_COLORS.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Monthly Disbursements from BC */}
-        {monthlyData.length > 0 && (
+        {/* Monthly Kifiya Share from Superset */}
+        {kifiyaMonthly.length > 0 && (
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-4">Monthly Disbursements — BC (ETB)</h3>
+            <h3 className="text-sm font-bold text-navy mb-1">Monthly Kifiya Share — Superset (ETB)</h3>
+            <p className="text-[10px] text-muted font-medium mb-3">YTD 2026 · {kifiyaMonthly[0]?.label} – {kifiyaMonthly[kifiyaMonthly.length - 1]?.label}</p>
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={monthlyData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="disbGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#EB7D23" stopOpacity={0.18} />
-                    <stop offset="95%" stopColor="#EB7D23" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={kifiyaMonthly} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={50} />
                 <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-                <Area type="monotone" dataKey="Amount" stroke="#EB7D23" strokeWidth={2.5} fill="url(#disbGrad)" dot={{ fill: '#EB7D23', r: 3.5, strokeWidth: 0 }} />
-              </AreaChart>
+                <Bar dataKey="Amount" fill="#EB7D23" radius={[4, 4, 0, 0]} maxBarSize={32} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Weekly Disbursement Trend */}
+        {weeklyDisbTrend.length > 0 && (
+          <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+            <h3 className="text-sm font-bold text-navy mb-1">Weekly Disbursement Trend (ETB)</h3>
+            <p className="text-[10px] text-muted font-medium mb-3">Real-time · {weeklyDisbTrend[0]?.label} – {weeklyDisbTrend[weeklyDisbTrend.length - 1]?.label}</p>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={weeklyDisbTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={50} />
+                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+                <Bar dataKey="Amount" fill="#02404F" radius={[4, 4, 0, 0]} maxBarSize={32} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         )}

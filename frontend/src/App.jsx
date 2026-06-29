@@ -14,13 +14,13 @@ import Risk from './pages/Risk.jsx'
 import Reports from './pages/Reports.jsx'
 
 export const SLIDES = [
-  { id: 'overview',     label: 'Overview',              Page: Overview },
+  { id: 'overview',     label: 'Executive Overview',    Page: Overview },
   { id: 'financial',    label: 'Financial Performance', Page: Financial },
-  { id: 'lending',      label: 'Loan Operations',       Page: LoanOps },
-  { id: 'collections',  label: 'Receivables',           Page: Collections },
-  { id: 'hr',           label: 'People & HR',           Page: HR },
+  { id: 'lending',      label: 'Lending Ecosystem',     Page: LoanOps },
+  { id: 'collections',  label: 'Collections & Revenue', Page: Collections },
   { id: 'risk',         label: 'Risk & Portfolio',      Page: Risk },
-  { id: 'reports',      label: 'Reports',               Page: Reports },
+  { id: 'hr',           label: 'People & Operations',   Page: HR },
+  { id: 'reports',      label: 'Reports & Insights',    Page: Reports },
 ]
 
 const SLIDE_MS = 12000
