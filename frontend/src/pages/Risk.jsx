@@ -8,10 +8,12 @@ import { fmtETB } from '../lib/fmt.js'
 export default function Risk({ data: snapData }) {
   const ss = snapData.risk || {}
 
-  const rarLTM     = ss.riskAdjRevenueLTM
-  const netProfVal = ss.netProfitBeforeTax
-  const opIncVal   = ss.opIncome
-  const rarTrend   = ss.riskAdjRevenueYTD || []
+  const rarLTM      = ss.riskAdjRevenueLTM
+  const netProfVal  = ss.netProfitBeforeTax
+  const opIncVal    = ss.opIncome
+  const rarTrend    = ss.riskAdjRevenueYTD || []
+  const provTrend   = ss.provisionTrend || []
+  const provPct     = ss.provisionPct
 
   const capDep    = ss.capitalDeployment
   const committed = capDep?.committed
@@ -33,7 +35,7 @@ export default function Risk({ data: snapData }) {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard
           label="Risk-Adj. Revenue (LTM)"
           value={rarLTM != null ? `ETB ${fmtETB(rarLTM)}` : '—'}
@@ -58,6 +60,13 @@ export default function Risk({ data: snapData }) {
           value={deployed != null ? `ETB ${fmtETB(deployed)}` : '—'}
           sub={deployPct != null ? `${deployPct.toFixed(1)}% of committed` : 'of committed capital'}
           trend="up"
+        />
+        <KpiCard
+          label="Provision Rate"
+          value={provPct != null ? `${provPct}%` : '—'}
+          sub="Latest month · provision / revenue"
+          trend={provPct != null ? (provPct > 10 ? 'down' : 'up') : null}
+          accent={provPct != null ? (provPct > 10 ? '#E5544B' : provPct > 5 ? '#EB7D23' : '#2EBD85') : undefined}
         />
       </div>
 
@@ -111,6 +120,29 @@ export default function Risk({ data: snapData }) {
           </div>
         )}
       </div>
+
+      {/* Monthly Provision Trend */}
+      {provTrend.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <h3 className="text-sm font-bold text-navy mb-1">Monthly Provision Rate (%) — Credit Risk Indicator</h3>
+          <p className="text-[10px] text-muted font-medium mb-3">Provision ÷ Revenue · FY 2026 · from Superset · lower is better</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={provTrend} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="provGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#E5544B" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#E5544B" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={40} />
+              <Tooltip formatter={(v, n) => [n === 'ProvPct' ? `${v}%` : `ETB ${fmtETB(v, 2)}`, n === 'ProvPct' ? 'Provision %' : n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <Area type="monotone" dataKey="ProvPct" stroke="#E5544B" strokeWidth={2.5} fill="url(#provGrad)" dot={{ fill: '#E5544B', r: 3.5, strokeWidth: 0 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Daily cash balance from BC */}
       {bankData.length > 0 && (

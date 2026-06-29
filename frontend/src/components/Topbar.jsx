@@ -14,8 +14,9 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
     snapshots.dates()
       .then(r => r.ok ? r.json() : [])
       .then(d => {
-        setDates(d)
-        if (d.length) setSelYear(new Date(d[0] + 'T12:00:00').getFullYear())
+        const filtered = d.filter(date => date >= '2026-01-01')
+        setDates(filtered)
+        if (filtered.length) setSelYear(new Date(filtered[0] + 'T12:00:00').getFullYear())
       })
       .catch(() => {})
   }, [])

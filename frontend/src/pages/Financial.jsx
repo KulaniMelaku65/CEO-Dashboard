@@ -60,10 +60,11 @@ function FinKpi({ line, selected, onClick }) {
 }
 
 export default function Financial({ data }) {
-  const lines       = data.budgetActual?.lines || []
-  const monthly     = data.budgetOverview?.monthly
-  const utilization = data.budgetOverview?.utilizationYTD || []
-  const dimNames    = data.dimensionNames || {}
+  const lines          = data.budgetActual?.lines || []
+  const monthly        = data.budgetOverview?.monthly
+  const utilization    = data.budgetOverview?.utilizationYTD || []
+  const dimNames       = data.dimensionNames || {}
+  const revenueByBank  = data.financialSS?.revenueByBank || []
 
   const [selMonth, setSelMonth] = useState(null)
   const [selLine,  setSelLine]  = useState(null)
@@ -326,6 +327,24 @@ export default function Financial({ data }) {
           </table>
         </div>
       </div>
+
+      {/* Revenue by Partner Bank — Superset */}
+      {revenueByBank.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <h3 className="text-sm font-bold text-navy mb-1">Revenue by Partner Bank — YTD (ETB)</h3>
+          <p className="text-[10px] text-muted font-medium mb-3">FY 2026 · operating income + provision per bank · from Superset</p>
+          <ResponsiveContainer width="100%" height={Math.max(180, revenueByBank.length * 40)}>
+            <BarChart data={revenueByBank} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={80} />
+              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <Bar dataKey="Revenue" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={20} name="Revenue" />
+              <Bar dataKey="Provision" fill="#E5544B" radius={[0, 4, 4, 0]} maxBarSize={20} name="Provision" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   )
 }

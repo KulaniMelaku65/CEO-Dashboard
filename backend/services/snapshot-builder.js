@@ -2,6 +2,19 @@ const { bc, isBcConfigured } = require('./bc-client');
 
 const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 
+// Module-level cache for static BC data (schedule + CoA structure never change per session)
+let _bcStaticCache = null;
+async function getBcStatic() {
+  if (_bcStaticCache) return _bcStaticCache;
+  const [mgtLines, coaEndTotals, coaPostingRows] = await Promise.all([
+    bc('KFT_MGT_RPT_Lines'),
+    bc('Chart_of_Accounts', "?$filter=Account_Type eq 'End-Total'").catch(() => []),
+    bc('Chart_of_Accounts', "?$filter=Account_Type eq 'Posting' and No ge '5000' and No le '9999'").catch(() => [])
+  ]);
+  _bcStaticCache = { mgtLines, coaEndTotals, coaPostingRows };
+  return _bcStaticCache;
+}
+
 async function fetchSuperset(chartId) {
   try {
     const ctrl = new AbortController();
@@ -91,12 +104,136 @@ async function buildSnapshot(targetDate) {
   const ebA = gpA - totOpexA,   ebB = gpB - totOpexB;
   const netA = ebA - daA - finA, netB = ebB - daB - finB;
 
+  // Default hardcoded sets — overwritten below if M-MGT-RPT is reachable.
+  // Note: 6019 is a ROW NUMBER reference in the Gross Profit formula, not a GL account.
+  // MGT_OPEX excludes salaries (MGT_SAL) and office shared services (8341).
+  // The sub-accounts here (e.g. 7011/7014) are posting accounts that roll into
+  // Total CoA accounts (7099, 8199...) referenced by the schedule.
+  let MGT_REV  = new Set(['5013','5014','5015','5016','5017','5018','5019','5020','5021','5022','5023','5024','5025','5026']);
+  let MGT_COS  = new Set(['6011','6013','6014','6015','6016','6051','6052','6053','6054','6055','6056','6057','6058']);
+  let MGT_SAL  = new Set(['8101','8102','8103','8104','8105','8106']);
+  let MGT_OPEX = new Set([
+    '7011','7014',                                    // → 7099 Selling & Distribution
+    '8112',                                           // → 8199 Insurance
+    '8201','8202','8204',                             // → 8219 Repair & Maintenance
+    '8221','8222','8223',                             // → 8239 Travel & Accommodation
+    '8241','8245',                                    // Office Rental, Vehicle Rentals
+    '8261','8262','8263',                             // Consultancy, Audit, Legal
+    '8301','8302',                                    // → 8319 Utilities
+    '8321','8322','8323',                             // Telephone, Software, Tech Subscriptions
+    '8342','8343','8344','8345','8348',               // Staff Cost items
+    '8361',                                           // → 8379 Fuel
+    '8401','8402','8403','8404','8405','8406',        // Other Staff Costs
+    '9013','9016','9017','9025'                       // Parking, Stamp Duty, Penalties, Loading
+  ]);
+
+  if (bcAvail) {
+    try {
+      // Load schedule + CoA from cache (fetched once per process, not per snapshot)
+      const { mgtLines, coaEndTotals, coaPostingRows } = await getBcStatic();
+
+      // Index rows by RowNo for fast lookup (BC returns PascalCase field names)
+      const rowMap = {};
+      mgtLines.forEach(r => { if (r.RowNo) rowMap[r.RowNo] = r; });
+
+      // Extract 4-6 digit account numbers from a Totaling string.
+      // Used for Formula rows that list GL accounts directly (Revenue, COS, Salaries).
+      const extractAccts = t => new Set((t || '').match(/\b\d{4,6}\b/g) || []);
+
+      // All CoA posting accounts (5000-9999). Used as the universe for sub-account
+      // expansion — broader than current-period actuals so early-period snapshots
+      // (with few transactions) still resolve the full account set correctly.
+      const allActualAccts = new Set(actuals.map(x => String(x.accountNo)));
+      const coaPostingAccts = coaPostingRows.length > 0
+        ? new Set(coaPostingRows.map(r => r.No.trim()))
+        : allActualAccts; // fall back to actuals if CoA query failed
+
+      // Build CoA range map from End-Total accounts: No → [lo, hi]
+      // Each End-Total account's Totaling field is "lo..hi" (e.g. "8360..8379").
+      const coaRange = {};
+      coaEndTotals.forEach(r => {
+        const m = (r.Totaling || '').match(/^(\d+)\.\.(\d+)$/);
+        if (m) coaRange[r.No.trim()] = [Number(m[1]), Number(m[2])];
+      });
+
+      // Find all CoA posting accounts that roll up into a CoA End-Total account.
+      // Uses the authoritative range from the Chart of Accounts when available.
+      const findSubAccounts = totalAcct => {
+        const range = coaRange[totalAcct];
+        const n = Number(totalAcct);
+        const lo = range ? range[0] : Math.floor(n / 100) * 100;
+        const hi = range ? range[1] - 1 : n - 1;
+        const result = new Set();
+        for (const a of coaPostingAccts) {
+          const v = Number(a);
+          if (v >= lo && v <= hi) result.add(a);
+        }
+        return result;
+      };
+
+      // Resolve a RowNo to the set of actual GL accounts it represents, minus salSet.
+      // Every token in a Formula row's Totaling is a RowNo (not a GL account number).
+      const resolveRow = (rowNo, salSet, visited = new Set()) => {
+        if (visited.has(rowNo)) return new Set();
+        const visit = new Set(visited); visit.add(rowNo);
+        const row = rowMap[rowNo];
+        if (!row) return new Set();
+        const result = new Set();
+        const tt = row.TotalingType;
+        const totaling = (row.Totaling || '').replace(/[()]/g, '');
+
+        if (tt === 'Posting Accounts') {
+          // Totaling is a direct GL account number
+          if (coaPostingAccts.has(totaling) && !salSet.has(totaling)) result.add(totaling);
+        } else if (tt === 'Total Accounts') {
+          // Totaling is a CoA Total account — expand to posting sub-accounts by range
+          findSubAccounts(totaling).forEach(a => { if (!salSet.has(a)) result.add(a); });
+        } else {
+          // Formula (or unknown) — each digit token is a RowNo; resolve recursively
+          totaling.split(/[+\-*/,]/).map(s => s.trim()).filter(s => /^\d+$/.test(s))
+            .forEach(p => resolveRow(p, salSet, visit).forEach(a => result.add(a)));
+        }
+        return result;
+      };
+
+      // Revenue (RowNo 10000) and COS (RowNo 6019): account numbers listed directly in Totaling
+      if (rowMap['10000']?.Totaling) MGT_REV = extractAccts(rowMap['10000'].Totaling);
+      if (rowMap['6019']?.Totaling)  MGT_COS = extractAccts(rowMap['6019'].Totaling);
+      if (rowMap['1']?.Totaling)     MGT_SAL = extractAccts(rowMap['1'].Totaling);
+
+      // OPEX (RowNo 30000): all tokens in the Totaling are RowNos — resolve via rowMap
+      if (rowMap['30000']?.Totaling) {
+        const expanded = resolveRow('30000', MGT_SAL);
+        if (expanded.size > 5) MGT_OPEX = expanded;
+      }
+
+      console.log(`  M-MGT-RPT: Rev=${MGT_REV.size} accts, COS=${MGT_COS.size} accts, Sal=${MGT_SAL.size} accts, OPEX=${MGT_OPEX.size} accts`);
+    } catch (e) {
+      console.warn('  M-MGT-RPT fetch failed — using hardcoded account sets:', e.message);
+    }
+  }
+
+  const sumAccts = (rows, accts) =>
+    rows.filter(x => accts.has(String(x.accountNo))).reduce((s, x) => s + num(x.amount), 0);
+
+  const mgtRevA     = -sumAccts(actuals, MGT_REV);
+  const mgtCosA     =  sumAccts(actuals, MGT_COS);
+  const mgtGpA      = mgtRevA - mgtCosA;
+  const mgtSalA     =  sumAccts(actuals, MGT_SAL);
+  const mgtOpexA    =  sumAccts(actuals, MGT_OPEX);  // non-salary OPEX, matching M-MGT-RPT
+  const mgtTotOpexA = mgtSalA + mgtOpexA;            // = M-MGT-RPT "Total OPEX"
+  const offSharedA  = actuals.filter(x => String(x.accountNo) === '8341').reduce((s, x) => s + num(x.amount), 0);
+  const mgtEbA      = mgtGpA - mgtTotOpexA - offSharedA;  // = M-MGT-RPT EBITDA
+  const mgtNetA     = mgtEbA - daA - finA;
+  const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
+  const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
+
   const budgetActual = { lines: [
-    { name: 'Revenue',       budget: toM(revB),  actual: toM(revA),  higherIsBetter: true  },
-    { name: 'Cost of Sales', budget: toM(cosB),  actual: toM(cosA),  higherIsBetter: false },
-    { name: 'Expenses',      budget: toM(totOpexB), actual: toM(totOpexA), higherIsBetter: false },
-    { name: 'Gross Profit',  budget: toM(gpB),   actual: toM(gpA),   higherIsBetter: true  },
-    { name: 'EBITDA',        budget: toM(ebB),   actual: toM(ebA),   higherIsBetter: true  }
+    { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
+    { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
+    { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  }
   ]};
 
   const bm = {}, um = {};
@@ -122,15 +259,14 @@ async function buildSnapshot(targetDate) {
     aMonth[new Date(x.postingDate).getMonth()] += num(x.amount); });
   budgets.forEach(x => { if (isPL(String(x.accountNo)) && x.budgetDate)
     bMonth[new Date(x.budgetDate).getMonth()] += num(x.amount); });
+
+  const revBMonth = Array(12).fill(0);
+  budgets.forEach(x => {
+    if (inRange(String(x.accountNo), CONFIG.ranges.revenue) && x.budgetDate)
+      revBMonth[new Date(x.budgetDate).getMonth()] += Math.abs(num(x.amount));
+  });
   const lm = new Date(targetDate + 'T12:00:00').getMonth();
   const labels = mN.slice(0, lm + 1);
-
-  // M-MGT-RPT exact account lists (matches BC account schedule definition)
-  const MGT_REV = new Set(['5013','5014','5015','5016','5017','5018','5019','5020','5021','5022','5023','5024','5025']);
-  const MGT_COS = new Set(['6011','6013','6014','6015','6016','6051','6052','6053','6054','6055','6056','6057']);
-  const MGT_SAL = new Set(['8101','8102','8103','8104','8105','8106']);
-  const sumAccts = (rows, accts) =>
-    rows.filter(x => accts.has(String(x.accountNo))).reduce((s, x) => s + num(x.amount), 0);
 
   // Per-metric monthly arrays using M-MGT-RPT account sets
   const revM = Array(12).fill(0), cosM = Array(12).fill(0);
@@ -161,31 +297,12 @@ async function buildSnapshot(targetDate) {
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
   const mEBMgn = i => mRev(i) ? parseFloat((mEB(i) / mRev(i) * 100).toFixed(1)) : null;
 
-  // YTD using M-MGT-RPT specific accounts
-  const mgtRevA     = -sumAccts(actuals, MGT_REV);
-  const mgtCosA     =  sumAccts(actuals, MGT_COS);
-  const mgtGpA      = mgtRevA - mgtCosA;
-  const mgtSalA     =  sumAccts(actuals, MGT_SAL);
-  const mgtOpexA    = A('opexA') + A('opexB');
-  const mgtTotOpexA = mgtSalA + mgtOpexA;
-  const mgtEbA      = mgtGpA - mgtTotOpexA;
-  const mgtNetA     = mgtEbA - daA - finA;
-  const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
-  const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
-
-  const disbByMonth = Array(12).fill(0);
-  actuals.forEach(x => {
-    const a = String(x.accountNo);
-    if (a >= '6021' && a <= '6022' && x.postingDate)
-      disbByMonth[new Date(x.postingDate).getMonth()] += Math.abs(num(x.amount));
-  });
-
   const budgetOverview = {
     byUnit,
     monthly: {
       labels,
-      budget: labels.map((_, i) => toM(Math.abs(bMonth[i]))),
-      actual: labels.map((_, i) => toM(Math.abs(aMonth[i])))
+      budget: labels.map((_, i) => toM(revBMonth[i])),
+      actual: labels.map((_, i) => mRev(i) ?? 0)
     },
     utilizationYTD
   };
@@ -344,15 +461,18 @@ async function buildSnapshot(targetDate) {
 
   const lending = {
     disbursementsYTD,
-    monthlyDisburse: { labels, data: labels.map((_, i) => toM(disbByMonth[i])) }
   };
 
   // Superset charts — fetched daily alongside BC, stored in SQLite
-  const [c1, c10, c15, c19, c23, c27, c29, c37, c38] = await Promise.all([
-    fetchSuperset(1),  fetchSuperset(10), fetchSuperset(15), fetchSuperset(19),
-    fetchSuperset(23), fetchSuperset(27), fetchSuperset(29), fetchSuperset(37), fetchSuperset(38)
+  const [c1, c10, c15, c19, c23, c27, c29, c36, c37, c38,
+         c53, c89, c95, c104, c106, c107] = await Promise.all([
+    fetchSuperset(1),   fetchSuperset(10),  fetchSuperset(15),  fetchSuperset(19),
+    fetchSuperset(23),  fetchSuperset(27),  fetchSuperset(29),  fetchSuperset(36),
+    fetchSuperset(37),  fetchSuperset(38),
+    fetchSuperset(53),  fetchSuperset(89),  fetchSuperset(95),
+    fetchSuperset(104), fetchSuperset(106), fetchSuperset(107)
   ]);
-  console.log(`  Superset: ${[c1,c10,c15,c19,c23,c27,c29,c37,c38].filter(Boolean).length}/9 charts loaded`);
+  console.log(`  Superset: ${[c1,c10,c15,c19,c23,c27,c29,c36,c37,c38,c53,c89,c95,c104,c106,c107].filter(Boolean).length}/16 charts loaded`);
 
   const safeM = v => v != null ? toM(v) : null;
 
@@ -363,12 +483,98 @@ async function buildSnapshot(targetDate) {
   } : null;
   const opIncomeSS = safeM(c23?.[0]?.['SUM(total_operating_income::NUMERIC)'] ?? null);
 
+  // Monthly Kifiya share from chart 36 — filter to FY 2026 months up to targetDate
+  const fyStartTs  = new Date(CONFIG.FY_START);
+  const targetEndTs = new Date(targetDate + 'T23:59:59');
+  const kifiyaMonthly = (c36 || [])
+    .filter(r => {
+      const d = new Date(r.month);
+      return d >= fyStartTs && d <= targetEndTs && r['Total Kifiya Share'] != null;
+    })
+    .sort((a, b) => a.month - b.month)
+    .map(r => ({
+      label:  new Date(r.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      Amount: safeM(r['Total Kifiya Share'])
+    }));
+
+  // Chart 53 — average loan size in ETB (raw value, not divided by 1M)
+  const avgLoanSize = c53?.[0] != null
+    ? Math.round(Number(c53[0]['AVG(approved_amount::NUMERIC)']))
+    : null;
+
+  // Chart 89 — weekly disbursement trend from realtime_synced_fact (Jan 2026+)
+  const weeklyDisbTrend = (c89 || [])
+    .filter(r => r.disbursement_date != null)
+    .sort((a, b) => new Date(a.disbursement_date) - new Date(b.disbursement_date))
+    .slice(-16)
+    .map(r => ({
+      label:  new Date(r.disbursement_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      Amount: safeM(r['SUM(disbursed_amount::NUMERIC)'])
+    }));
+
+  // Chart 95 — YTD disbursements by partner bank (monthly_financial_reports via synced_fact)
+  const disbByBankMap = {};
+  (c95 || []).forEach(r => {
+    if (!r['Disbursement Month'] || r['Disbursment Amount'] == null) return;
+    const d = new Date(r['Disbursement Month']);
+    if (d >= fyStartTs && d <= targetEndTs) {
+      const b = r.bank_name;
+      disbByBankMap[b] = (disbByBankMap[b] || 0) + Number(r['Disbursment Amount']);
+    }
+  });
+  const disbByBank = Object.entries(disbByBankMap)
+    .map(([bank, total]) => ({ bank, Amount: safeM(total) }))
+    .sort((a, b) => b.Amount - a.Amount);
+
+  // Chart 104 — monthly Revenue + Provision trend
+  const provisionTrend = (c104 || [])
+    .filter(r => {
+      if (!r.month) return false;
+      const d = new Date(r.month);
+      return d >= fyStartTs && d <= targetEndTs;
+    })
+    .sort((a, b) => new Date(a.month) - new Date(b.month))
+    .map(r => ({
+      label:     new Date(r.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      Revenue:   safeM(r['100% revenue']),
+      Provision: safeM(r['Provision amount']),
+      ProvPct:   r['Provision %'] != null ? parseFloat(Number(r['Provision %']).toFixed(1)) : null
+    }));
+
+  // Chart 106 — latest provision % KPI (most recent month ≤ targetDate)
+  const provPctRows = (c106 || [])
+    .filter(r => r.month != null && new Date(r.month) <= targetEndTs)
+    .sort((a, b) => new Date(b.month) - new Date(a.month));
+  const provisionPct = provPctRows[0]?.['Provision %'] != null
+    ? parseFloat(Number(provPctRows[0]['Provision %']).toFixed(1))
+    : null;
+
+  // Chart 107 — YTD revenue + provision by partner bank
+  const revByBankMap = {};
+  (c107 || []).forEach(r => {
+    if (!r['Month'] || r['Revenue'] == null) return;
+    const d = new Date(r['Month']);
+    if (d >= fyStartTs && d <= targetEndTs) {
+      const b = r['Bank Name'];
+      if (!revByBankMap[b]) revByBankMap[b] = { Revenue: 0, Provision: 0 };
+      revByBankMap[b].Revenue   += Number(r['Revenue']   || 0);
+      revByBankMap[b].Provision += Number(r['Provision'] || 0);
+    }
+  });
+  const revenueByBank = Object.entries(revByBankMap)
+    .map(([bank, v]) => ({ bank, Revenue: safeM(v.Revenue), Provision: safeM(v.Provision) }))
+    .sort((a, b) => b.Revenue - a.Revenue);
+
   const loanOps = {
     disbYTD:           safeM(c15?.[0]?.['SUM(approved_amount::NUMERIC)'] ?? null),
     disbYest:          safeM(c19?.[0]?.['SUM(approved_amount::NUMERIC)'] ?? null),
     kifiyaShare:       safeM(c29?.[0]?.['SUM(total_kifiya_share::NUMERIC)'] ?? null),
     opIncome:          opIncomeSS,
     capitalDeployment: capDepSS,
+    kifiyaMonthly,
+    avgLoanSize,
+    weeklyDisbTrend,
+    disbByBank,
     cashflowProjection: (c37 || []).map(row => ({
       label:  new Date(row.projection_month).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
       Amount: safeM(row['Projected Cashflow'])
@@ -388,6 +594,8 @@ async function buildSnapshot(targetDate) {
     netProfitBeforeTax: safeM(c27?.[0]?.['SUM(net_profit_before_tax::NUMERIC)'] ?? null),
     opIncome:           opIncomeSS,
     capitalDeployment:  capDepSS,
+    provisionTrend,
+    provisionPct,
   };
 
   return {
@@ -400,7 +608,8 @@ async function buildSnapshot(targetDate) {
     lending,
     loanOps,
     risk,
-    dimensionNames
+    dimensionNames,
+    financialSS: { revenueByBank }
   };
 }
 
