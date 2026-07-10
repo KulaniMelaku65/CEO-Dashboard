@@ -62,7 +62,7 @@ function FinKpi({ line, selected, onClick }) {
 export default function Financial({ data }) {
   const lines          = data.budgetActual?.lines || []
   const monthly        = data.budgetOverview?.monthly
-  const utilization    = data.budgetOverview?.utilizationYTD || []
+  const utilization    = data.corporateBudget?.byBU || []
   const dimNames       = data.dimensionNames || {}
   const revenueByBank  = data.financialSS?.revenueByBank || []
 
@@ -240,10 +240,10 @@ export default function Financial({ data }) {
           <h3 className="text-sm font-bold text-navy mb-4">Budget Utilization by Business Unit</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
             {utilization
-              .filter(u => u.budget > 0)
-              .sort((a, b) => b.used / b.budget - a.used / a.budget)
+              .filter(u => u.budgetYTD > 0)
+              .sort((a, b) => (b.utilPct || 0) - (a.utilPct || 0))
               .map(u => {
-                const pct   = u.budget ? (u.used / u.budget) * 100 : 0
+                const pct   = u.utilPct || 0
                 const color = pct > 100 ? '#E5544B' : pct > 85 ? '#EB7D23' : '#2EBD85'
                 const name  = getName(u.unit)
                 return (
@@ -262,8 +262,8 @@ export default function Financial({ data }) {
                       />
                     </div>
                     <div className="flex justify-between text-[10px] text-muted mt-1">
-                      <span>Used: ETB {fmtETB(u.used)}</span>
-                      <span>Budget: ETB {fmtETB(u.budget)}</span>
+                      <span>Actual YTD: ETB {fmtETB(u.actualYTD)}</span>
+                      <span>Budget: ETB {fmtETB(u.budgetYTD)}</span>
                     </div>
                   </div>
                 )

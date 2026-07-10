@@ -179,7 +179,7 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
           onClick={onRefresh}
-          title={histDate ? 'Reload snapshot' : 'Sync from Business Central'}
+          title={histDate ? 'Reload snapshot' : 'Sync from Business Central & Superset'}
           className="p-2 rounded-xl hover:bg-bg text-muted hover:text-navy transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

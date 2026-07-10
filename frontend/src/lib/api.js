@@ -34,3 +34,8 @@ export const ai = {
     body: JSON.stringify({ messages })
   })
 }
+
+export const budget = {
+  names: ()     => req('/api/bc/budget-names'),
+  data:  (name) => req(`/api/bc/budget/${encodeURIComponent(name)}`),
+}

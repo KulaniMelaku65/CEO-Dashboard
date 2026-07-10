@@ -9,7 +9,7 @@ const BANK_COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#F5
 
 export default function Collections({ data }) {
   const cf        = data.cashflow || {}
-  const colByBank = cf.collectionsByBank || []
+  const colByBank = data.loanOps?.disbByBank || []
   const monthly   = cf.monthlyCollections
 
   const monthlyData = (monthly?.labels || []).map((label, i) => ({
@@ -17,7 +17,7 @@ export default function Collections({ data }) {
     Collections: monthly.data?.[i] || 0,
   }))
 
-  const total = colByBank.reduce((s, b) => s + b.amount, 0)
+  const total = colByBank.reduce((s, b) => s + (b.Amount || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -48,7 +48,7 @@ export default function Collections({ data }) {
 
       {/* Collections by bank bar chart */}
       <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-        <h3 className="text-sm font-bold text-navy mb-4">Collections by Bank Partner (ETB)</h3>
+        <h3 className="text-sm font-bold text-navy mb-4">Disbursements by Partner Bank — YTD (ETB)</h3>
         {colByBank.length > 0 ? (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={colByBank} margin={{ top: 4, right: 4, left: 0, bottom: 24 }}>
@@ -63,14 +63,14 @@ export default function Collections({ data }) {
                 interval={0}
               />
               <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={50} />
-              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Collections']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-              <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={44}>
+              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Disbursements']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <Bar dataKey="Amount" radius={[4, 4, 0, 0]} maxBarSize={44}>
                 {colByBank.map((_, i) => <Cell key={i} fill={BANK_COLORS[i % BANK_COLORS.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <div className="h-[260px] flex items-center justify-center text-muted text-sm">No collections data yet</div>
+          <div className="h-[260px] flex items-center justify-center text-muted text-sm">No disbursements data yet</div>
         )}
       </div>
 
@@ -112,9 +112,9 @@ export default function Collections({ data }) {
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: BANK_COLORS[i % BANK_COLORS.length] }} />
                       {b.bank}
                     </td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-navy">{fmtETB(b.amount, 2)}</td>
+                    <td className="px-5 py-2.5 text-right font-semibold text-navy">{fmtETB(b.Amount, 2)}</td>
                     <td className="px-5 py-2.5 text-right text-muted font-medium">
-                      {total ? ((b.amount / total) * 100).toFixed(1) : 0}%
+                      {total ? ((b.Amount / total) * 100).toFixed(1) : 0}%
                     </td>
                   </tr>
                 ))}

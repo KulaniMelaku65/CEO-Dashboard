@@ -38,7 +38,7 @@ async function syncSnapshot(date) {
     throw new Error('A sync is already in progress.');
 
   syncInProgress = true;
-  console.log(`[sync] Fetching BC snapshot for ${targetDate}…`);
+  console.log(`[sync] Syncing BC + Superset for ${targetDate}…`);
 
   try {
     const data = await buildSnapshot(targetDate);

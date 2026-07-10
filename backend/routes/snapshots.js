@@ -2,11 +2,32 @@ const router      = require('express').Router();
 const rateLimit   = require('express-rate-limit');
 const db          = require('../db');
 const requireAuth = require('../middleware/auth');
-const { syncSnapshot, getSyncStatus } = require('../services/snapshot-sync');
+const { syncSnapshot, getSyncStatus, persistSnapshot } = require('../services/snapshot-sync');
+
+// POST /api/snapshots — ingest pre-built snapshot from external snapshot.js runner
+// Authenticated via x-service-key header (same key in root .env and backend/.env)
+router.post('/', (req, res) => {
+  const key = req.headers['x-service-key'];
+  if (!key || key !== process.env.SERVICE_KEY)
+    return res.status(403).json({ error: 'Invalid service key.' });
+  const { date, data } = req.body || {};
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return res.status(400).json({ error: 'date (YYYY-MM-DD) is required.' });
+  if (!data || typeof data !== 'object')
+    return res.status(400).json({ error: 'data object is required.' });
+  try {
+    persistSnapshot(date, data);
+    console.log(`[ingest] Snapshot saved for ${date}`);
+    res.json({ ok: true, date });
+  } catch (e) {
+    console.error('[ingest]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 const syncLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 3,
+  max: 20,
   message: { error: 'Too many sync requests — try again in a few minutes.' }
 });
 

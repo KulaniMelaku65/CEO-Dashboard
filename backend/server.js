@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -10,6 +10,7 @@ const authRoutes      = require('./routes/auth');
 const snapshotRoutes  = require('./routes/snapshots');
 const aiRoutes        = require('./routes/ai');
 const supersetRoutes  = require('./routes/superset');
+const bcRoutes        = require('./routes/bc');
 const { startScheduler } = require('./services/scheduler');
 const { runStartup }     = require('./services/startup');
 
@@ -38,6 +39,7 @@ app.use('/api/auth',      authRoutes);
 app.use('/api/snapshots', snapshotRoutes);
 app.use('/api/ai',        aiRoutes);
 app.use('/api/superset',  supersetRoutes);
+app.use('/api/bc',        bcRoutes);
 
 // Serve the built React frontend (run `cd frontend && npm run build` first)
 const distDir = path.join(__dirname, '..', 'frontend', 'dist');

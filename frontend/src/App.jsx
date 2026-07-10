@@ -7,20 +7,28 @@ import SlideProgress from './components/SlideProgress.jsx'
 import ChatBot from './components/ChatBot.jsx'
 import Overview from './pages/Overview.jsx'
 import Financial from './pages/Financial.jsx'
+import BudgetAnalysis from './pages/BudgetAnalysis.jsx'
 import LoanOps from './pages/LoanOps.jsx'
 import Collections from './pages/Collections.jsx'
 import HR from './pages/HR.jsx'
+import EmployeeCost from './pages/EmployeeCost.jsx'
+import EmployeeCostDetail from './pages/EmployeeCostDetail.jsx'
+import EmployeeCostVariance from './pages/EmployeeCostVariance.jsx'
 import Risk from './pages/Risk.jsx'
 import Reports from './pages/Reports.jsx'
 
 export const SLIDES = [
   { id: 'overview',     label: 'Executive Overview',    Page: Overview },
   { id: 'financial',    label: 'Financial Performance', Page: Financial },
+  { id: 'budget',       label: 'Corporate Budget',      Page: BudgetAnalysis },
   { id: 'lending',      label: 'Lending Ecosystem',     Page: LoanOps },
   { id: 'collections',  label: 'Collections & Revenue', Page: Collections },
   { id: 'risk',         label: 'Risk & Portfolio',      Page: Risk },
-  { id: 'hr',           label: 'People & Operations',   Page: HR },
-  { id: 'reports',      label: 'Reports & Insights',    Page: Reports },
+  { id: 'hr',                    label: 'People & Operations', Page: HR },
+  { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
+  { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
+  { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
+  { id: 'reports',               label: 'Reports & Insights',  Page: Reports },
 ]
 
 const SLIDE_MS = 12000

@@ -15,7 +15,7 @@ async function getBcStatic() {
   return _bcStaticCache;
 }
 
-async function fetchSuperset(chartId) {
+async function fetchSuperset(chartId, attempt = 0) {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 45000);
@@ -25,13 +25,18 @@ async function fetchSuperset(chartId) {
     const j = await r.json();
     return j?.result?.[0]?.data || null;
   } catch {
+    if (attempt === 0) {
+      await new Promise(res => setTimeout(res, 3000));
+      return fetchSuperset(chartId, 1);
+    }
     return null;
   }
 }
 
 const CONFIG = {
-  BUDGET_NAME: process.env.BC_BUDGET_NAME || '20.1',
-  FY_START:    process.env.BC_FY_START    || '2026-01-01',
+  BUDGET_NAME:    process.env.BC_BUDGET_NAME    || '20.1',
+  FY_START:       process.env.BC_FY_START       || '2026-01-01',
+  PAYROLL_START:  process.env.BC_PAYROLL_START  || '2025-01-01',
   ranges: {
     revenue:          ['5000', '5999'],
     cosBpass:         ['6010', '6020'],
@@ -222,8 +227,7 @@ async function buildSnapshot(targetDate) {
   const mgtSalA     =  sumAccts(actuals, MGT_SAL);
   const mgtOpexA    =  sumAccts(actuals, MGT_OPEX);  // non-salary OPEX, matching M-MGT-RPT
   const mgtTotOpexA = mgtSalA + mgtOpexA;            // = M-MGT-RPT "Total OPEX"
-  const offSharedA  = actuals.filter(x => String(x.accountNo) === '8341').reduce((s, x) => s + num(x.amount), 0);
-  const mgtEbA      = mgtGpA - mgtTotOpexA - offSharedA;  // = M-MGT-RPT EBITDA
+  const mgtEbA = mgtGpA - mgtTotOpexA;
   const mgtNetA     = mgtEbA - daA - finA;
   const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
   const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
@@ -243,12 +247,12 @@ async function buildSnapshot(targetDate) {
     if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct) ||
         inRange(a, CONFIG.ranges.salaries) || inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) {
       const u = x.globalDim2 || 'Unassigned';
-      um[u] = (um[u] || 0) + Math.abs(num(x.amount));
+      um[u] = (um[u] || 0) + num(x.amount);
     }
   });
   const units = Object.keys(bm).filter(u => bm[u] > 0);
   const byUnit = units.map(u => ({ unit: u, budget: toM(bm[u]) }));
-  const utilizationYTD = units.map(u => ({ unit: u, used: toM(um[u] || 0), budget: toM(bm[u]) }));
+  const utilizationYTD = units.map(u => ({ unit: u, used: toM(Math.abs(um[u] || 0)), budget: toM(bm[u]) }));
 
   const mN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const aMonth = Array(12).fill(0), bMonth = Array(12).fill(0);
@@ -261,10 +265,22 @@ async function buildSnapshot(targetDate) {
     bMonth[new Date(x.budgetDate).getMonth()] += num(x.amount); });
 
   const revBMonth = Array(12).fill(0);
+  const cosBMonth = Array(12).fill(0);
+  const salBMonth = Array(12).fill(0);
+  const opBMonth  = Array(12).fill(0);
   budgets.forEach(x => {
-    if (inRange(String(x.accountNo), CONFIG.ranges.revenue) && x.budgetDate)
-      revBMonth[new Date(x.budgetDate).getMonth()] += Math.abs(num(x.amount));
+    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    if (mi < 0) return;
+    const amt = Math.abs(num(x.amount));
+    const a = String(x.accountNo);
+    if (inRange(a, CONFIG.ranges.revenue)) { revBMonth[mi] += amt; return; }
+    if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { cosBMonth[mi] += amt; return; }
+    if (inRange(a, CONFIG.ranges.salaries)) { salBMonth[mi] += amt; return; }
+    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opBMonth[mi] += amt;
   });
+  const gpBMonth      = revBMonth.map((v, i) => v - cosBMonth[i]);
+  const totOpexBMonth = salBMonth.map((v, i) => v + opBMonth[i]);
+  const ebBMonth      = gpBMonth.map((v, i) => v - totOpexBMonth[i]);
   const lm = new Date(targetDate + 'T12:00:00').getMonth();
   const labels = mN.slice(0, lm + 1);
 
@@ -297,6 +313,31 @@ async function buildSnapshot(targetDate) {
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
   const mEBMgn = i => mRev(i) ? parseFloat((mEB(i) / mRev(i) * 100).toFixed(1)) : null;
 
+  // Cap YTD budget at the last month that has actual postings (avoids comparing
+  // Jan-Jun actuals against Jan-Jul budget when the snapshot date is early in the month)
+  const lastDataM = Array.from({ length: 12 }, (_, i) => i).reverse().find(i => hasData(i)) ?? lm;
+  const ytdSum = arr => arr.slice(0, lastDataM + 1).reduce((s, v) => s + v, 0);
+  const revBYTD     = ytdSum(revBMonth);
+  const cosBYTD     = ytdSum(cosBMonth);
+  const totOpexBYTD = ytdSum(totOpexBMonth);
+  const gpBYTD      = revBYTD - cosBYTD;
+  const ebBYTD      = gpBYTD - totOpexBYTD;
+  budgetActual.lines = [
+    { name: 'Revenue',       budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
+    { name: 'Cost of Sales', budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
+    { name: 'Expenses',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'Gross Profit',  budget: toM(gpBYTD),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'EBITDA',        budget: toM(ebBYTD),      actual: toM(mgtEbA),      higherIsBetter: true  }
+  ];
+
+  budgetActual.monthlyLines = Array(12).fill(null).map((_, i) => [
+    { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev(i),  higherIsBetter: true  },
+    { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos(i),  higherIsBetter: false },
+    { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
+    { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP(i),   higherIsBetter: true  },
+    { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  }
+  ]);
+
   const budgetOverview = {
     byUnit,
     monthly: {
@@ -305,6 +346,102 @@ async function buildSnapshot(targetDate) {
       actual: labels.map((_, i) => mRev(i) ?? 0)
     },
     utilizationYTD
+  };
+
+  // ── Corporate Budget Analysis ──────────────────────────────────────────────
+  const CB_ACCT_LABELS = {
+    '501': 'Revenue',            '603': 'COS - Salaries',
+    '701': 'Selling & Dist.',    '801': 'Salaries & Benefits',
+    '811': 'Insurance',          '820': 'Repair & Maintenance',
+    '822': 'Hotels & Accom.',    '824': 'Rentals & Hires',
+    '826': 'Consultancy',        '830': 'Utilities',
+    '832': 'Telecom',            '836': 'Fuel & Oil',
+    '840': 'Staff Welfare'
+  };
+  const cbBudU = {}, cbActU = {}, cbBudA = {}, cbActA = {};
+
+  budgets.forEach(x => {
+    const u  = x.globalDim2 || 'Unassigned';
+    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    if (mi < 0) return;
+    const amt = Math.abs(num(x.amount));
+    if (!cbBudU[u]) cbBudU[u] = Array(12).fill(0);
+    cbBudU[u][mi] += amt;
+    const pfx = String(x.accountNo).slice(0, 3);
+    if (CB_ACCT_LABELS[pfx]) {
+      if (!cbBudA[pfx]) cbBudA[pfx] = Array(12).fill(0);
+      cbBudA[pfx][mi] += amt;
+    }
+  });
+
+  actuals.forEach(x => {
+    const a = String(x.accountNo);
+    const isExp = inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct) ||
+      inRange(a, CONFIG.ranges.salaries) || inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB);
+    if (!isExp) return;
+    const u  = x.globalDim2 || 'Unassigned';
+    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    if (mi < 0) return;
+    if (!cbActU[u]) cbActU[u] = Array(12).fill(0);
+    cbActU[u][mi] += num(x.amount);
+    const pfx = a.slice(0, 3);
+    if (CB_ACCT_LABELS[pfx]) {
+      if (!cbActA[pfx]) cbActA[pfx] = Array(12).fill(0);
+      cbActA[pfx][mi] += num(x.amount);
+    }
+  });
+
+  const cbAllU  = new Set([...Object.keys(cbBudU), ...Object.keys(cbActU)]);
+  const arrSum  = arr => (arr || []).reduce((s, v) => s + v, 0);
+
+  const corporateBudget = {
+    budgetName:  CONFIG.BUDGET_NAME,
+    totalBudget: toM(Array.from(cbAllU).reduce((s, u) => s + arrSum(cbBudU[u]), 0)),
+    actualYTD:   toM(Math.abs(Array.from(cbAllU).reduce((s, u) => s + arrSum(cbActU[u]), 0))),
+
+    byBU: Array.from(cbAllU)
+      .map(u => {
+        const bud = arrSum(cbBudU[u]);
+        const act = Math.abs(arrSum(cbActU[u]));
+        const variance = bud - act;
+        return {
+          unit:        u,
+          budgetYTD:   toM(bud),
+          actualYTD:   toM(act),
+          varianceYTD: toM(variance),
+          varPct:      bud ? parseFloat((variance / bud * 100).toFixed(1)) : null,
+          utilPct:     bud ? parseFloat((act / bud * 100).toFixed(1)) : null,
+          monthly: mN.map((_, i) => ({
+            bud: toM(cbBudU[u]?.[i] || 0),
+            act: toM(Math.abs(cbActU[u]?.[i] || 0))
+          }))
+        };
+      })
+      .filter(r => r.budgetYTD > 0 || r.actualYTD > 0)
+      .sort((a, b) => (b.budgetYTD || 0) - (a.budgetYTD || 0)),
+
+    monthly: {
+      labels: mN,
+      budget: mN.map((_, i) => toM(Array.from(cbAllU).reduce((s, u) => s + (cbBudU[u]?.[i] || 0), 0))),
+      actual: mN.map((_, i) => toM(Math.abs(Array.from(cbAllU).reduce((s, u) => s + (cbActU[u]?.[i] || 0), 0))))
+    },
+
+    byAccount: Object.keys(CB_ACCT_LABELS)
+      .filter(pfx => cbBudA[pfx] || cbActA[pfx])
+      .map(pfx => ({
+        code:      pfx,
+        name:      CB_ACCT_LABELS[pfx],
+        budgetYTD: toM(arrSum(cbBudA[pfx])),
+        actualYTD: toM(Math.abs(arrSum(cbActA[pfx]))),
+        utilPct:   arrSum(cbBudA[pfx])
+          ? parseFloat((Math.abs(arrSum(cbActA[pfx])) / arrSum(cbBudA[pfx]) * 100).toFixed(1))
+          : null,
+        monthly: mN.map((_, i) => ({
+          bud: toM(cbBudA[pfx]?.[i] || 0),
+          act: toM(Math.abs(cbActA[pfx]?.[i] || 0))
+        }))
+      }))
+      .sort((a, b) => (b.budgetYTD || 0) - (a.budgetYTD || 0))
   };
 
   let glAccountNames = {};
@@ -404,7 +541,10 @@ async function buildSnapshot(targetDate) {
     ]
   };
 
-  const employees = bcAvail ? await bc('GetEmployee') : [];
+  const [employees, headcountRows] = await Promise.all([
+    bcAvail ? bc('GetEmployee').catch(() => [])              : Promise.resolve([]),
+    bcAvail ? bc('KFT_Employee_Headcount').catch(() => [])   : Promise.resolve([])
+  ]);
   const hrByStatus = {}, hrByType = {}, hrByGender = {};
 
   if (IS_HISTORICAL) {
@@ -440,13 +580,24 @@ async function buildSnapshot(targetDate) {
     });
   }
 
+  // Dept + virtual-company breakdowns from KFT_Employee_Headcount (Active-only, has dim codes)
+  const hrByDept = {}, hrByVirtualCo = {};
+  headcountRows.forEach(r => {
+    const dept = r.businessUnitDept || 'Unknown';
+    hrByDept[dept] = (hrByDept[dept] || 0) + 1;
+    const vc = r.virtualCompany || 'Unknown';
+    hrByVirtualCo[vc] = (hrByVirtualCo[vc] || 0) + 1;
+  });
+
   const hr = {
     total: IS_HISTORICAL
       ? (hrByStatus.Active || 0)
       : employees.filter(e => e.employeeStatus === 'Active').length,
-    byStatus: Object.entries(hrByStatus).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
-    byType:   Object.entries(hrByType).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
-    byGender: Object.entries(hrByGender).map(([gender, count]) => ({ gender, count })).sort((a, b) => b.count - a.count)
+    byStatus:        Object.entries(hrByStatus).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+    byType:          Object.entries(hrByType).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
+    byGender:        Object.entries(hrByGender).map(([gender, count]) => ({ gender, count })).sort((a, b) => b.count - a.count),
+    byDept:          Object.entries(hrByDept).map(([dept, count]) => ({ dept, count })).sort((a, b) => b.count - a.count),
+    byVirtualCompany: Object.entries(hrByVirtualCo).map(([virtualCompany, count]) => ({ virtualCompany, count })).sort((a, b) => b.count - a.count)
   };
 
   let dimensionNames = {};
@@ -455,6 +606,124 @@ async function buildSnapshot(targetDate) {
     dimVals.forEach(d => { if (d.code && d.name && !d.blocked) dimensionNames[d.code] = d.name; });
   } catch (e) {
     console.warn('  KFT_Dimension_Values not reachable:', e.message);
+  }
+
+  // Payroll cost — standard (KIFIYA) + programme (SAFEE)
+  // AL Query has no UNION, so we fetch both and merge here.
+  let employeeCost = { byVirtualCompany: [], byDeptAndSource: [], monthly: [] };
+  try {
+    const [stdPay, progPay] = await Promise.all([
+      bcAvail ? bc('KFT_Payroll_Cost').catch(() => []) : Promise.resolve([]),
+      bcAvail ? bc('KFT_Prog_Payroll_Cost').catch(() => []) : Promise.resolve([])
+    ]);
+
+    const payrollStart = new Date(CONFIG.PAYROLL_START);
+    const targetEnd    = new Date(targetDate + 'T23:59:59');
+
+    const allPay = [
+      ...stdPay.map(r  => ({ ...r,  payrollSource: 'KIFIYA' })),
+      ...progPay.map(r => ({ ...r,  payrollSource: 'SAFEE'  }))
+    ].filter(r => {
+      const st = (r.payrollStatus || '').toLowerCase();
+      if (st === 'open' || st === 'pending approval') return false;
+      if (!r.payrollPeriod) return true;
+      const d = new Date(r.payrollPeriod);
+      return d >= payrollStart && d <= targetEnd;
+    });
+
+    // ETH / HUB KPI card totals
+    const vcMap = {};
+    allPay.forEach(r => {
+      const vc = r.virtualCompany || 'Unknown';
+      vcMap[vc] = (vcMap[vc] || 0) + num(r.totalEarning);
+    });
+
+    // KIFIYA vs SAFEE clustered bar — grouped by business unit / dept
+    const deptMap = {};
+    allPay.forEach(r => {
+      const dept = r.businessUnitDept || 'Unknown';
+      if (!deptMap[dept]) deptMap[dept] = { dept, deptName: dimensionNames[dept] || dept, kifiya: 0, safee: 0 };
+      if (r.payrollSource === 'KIFIYA') deptMap[dept].kifiya += num(r.totalEarning);
+      else                              deptMap[dept].safee  += num(r.totalEarning);
+    });
+
+    // Monthly trend line — one data point per payroll period
+    const mthMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const d     = new Date(r.payrollPeriod);
+      const key   = d.getFullYear() * 100 + (d.getMonth() + 1);
+      const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      if (!mthMap[key]) mthMap[key] = { key, label, total: 0 };
+      mthMap[key].total += num(r.totalEarning);
+    });
+
+    // Drill-down: dept → employee → per-month earnings (for the expandable cost table)
+    const drillMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const dept    = r.businessUnitDept || 'Unknown';
+      const empKey  = r.employeeNo || 'Unknown';
+      const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
+      const d       = new Date(r.payrollPeriod);
+      const mthKey  = d.getFullYear() * 100 + (d.getMonth() + 1);
+      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const earning = num(r.totalEarning);
+
+      if (!drillMap[dept]) drillMap[dept] = {
+        dept, deptName: dimensionNames[dept] || dept,
+        employees: {}, monthTotals: {}, total: 0
+      };
+      const de = drillMap[dept];
+      if (!de.employees[empKey]) de.employees[empKey] = { employeeNo: empKey, name, monthly: {}, mthKeys: {}, total: 0 };
+      const ee = de.employees[empKey];
+
+      ee.monthly[mthLbl]    = (ee.monthly[mthLbl]    || 0) + earning;
+      ee.mthKeys[mthKey]    = mthLbl;
+      ee.total             += earning;
+      de.monthTotals[mthLbl] = (de.monthTotals[mthLbl] || 0) + earning;
+      de.total             += earning;
+    });
+
+    // Sorted unique month labels across all payroll data
+    const mthKeyLblMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const d = new Date(r.payrollPeriod);
+      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
+      mthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+    });
+    const payrollMonths = Object.entries(mthKeyLblMap)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([, lbl]) => lbl);
+
+    const drillDown = Object.values(drillMap)
+      .sort((a, b) => b.total - a.total)
+      .map(d => ({
+        dept:        d.dept,
+        deptName:    d.deptName,
+        total:       Math.round(d.total),
+        monthTotals: d.monthTotals,
+        employees:   Object.values(d.employees)
+          .sort((a, b) => b.total - a.total)
+          .map(e => ({ employeeNo: e.employeeNo, name: e.name, monthly: e.monthly, total: Math.round(e.total) }))
+      }));
+
+    employeeCost = {
+      byVirtualCompany: Object.entries(vcMap)
+        .map(([virtualCompany, total]) => ({ virtualCompany, total: Math.round(total) }))
+        .sort((a, b) => b.total - a.total),
+      byDeptAndSource: Object.values(deptMap)
+        .sort((a, b) => (b.kifiya + b.safee) - (a.kifiya + a.safee)),
+      monthly: Object.values(mthMap)
+        .sort((a, b) => a.key - b.key)
+        .map(({ label, total }) => ({ label, total: Math.round(total) })),
+      drillDown,
+      payrollMonths
+    };
+    console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);
+  } catch (e) {
+    console.warn('  Payroll cost fetch failed:', e.message);
   }
 
   const disbursementsYTD = toM(Math.abs(A('disbursements')));
@@ -602,9 +871,11 @@ async function buildSnapshot(targetDate) {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
     budgetOverview,
+    corporateBudget,
     cashflow,
     reports,
     hr,
+    employeeCost,
     lending,
     loanOps,
     risk,
