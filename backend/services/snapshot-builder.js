@@ -541,10 +541,82 @@ async function buildSnapshot(targetDate) {
     ]
   };
 
-  const [employees, headcountRows] = await Promise.all([
-    bcAvail ? bc('GetEmployee').catch(() => [])              : Promise.resolve([]),
-    bcAvail ? bc('KFT_Employee_Headcount').catch(() => [])   : Promise.resolve([])
+  const [employees, headcountRows, rawDimVals, empHist] = await Promise.all([
+    bcAvail ? bc('GetEmployee').catch(() => [])                                           : Promise.resolve([]),
+    bcAvail ? bc('KFT_Employee_Headcount').catch(() => [])                                : Promise.resolve([]),
+    bcAvail ? bc('KFT_Dimension_Values', '?$orderby=dimensionCode,code').catch(() => []) : Promise.resolve([]),
+    bcAvail ? bc('KFT_Employment_History').catch(() => [])                                : Promise.resolve([])
   ]);
+
+  // Dimension names flat map — include blocked values so employees assigned to
+  // blocked sections still get a human-readable name
+  let dimensionNames = {};
+  rawDimVals.forEach(d => { if (d.code && d.name) dimensionNames[d.code] = d.name; });
+
+  // ── Dimension hierarchy: auto-detect Global Dim 2 and parse parent→section ──
+  // Employees are assigned to "section" codes (Standard, higher indentation).
+  // Parent "department/BU" rows are Heading/Begin-Total at lower indentation.
+  const empSectionCodes = new Set(headcountRows.map(r => r.businessUnitDept).filter(Boolean));
+  const dimCodeScore = {};
+  rawDimVals.forEach(d => {
+    if (d.dimensionCode && empSectionCodes.has(d.code))
+      dimCodeScore[d.dimensionCode] = (dimCodeScore[d.dimensionCode] || 0) + 1;
+  });
+  const gd2DimCode = Object.entries(dimCodeScore).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  console.log(`  HR dim: ${rawDimVals.length} dim values, ${empSectionCodes.size} section codes, gd2DimCode=${gd2DimCode}`);
+
+  // sectionCode → parent deptCode; deptNames for those parent codes
+  // The OData call uses $orderby=dimensionCode,code so within each dimension the
+  // entries are sorted by code. BC convention: parent Begin-Total codes (e.g. BUS-000)
+  // always sort before their child sections (BUS-001, BUS-002…), so a sequential scan
+  // correctly pairs parents with sections.
+  const sectionToDept = {}, deptDisplayNames = {};
+  if (gd2DimCode) {
+    const gd2Dims = rawDimVals.filter(d => d.dimensionCode === gd2DimCode);
+
+    // Diagnostic: log the first few entries to verify type values from BC
+    console.log(`  HR dim: gd2 has ${gd2Dims.length} entries. First 8:`);
+    gd2Dims.slice(0, 8).forEach(d =>
+      console.log(`    code=${d.code} type="${d.dimensionValueType}" ind=${d.indentation} blocked=${d.blocked} inEmpSet=${empSectionCodes.has(d.code)}`)
+    );
+
+    // ONLY Begin-Total entries are parent departments (the 7 BUs the user wants).
+    // Heading, Standard, and any other types are sections mapped to their Begin-Total parent.
+    const parentByCode = {};
+    gd2Dims.forEach(d => {
+      const t = (d.dimensionValueType || '').replace(/[^a-z]/gi, '').toLowerCase();
+      if (t === 'begintotal' && d.code && d.name) {
+        parentByCode[d.code] = d.name;
+        deptDisplayNames[d.code] = d.name;
+      }
+    });
+    const parentCodes = Object.keys(parentByCode).sort();
+
+    // Sequential pass — curDept advances only on Begin-Total.
+    // Heading, Standard, and blank types are all sections under the current Begin-Total.
+    let curDept = null;
+    gd2Dims.forEach(d => {
+      const t = (d.dimensionValueType || '').replace(/[^a-z]/gi, '').toLowerCase();
+      if (t === 'begintotal') {
+        curDept = d.code;
+      } else if (t !== 'endtotal' && d.code) {
+        // Heading (e.g. "Tech-IFS"), Standard, or blank → section under current Begin-Total
+        const target = curDept || parentCodes.filter(p => p <= d.code).reverse()[0] || null;
+        if (target) sectionToDept[d.code] = target;
+        else console.warn(`  HR dim: no Begin-Total parent for ${d.code} (${d.name})`);
+      }
+    });
+
+    console.log(`  HR dim: ${Object.keys(sectionToDept).length} sections mapped to ${Object.keys(deptDisplayNames).length} parent depts`);
+    console.log(`  HR dim: sectionToDept = ${JSON.stringify(sectionToDept)}`);
+  }
+
+  // Helper: gender bucket — unknown/blank treated as Female
+  const addGender = (map, key, g) => {
+    if (!map[key]) map[key] = { male: 0, female: 0 };
+    if (g === 'Male') map[key].male++; else map[key].female++;
+  };
+
   const hrByStatus = {}, hrByType = {}, hrByGender = {};
 
   if (IS_HISTORICAL) {
@@ -555,10 +627,10 @@ async function buildSnapshot(targetDate) {
       if (!hired || hired > targetDate) return;
       currentActiveNos.add(e.no);
       hrByStatus.Active = (hrByStatus.Active || 0) + 1;
-      const t = e.employeeType || 'Unknown'; hrByType[t] = (hrByType[t] || 0) + 1;
-      const g = e.gender || 'Unknown';       hrByGender[g] = (hrByGender[g] || 0) + 1;
+      const g = e.gender === 'Male' ? 'Male' : 'Female';
+      hrByGender[g] = (hrByGender[g] || 0) + 1;
+      addGender(hrByType, e.employeeType || 'Unknown', g);
     });
-    const empHist = bcAvail ? await bc('KFT_Employment_History') : [];
     const NULL_DATE = '0001-01-01';
     const addedBack = new Set();
     empHist.forEach(e => {
@@ -574,39 +646,204 @@ async function buildSnapshot(targetDate) {
       const s = e.employeeStatus || 'Unknown';
       hrByStatus[s] = (hrByStatus[s] || 0) + 1;
       if (s === 'Active') {
-        const t = e.employeeType || 'Unknown'; hrByType[t] = (hrByType[t] || 0) + 1;
-        const g = e.gender || 'Unknown';       hrByGender[g] = (hrByGender[g] || 0) + 1;
+        const g = e.gender === 'Male' ? 'Male' : 'Female';
+        hrByGender[g] = (hrByGender[g] || 0) + 1;
+        addGender(hrByType, e.employeeType || 'Unknown', g);
       }
     });
   }
 
-  // Dept + virtual-company breakdowns from KFT_Employee_Headcount (Active-only, has dim codes)
-  const hrByDept = {}, hrByVirtualCo = {};
+  // ── Dept hierarchy from headcount rows ──────────────────────────────────────
+  // Groups: top-level dept → sections → individual employees
+  const hrByVirtualCo = {};
+  const deptHierMap = {};
+
   headcountRows.forEach(r => {
-    const dept = r.businessUnitDept || 'Unknown';
-    hrByDept[dept] = (hrByDept[dept] || 0) + 1;
+    const sectionCode = r.businessUnitDept || 'Unknown';
+    const deptCode    = sectionToDept[sectionCode] || sectionCode;
+    const deptName    = deptDisplayNames[deptCode] || dimensionNames[deptCode] || deptCode;
+    const sectionName = dimensionNames[sectionCode] || sectionCode;
+    const g = r.gender === 'Male' ? 'Male' : 'Female';
+
+    if (!deptHierMap[deptCode])
+      deptHierMap[deptCode] = { deptCode, deptName, male: 0, female: 0, sections: {} };
+    const dept = deptHierMap[deptCode];
+    if (g === 'Male') dept.male++; else dept.female++;
+
+    if (!dept.sections[sectionCode])
+      dept.sections[sectionCode] = { sectionCode, sectionName, male: 0, female: 0, employees: [] };
+    const sec = dept.sections[sectionCode];
+    if (g === 'Male') sec.male++; else sec.female++;
+    sec.employees.push({
+      name:           r.fullName      || '',
+      gender:         r.gender        || '',
+      jobTitle:       r.jobTitle      || '',
+      employeeType:   r.employeeType  || '',
+      virtualCompany: r.virtualCompany || ''
+    });
+
     const vc = r.virtualCompany || 'Unknown';
     hrByVirtualCo[vc] = (hrByVirtualCo[vc] || 0) + 1;
   });
 
+  const byDeptHierarchy = Object.values(deptHierMap)
+    .map(d => ({
+      deptCode: d.deptCode,
+      deptName: d.deptName,
+      male:     d.male,
+      female:   d.female,
+      count:    d.male + d.female,
+      sections: Object.values(d.sections)
+        .map(s => ({ ...s, count: s.male + s.female,
+          employees: s.employees.sort((a, b) => a.name.localeCompare(b.name)) }))
+        .sort((a, b) => b.count - a.count)
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const byDept = byDeptHierarchy.map(d => ({
+    dept: d.deptCode, male: d.male, female: d.female, count: d.count
+  }));
+
+  // Gender breakdown by job title (top 15)
+  const hrByJobTitle = {};
+  headcountRows.forEach(r => {
+    const job = (r.jobTitle || '').trim() || 'Unknown';
+    addGender(hrByJobTitle, job, r.gender === 'Male' ? 'Male' : 'Female');
+  });
+  const byJobTitle = Object.entries(hrByJobTitle)
+    .map(([jobTitle, v]) => ({ jobTitle, male: v.male, female: v.female, count: v.male + v.female }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // Employee seniority list (active, oldest hire date first)
+  const NULL_DATE_STR = '0001-01-01';
+  const seniorityList = headcountRows
+    .filter(r => r.employmentDate && String(r.employmentDate).slice(0, 10) > NULL_DATE_STR)
+    .map(r => ({
+      name:   r.fullName || '',
+      hired:  String(r.employmentDate).slice(0, 10),
+      title:  r.jobTitle || '',
+      type:   r.employeeType || '',
+      gender: r.gender || '',
+      vc:     r.virtualCompany || ''
+    }))
+    .sort((a, b) => a.hired.localeCompare(b.hired))
+    .slice(0, 50);
+
+  // ── Active Contract Type per BU matrix ──────────────────────────────────────
+  const deptByTypeMap = {};
+  headcountRows.forEach(r => {
+    const sc      = r.businessUnitDept || 'Unknown';
+    const dc      = sectionToDept[sc] || sc;
+    const dn      = deptDisplayNames[dc] || dimensionNames[dc] || dc;
+    const empType = r.employeeType || 'Unknown';
+    if (!deptByTypeMap[dc]) deptByTypeMap[dc] = { deptCode: dc, deptName: dn, types: {} };
+    deptByTypeMap[dc].types[empType] = (deptByTypeMap[dc].types[empType] || 0) + 1;
+  });
+  const allContractTypes = [...new Set(headcountRows.map(r => r.employeeType || 'Unknown'))].sort();
+  const byDeptByType = Object.values(deptByTypeMap)
+    .sort((a, b) => Object.values(b.types).reduce((s, v) => s + v, 0) - Object.values(a.types).reduce((s, v) => s + v, 0));
+
+  // ── Contract Status per BU matrix ───────────────────────────────────────────
+  const deptByStatusMap = {};
+  const ensureDSEntry = (dc, dn) => {
+    if (!deptByStatusMap[dc]) deptByStatusMap[dc] = { deptCode: dc, deptName: dn, Active: 0, Terminated: 0 };
+  };
+  headcountRows.forEach(r => {
+    const sc = r.businessUnitDept || 'Unknown';
+    const dc = sectionToDept[sc] || sc;
+    const dn = deptDisplayNames[dc] || dimensionNames[dc] || dc;
+    ensureDSEntry(dc, dn); deptByStatusMap[dc].Active++;
+  });
+  empHist.forEach(e => {
+    const sc = e.dimension2 || 'Unknown';
+    const dc = sectionToDept[sc] || sc;
+    const dn = deptDisplayNames[dc] || dimensionNames[dc] || dc;
+    ensureDSEntry(dc, dn); deptByStatusMap[dc].Terminated++;
+  });
+  const byDeptByStatus = Object.values(deptByStatusMap)
+    .sort((a, b) => (b.Active + b.Terminated) - (a.Active + a.Terminated));
+
+  // ── Monthly headcount evolution (last 12 months) ────────────────────────────
+  const targetDt   = new Date(targetDate);
+  const months12   = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(targetDt.getFullYear(), targetDt.getMonth() - (11 - i), 1);
+    return {
+      label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      start: new Date(d.getFullYear(), d.getMonth(), 1),
+      end:   new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+    };
+  });
+  const NULL_EPOCH = new Date('0001-01-01').getTime();
+
+  // Build a set of active employee nos to avoid double-counting with empHist
+  const activeNosSet = new Set(
+    employees.filter(e => e.employeeStatus === 'Active').map(e => e.no).filter(Boolean)
+  );
+
+  const headcountEvolution = months12.map(m => {
+    let count = 0;
+    employees.forEach(e => {
+      if (e.employeeStatus !== 'Active') return;
+      const hired = e.employmentDate ? new Date(e.employmentDate) : null;
+      if (hired && hired <= m.end) count++;
+    });
+    empHist.forEach(e => {
+      if (activeNosSet.has(e.employeeNo)) return; // already counted above
+      const hired     = e.dateHired     ? new Date(e.dateHired)     : null;
+      const separated = e.dateSeparated ? new Date(e.dateSeparated) : null;
+      if (!hired || hired > m.end) return;
+      if (separated && separated.getTime() > NULL_EPOCH && separated < m.start) return;
+      count++;
+    });
+    return { label: m.label, count };
+  });
+
+  // ── Turnover rate (last 12 months) ──────────────────────────────────────────
+  // Joiners = hired in that month; Leavers = separated in that month
+  const allForJoiners = [
+    ...employees.map(e => ({ no: e.no, hired: e.employmentDate })),
+    ...empHist.filter(e => !activeNosSet.has(e.employeeNo)).map(e => ({ no: e.employeeNo, hired: e.dateHired }))
+  ];
+  const turnover = months12.map((m, i) => {
+    const prevCount = i > 0 ? headcountEvolution[i - 1].count : headcountEvolution[0].count;
+    const currCount = headcountEvolution[i].count;
+    const avgCount  = (prevCount + currCount) / 2;
+
+    const joiners = allForJoiners.filter(e => {
+      const d = e.hired ? new Date(e.hired) : null;
+      return d && d >= m.start && d <= m.end;
+    }).length;
+
+    const leavers = empHist.filter(e => {
+      const d = e.dateSeparated ? new Date(e.dateSeparated) : null;
+      return d && d.getTime() > NULL_EPOCH && d >= m.start && d <= m.end;
+    }).length;
+
+    const rate = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0;
+    return { label: m.label, joiners, leavers, rate };
+  });
+
   const hr = {
+    sectionToDept,
+    deptDisplayNames,
     total: IS_HISTORICAL
       ? (hrByStatus.Active || 0)
       : employees.filter(e => e.employeeStatus === 'Active').length,
-    byStatus:        Object.entries(hrByStatus).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
-    byType:          Object.entries(hrByType).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
-    byGender:        Object.entries(hrByGender).map(([gender, count]) => ({ gender, count })).sort((a, b) => b.count - a.count),
-    byDept:          Object.entries(hrByDept).map(([dept, count]) => ({ dept, count })).sort((a, b) => b.count - a.count),
-    byVirtualCompany: Object.entries(hrByVirtualCo).map(([virtualCompany, count]) => ({ virtualCompany, count })).sort((a, b) => b.count - a.count)
+    byStatus:         Object.entries(hrByStatus).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+    byType:           Object.entries(hrByType).map(([type, v]) => ({ type, male: v.male, female: v.female, count: v.male + v.female })).sort((a, b) => b.count - a.count),
+    byGender:         Object.entries(hrByGender).map(([gender, count]) => ({ gender, count })).sort((a, b) => b.count - a.count),
+    byDept,
+    byDeptHierarchy,
+    byVirtualCompany: Object.entries(hrByVirtualCo).map(([virtualCompany, count]) => ({ virtualCompany, count })).sort((a, b) => b.count - a.count),
+    byJobTitle,
+    seniorityList,
+    byDeptByType,
+    allContractTypes,
+    byDeptByStatus,
+    headcountEvolution,
+    turnover
   };
-
-  let dimensionNames = {};
-  try {
-    const dimVals = await bc('KFT_Dimension_Values');
-    dimVals.forEach(d => { if (d.code && d.name && !d.blocked) dimensionNames[d.code] = d.name; });
-  } catch (e) {
-    console.warn('  KFT_Dimension_Values not reachable:', e.message);
-  }
 
   // Payroll cost — standard (KIFIYA) + programme (SAFEE)
   // AL Query has no UNION, so we fetch both and merge here.
@@ -620,6 +857,10 @@ async function buildSnapshot(targetDate) {
     const payrollStart = new Date(CONFIG.PAYROLL_START);
     const targetEnd    = new Date(targetDate + 'T23:59:59');
 
+    console.log(`  Payroll raw: KFT_Payroll_Cost=${stdPay.length} rows, KFT_Prog_Payroll_Cost=${progPay.length} rows`);
+    if (stdPay.length === 0 && progPay.length === 0)
+      console.warn('  WARNING: both payroll queries returned 0 rows — check BC web services are published');
+
     const allPay = [
       ...stdPay.map(r  => ({ ...r,  payrollSource: 'KIFIYA' })),
       ...progPay.map(r => ({ ...r,  payrollSource: 'SAFEE'  }))
@@ -630,6 +871,8 @@ async function buildSnapshot(targetDate) {
       const d = new Date(r.payrollPeriod);
       return d >= payrollStart && d <= targetEnd;
     });
+    if (allPay.length === 0 && (stdPay.length + progPay.length) > 0)
+      console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
 
     // ETH / HUB KPI card totals
     const vcMap = {};
@@ -638,11 +881,51 @@ async function buildSnapshot(targetDate) {
       vcMap[vc] = (vcMap[vc] || 0) + num(r.totalEarning);
     });
 
-    // KIFIYA vs SAFEE clustered bar — grouped by business unit / dept
+    // KIFIYA vs SAFEE cost split (for HR cost allocation pie)
+    const srcMap = {};
+    allPay.forEach(r => {
+      const src = r.payrollSource || 'Unknown';
+      srcMap[src] = (srcMap[src] || 0) + num(r.totalEarning);
+    });
+
+    // Entity × PayrollSource cross-tab: ETH/HUB × KIFIYA/SAFEE (count unique employees + total)
+    const entitySrcMap = {};
+    allPay.forEach(r => {
+      const vc  = r.virtualCompany || 'Unknown';
+      const src = r.payrollSource  || 'Unknown';
+      const key = `${vc}|${src}`;
+      if (!entitySrcMap[key]) entitySrcMap[key] = { entity: vc, source: src, total: 0, employees: new Set() };
+      entitySrcMap[key].total += num(r.totalEarning);
+      if (r.employeeNo) entitySrcMap[key].employees.add(r.employeeNo);
+    });
+    // Also build a per-employee set so we can say "employee X paid by KIFIYA and SAFEE"
+    const empSourceMap = {};
+    allPay.forEach(r => {
+      const vc  = r.virtualCompany || 'Unknown';
+      const src = r.payrollSource  || 'Unknown';
+      const emp = r.employeeNo || 'Unknown';
+      if (!empSourceMap[emp]) empSourceMap[emp] = { vc, sources: new Set() };
+      empSourceMap[emp].sources.add(src);
+    });
+    // Flatten into array groupd by entity, with kifiya/safee columns
+    const entitySrcGrouped = {};
+    Object.values(entitySrcMap).forEach(v => {
+      if (!entitySrcGrouped[v.entity]) entitySrcGrouped[v.entity] = { entity: v.entity, kifiyaTotal: 0, safeeTotal: 0, kifiyaCount: 0, safeeCount: 0 };
+      const g = entitySrcGrouped[v.entity];
+      if (v.source === 'KIFIYA') { g.kifiyaTotal += v.total; g.kifiyaCount = v.employees.size; }
+      else                       { g.safeeTotal  += v.total; g.safeeCount  = v.employees.size; }
+    });
+    const byEntitySource = Object.values(entitySrcGrouped)
+      .map(g => ({ entity: g.entity, kifiyaTotal: Math.round(g.kifiyaTotal), safeeTotal: Math.round(g.safeeTotal), kifiyaCount: g.kifiyaCount, safeeCount: g.safeeCount }))
+      .sort((a, b) => (b.kifiyaTotal + b.safeeTotal) - (a.kifiyaTotal + a.safeeTotal));
+
+    // KIFIYA vs SAFEE clustered bar — grouped by PARENT business unit (not section)
     const deptMap = {};
     allPay.forEach(r => {
-      const dept = r.businessUnitDept || 'Unknown';
-      if (!deptMap[dept]) deptMap[dept] = { dept, deptName: dimensionNames[dept] || dept, kifiya: 0, safee: 0 };
+      const sectionCode = r.businessUnitDept || 'Unknown';
+      const dept        = sectionToDept[sectionCode] || sectionCode;
+      const deptName    = deptDisplayNames[dept] || dimensionNames[dept] || dept;
+      if (!deptMap[dept]) deptMap[dept] = { dept, deptName, kifiya: 0, safee: 0 };
       if (r.payrollSource === 'KIFIYA') deptMap[dept].kifiya += num(r.totalEarning);
       else                              deptMap[dept].safee  += num(r.totalEarning);
     });
@@ -709,16 +992,82 @@ async function buildSnapshot(targetDate) {
           .map(e => ({ employeeNo: e.employeeNo, name: e.name, monthly: e.monthly, total: Math.round(e.total) }))
       }));
 
+    // 3-level hierarchy for Cost by BU page: parent BU → section → employee
+    // Uses the same sectionToDept map built from dimension values
+    const buDrillMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const sectionCode = r.businessUnitDept || 'Unknown';
+      const buCode      = sectionToDept[sectionCode] || sectionCode;
+      const buName      = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
+      const sectionName = dimensionNames[sectionCode] || sectionCode;
+      const empKey  = r.employeeNo || 'Unknown';
+      const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
+      const d       = new Date(r.payrollPeriod);
+      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const earning = num(r.totalEarning);
+
+      if (!buDrillMap[buCode]) buDrillMap[buCode] = { buCode, buName, sections: {}, monthTotals: {}, total: 0 };
+      const bu = buDrillMap[buCode];
+      bu.monthTotals[mthLbl] = (bu.monthTotals[mthLbl] || 0) + earning;
+      bu.total += earning;
+
+      if (!bu.sections[sectionCode]) bu.sections[sectionCode] = { sectionCode, sectionName, employees: {}, monthTotals: {}, total: 0 };
+      const sec = bu.sections[sectionCode];
+      sec.monthTotals[mthLbl] = (sec.monthTotals[mthLbl] || 0) + earning;
+      sec.total += earning;
+
+      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', monthly: {}, total: 0, kifiya: 0, safee: 0 };
+      const ee = sec.employees[empKey];
+      ee.monthly[mthLbl] = (ee.monthly[mthLbl] || 0) + earning;
+      ee.total += earning;
+      if (r.payrollSource === 'KIFIYA') ee.kifiya += earning;
+      else                              ee.safee  += earning;
+    });
+
+    const buDrillDown = Object.values(buDrillMap)
+      .sort((a, b) => b.total - a.total)
+      .map(bu => ({
+        buCode:      bu.buCode,
+        buName:      bu.buName,
+        total:       Math.round(bu.total),
+        monthTotals: bu.monthTotals,
+        sections:    Object.values(bu.sections)
+          .sort((a, b) => b.total - a.total)
+          .map(sec => ({
+            sectionCode:  sec.sectionCode,
+            sectionName:  sec.sectionName,
+            total:        Math.round(sec.total),
+            monthTotals:  sec.monthTotals,
+            employees:    Object.values(sec.employees)
+              .sort((a, b) => b.total - a.total)
+              .map(e => ({
+                employeeNo: e.employeeNo,
+                name:       e.name,
+                vc:         e.vc,
+                monthly:    e.monthly,
+                total:      Math.round(e.total),
+                kifiya:     Math.round(e.kifiya || 0),
+                safee:      Math.round(e.safee  || 0)
+              }))
+          }))
+      }));
+
     employeeCost = {
       byVirtualCompany: Object.entries(vcMap)
         .map(([virtualCompany, total]) => ({ virtualCompany, total: Math.round(total) }))
         .sort((a, b) => b.total - a.total),
+      byPayrollSource: Object.entries(srcMap)
+        .map(([source, total]) => ({ source, total: Math.round(total) }))
+        .sort((a, b) => b.total - a.total),
+      byEntitySource,
       byDeptAndSource: Object.values(deptMap)
         .sort((a, b) => (b.kifiya + b.safee) - (a.kifiya + a.safee)),
       monthly: Object.values(mthMap)
         .sort((a, b) => a.key - b.key)
         .map(({ label, total }) => ({ label, total: Math.round(total) })),
       drillDown,
+      buDrillDown,
       payrollMonths
     };
     console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);

@@ -29,8 +29,41 @@ function VarBadge({ variance }) {
 
 export default function EmployeeCostVariance({ data }) {
   const ec        = data.employeeCost || {}
+  const hr        = data.hr           || {}
   const months    = ec.payrollMonths  || []
   const drillDown = ec.drillDown      || []
+
+  // sectionToDept from backend — covers ALL dimension values including payroll-only sections
+  const sectionToDept    = hr.sectionToDept    || {}
+  const deptDisplayNames = hr.deptDisplayNames || {}
+  const resolveBU = (code, fallbackName) => {
+    const buCode = sectionToDept[code] || code
+    const buName = deptDisplayNames[buCode] || fallbackName || buCode
+    return { buCode, buName }
+  }
+
+  const rawBU = ec.buDrillDown || []
+  const rawDrillDown = rawBU.length > 0
+    ? rawBU
+    : drillDown.map(d => ({
+        buCode: d.dept, buName: d.deptName, total: d.total, monthTotals: d.monthTotals,
+        sections: [{ sectionCode: d.dept, sectionName: d.deptName, total: d.total, monthTotals: d.monthTotals, employees: d.employees }]
+      }))
+
+  // Re-group by parent BU
+  const buDrillDown = (() => {
+    if (rawDrillDown.length === 0) return rawDrillDown
+    const grouped = {}
+    rawDrillDown.forEach(bu => {
+      const { buCode, buName } = resolveBU(bu.buCode, bu.buName)
+      if (!grouped[buCode]) grouped[buCode] = { buCode, buName, sections: [], monthTotals: {}, total: 0 }
+      const g = grouped[buCode]
+      bu.sections.forEach(sec => g.sections.push(sec))
+      Object.entries(bu.monthTotals || {}).forEach(([m, v]) => { g.monthTotals[m] = (g.monthTotals[m] || 0) + v })
+      g.total += bu.total
+    })
+    return Object.values(grouped).sort((a, b) => b.total - a.total)
+  })()
 
   // Default to most recent month
   const [selectedMonth, setSelectedMonth] = useState(() => months[months.length - 1] || '')
@@ -38,33 +71,46 @@ export default function EmployeeCostVariance({ data }) {
   const selectedIdx = months.indexOf(selectedMonth)
   const prevMonth   = selectedIdx > 0 ? months[selectedIdx - 1] : null
 
-  // Build per-employee comparison rows + dept variance aggregation
-  const empRows   = []
-  const deptVarMap = {}
+  // Build per-employee rows + BU-level variance aggregation
+  const empRows    = []
+  const buVarMap   = {}
 
-  drillDown.forEach(dept => {
-    dept.employees.forEach(emp => {
-      const prevCost = prevMonth ? (emp.monthly[prevMonth] || 0) : 0
-      const currCost = emp.monthly[selectedMonth] || 0
-      if (prevCost === 0 && currCost === 0) return
+  // Use buDrillDown when available (parent BU level), else fall back to drillDown
+  const source = buDrillDown.length > 0 ? buDrillDown : drillDown
 
-      const variance = currCost - prevCost
-      const pct      = prevCost !== 0
-        ? (variance / prevCost) * 100
-        : (currCost !== 0 ? 100 : 0)
-
-      empRows.push({
-        key:      emp.employeeNo,
-        label:    `${emp.employeeNo} ${emp.name}`.trim(),
-        prevCost, currCost, variance, pct
+  if (buDrillDown.length > 0) {
+    // 3-level source: BU → sections → employees
+    buDrillDown.forEach(bu => {
+      bu.sections.forEach(sec => {
+        sec.employees.forEach(emp => {
+          const prevCost = prevMonth ? (emp.monthly[prevMonth] || 0) : 0
+          const currCost = emp.monthly[selectedMonth] || 0
+          if (prevCost === 0 && currCost === 0) return
+          const variance = currCost - prevCost
+          const pct = prevCost !== 0 ? (variance / prevCost) * 100 : (currCost !== 0 ? 100 : 0)
+          empRows.push({ key: emp.employeeNo, label: `${emp.employeeNo} ${emp.name}`.trim(), prevCost, currCost, variance, pct })
+          if (!buVarMap[bu.buCode]) buVarMap[bu.buCode] = { name: bu.buName, variance: 0 }
+          buVarMap[bu.buCode].variance += variance
+        })
       })
-
-      if (!deptVarMap[dept.dept]) deptVarMap[dept.dept] = { name: dept.deptName, variance: 0 }
-      deptVarMap[dept.dept].variance += variance
     })
-  })
+  } else {
+    // Fallback to 2-level drillDown (section → employees)
+    drillDown.forEach(dept => {
+      dept.employees.forEach(emp => {
+        const prevCost = prevMonth ? (emp.monthly[prevMonth] || 0) : 0
+        const currCost = emp.monthly[selectedMonth] || 0
+        if (prevCost === 0 && currCost === 0) return
+        const variance = currCost - prevCost
+        const pct = prevCost !== 0 ? (variance / prevCost) * 100 : (currCost !== 0 ? 100 : 0)
+        empRows.push({ key: emp.employeeNo, label: `${emp.employeeNo} ${emp.name}`.trim(), prevCost, currCost, variance, pct })
+        if (!buVarMap[dept.dept]) buVarMap[dept.dept] = { name: dept.deptName, variance: 0 }
+        buVarMap[dept.dept].variance += variance
+      })
+    })
+  }
 
-  const deptVarArr = Object.values(deptVarMap)
+  const deptVarArr = Object.values(buVarMap)
     .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
     .slice(0, 18)
     .map(d => ({ ...d, displayName: d.name.length > 24 ? d.name.slice(0, 23) + '…' : d.name }))

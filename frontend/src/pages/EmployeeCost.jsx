@@ -18,14 +18,34 @@ const fmtETBRaw = (n) => {
 
 export default function EmployeeCost({ data }) {
   const ec   = data.employeeCost || {}
+  const hr   = data.hr           || {}
   const dims = data.dimensionNames || {}
 
-  const vcData   = ec.byVirtualCompany || []
-  const deptData = (ec.byDeptAndSource || []).map(d => ({
-    ...d,
-    name: dims[d.dept] || d.deptName || d.dept || 'Unknown'
-  }))
-  const monthly  = ec.monthly || []
+  const vcData  = ec.byVirtualCompany || []
+  const monthly = ec.monthly          || []
+
+  // sectionToDept from backend (covers ALL dimension values, including payroll-only sections)
+  const sectionToDept    = hr.sectionToDept    || {}
+  const deptDisplayNames = hr.deptDisplayNames || {}
+
+  const resolveBU = (code) => {
+    const parent = sectionToDept[code] || code
+    const name   = deptDisplayNames[parent] || dims[parent] || dims[code] || parent
+    return { dept: parent, name }
+  }
+
+  // Re-aggregate byDeptAndSource by parent BU so chart shows departments not sections
+  const rawDeptData = ec.byDeptAndSource || []
+  const deptData = (() => {
+    const grouped = {}
+    rawDeptData.forEach(d => {
+      const { dept, name } = resolveBU(d.dept)
+      if (!grouped[dept]) grouped[dept] = { dept, name, kifiya: 0, safee: 0 }
+      grouped[dept].kifiya += d.kifiya || 0
+      grouped[dept].safee  += d.safee  || 0
+    })
+    return Object.values(grouped).sort((a, b) => (b.kifiya + b.safee) - (a.kifiya + a.safee))
+  })()
 
   const totalCost = vcData.reduce((s, d) => s + (d.total || 0), 0)
   const eth = vcData.find(d => d.virtualCompany === 'ETH')?.total || 0
@@ -65,7 +85,7 @@ export default function EmployeeCost({ data }) {
                   tick={{ fontSize: 10, fill: '#6B7C93' }}
                   axisLine={false}
                   tickLine={false}
-                  width={120}
+                  width={160}
                 />
                 <Tooltip
                   formatter={(v, name) => [fmtETBRaw(v) + ' ETB', name]}
