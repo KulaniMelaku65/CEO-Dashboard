@@ -59,7 +59,7 @@ export default function EmployeeCost({ data }) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <KpiCard label="Total Payroll Cost" value={fmtETBRaw(totalCost)} sub="KIFIYA + SAFEE combined" />
+        <KpiCard label="Total Payroll Cost" value={fmtETBRaw(totalCost)} sub="Kifiya + MSP / Programme" />
         <KpiCard label="ETH Payroll Cost"   value={fmtETBRaw(eth)}       sub="Virtual Company: ETH" />
         <KpiCard label="HUB Payroll Cost"   value={fmtETBRaw(hub)}       sub="Virtual Company: HUB" />
       </div>
@@ -93,7 +93,7 @@ export default function EmployeeCost({ data }) {
                 />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 <Bar dataKey="kifiya" name="KIFIYA" fill={KIFIYA_COLOR} radius={[0, 3, 3, 0]} maxBarSize={14} />
-                <Bar dataKey="safee"  name="SAFEE"  fill={SAFEE_COLOR}  radius={[0, 3, 3, 0]} maxBarSize={14} />
+                <Bar dataKey="safee"  name="MSP / Programme"  fill={SAFEE_COLOR}  radius={[0, 3, 3, 0]} maxBarSize={14} />
               </BarChart>
             </ResponsiveContainer>
           ) : (

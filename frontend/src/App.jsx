@@ -14,6 +14,7 @@ import HR from './pages/HR.jsx'
 import EmployeeCost from './pages/EmployeeCost.jsx'
 import EmployeeCostDetail from './pages/EmployeeCostDetail.jsx'
 import EmployeeCostVariance from './pages/EmployeeCostVariance.jsx'
+import HRPageReview from './pages/HRPageReview.jsx'
 import Risk from './pages/Risk.jsx'
 import Reports from './pages/Reports.jsx'
 
@@ -28,6 +29,7 @@ export const SLIDES = [
   { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
   { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
   { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
+  { id: 'hr-page-review',        label: 'HR Page Review',       Page: HRPageReview,         parentId: 'hr' },
   { id: 'reports',               label: 'Reports & Insights',  Page: Reports },
 ]
 

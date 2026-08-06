@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -92,23 +92,142 @@ export default function HR({ data }) {
   const hr  = data.hr || {}
   const ec  = data.employeeCost || {}
   const dims = data.dimensionNames || {}
+  const empNoToType    = hr.empNoToType    || {}
+  const empNoToJobTitle = hr.empNoToJobTitle || {}
 
-  const [activeDept,    setActiveDept]    = useState(null)
-  const [activeSection, setActiveSection] = useState(null)
+  const [activeDept,        setActiveDept]       = useState(null)
+  const [activeSection,     setActiveSection]    = useState(null)
+  const [expandedJobs,      setExpandedJobs]     = useState({})
+  const [expandedStatusBU,  setExpandedStatusBU] = useState({})
+  const [expandedGenderJob, setExpandedGenderJob] = useState({})
 
   const genderData          = hr.byGender          || []
   const typeData            = (hr.byType           || []).map(d => ({ ...d, male: d.male || 0, female: d.female || 0 }))
   const jobTitleData        = (hr.byJobTitle       || []).map(d => ({ ...d, male: d.male || 0, female: d.female || 0 }))
-  const statusData          = (hr.byStatus         || []).map(d => ({ name: d.status, value: d.count }))
-  const vcData              = (hr.byVirtualCompany || []).map(d => ({ name: d.virtualCompany, value: d.count }))
+
+  // Build name → employeeNo lookup: payroll drilldown first, then HR hierarchy as fallback
+  const nameToEmpNo = {}
+  ;(ec.buDrillDown || []).forEach(bu => {
+    ;(bu.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        if (emp.name && emp.employeeNo) nameToEmpNo[emp.name] = emp.employeeNo
+      })
+    })
+  })
+  ;(hr.byDeptHierarchy || []).forEach(d => {
+    ;(d.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        if (emp.name && emp.employeeNo && !nameToEmpNo[emp.name])
+          nameToEmpNo[emp.name] = emp.employeeNo
+      })
+    })
+  })
+
+  const vcData              = (hr.byVirtualCompany || []).filter(d => d.virtualCompany && d.virtualCompany !== 'Unknown').map(d => ({ name: d.virtualCompany, value: d.count }))
   const seniorityList       = hr.seniorityList     || []
   const deptHierarchy       = hr.byDeptHierarchy   || []
-  // Use backend's full sectionToDept map (covers payroll-only & terminated employee sections)
+
+  // Use backend's full sectionToDept map (covers payroll-only & Inactive employee sections)
   const sectionToDept    = hr.sectionToDept    || {}
   const deptDisplayNames = hr.deptDisplayNames || {}
   const parentBUNames    = { ...deptDisplayNames }
   ;(hr.byDeptHierarchy || []).forEach(d => { parentBUNames[d.deptCode] = d.deptName })
   const parentBUCodes = new Set(Object.keys(parentBUNames))
+
+  // empInfoMap: employeeNo → { buName, vc, gender, type } — used to enrich job-cost employee rows
+  const empInfoMap = {}
+  ;(ec.buDrillDown || []).forEach(bu => {
+    const parentCode = sectionToDept[bu.buCode] || bu.buCode
+    const buName = deptDisplayNames[parentCode] || dims[parentCode] || bu.buCode
+    ;(bu.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        if (emp.employeeNo && !empInfoMap[emp.employeeNo])
+          empInfoMap[emp.employeeNo] = { buName }
+      })
+    })
+  })
+  ;(hr.seniorityList || []).forEach(s => {
+    const empNo = nameToEmpNo[s.name]
+    if (empNo) {
+      if (!empInfoMap[empNo]) empInfoMap[empNo] = {}
+      Object.assign(empInfoMap[empNo], { vc: s.vc, gender: s.gender, type: s.type })
+    }
+  })
+  // nameToJobTitle: fullName → BC "Job Description" (seniorityList.title = r.jobTitle from headcount)
+  const nameToJobTitle = {}
+  ;(hr.seniorityList || []).forEach(s => {
+    if (s.name && s.title && s.title !== 'Unknown') nameToJobTitle[s.name] = s.title
+  })
+  // Populate empInfoMap.title via name bridge: payroll emp.name ↔ headcount fullName
+  ;(ec.buDrillDown || []).forEach(bu => {
+    ;(bu.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        if (emp.employeeNo && emp.name && !empInfoMap[emp.employeeNo]?.title) {
+          const t = nameToJobTitle[emp.name]
+          if (t) {
+            if (!empInfoMap[emp.employeeNo]) empInfoMap[emp.employeeNo] = {}
+            empInfoMap[emp.employeeNo].title = t
+          }
+        }
+      })
+    })
+  })
+
+  // jobEmpMap: jobTitle → [{ employeeNo, name, gender }]
+  // Source: hr.byDeptHierarchy (emp.jobTitle = BC "Job Description" field)
+  // NOTE: KFT_Employee_Headcount query has NO employeeNo column — dedup must use emp.name
+  const jobEmpMap = {}
+  const _jobEmpSeen = {}
+  ;(hr.byDeptHierarchy || []).forEach(d => {
+    ;(d.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        const title = emp.jobTitle
+        if (!title || title === 'Unknown') return
+        if (!jobEmpMap[title]) { jobEmpMap[title] = []; _jobEmpSeen[title] = new Set() }
+        if (!_jobEmpSeen[title].has(emp.name)) {
+          _jobEmpSeen[title].add(emp.name)
+          jobEmpMap[title].push({ employeeNo: nameToEmpNo[emp.name], name: emp.name, gender: emp.gender })
+        }
+      })
+    })
+  })
+
+  // empPayrollMap: employeeNo → { monthly, total } — merged across all BUs from payroll drilldown
+  const empPayrollMap = {}
+  ;(ec.buDrillDown || []).forEach(bu => {
+    ;(bu.sections || []).forEach(sec => {
+      ;(sec.employees || []).forEach(emp => {
+        if (!emp.employeeNo) return
+        if (!empPayrollMap[emp.employeeNo]) empPayrollMap[emp.employeeNo] = { monthly: {}, total: 0 }
+        Object.entries(emp.monthly || {}).forEach(([m, v]) => {
+          empPayrollMap[emp.employeeNo].monthly[m] = (empPayrollMap[emp.employeeNo].monthly[m] || 0) + v
+        })
+        empPayrollMap[emp.employeeNo].total += emp.total || 0
+      })
+    })
+  })
+
+  // parent BU → unique employees from payroll drilldown (guaranteed employeeNo, unlike headcount path)
+  const buEmpList = (() => {
+    const byBU = {}
+    ;(ec.buDrillDown || []).forEach(bu => {
+      const parentCode = sectionToDept[bu.buCode] || bu.buCode
+      if (!byBU[parentCode]) byBU[parentCode] = {}
+      ;(bu.sections || []).forEach(sec => {
+        ;(sec.employees || []).forEach(emp => {
+          if (emp.employeeNo && !byBU[parentCode][emp.employeeNo])
+            byBU[parentCode][emp.employeeNo] = { name: emp.name, employeeType: emp.employeeType || '' }
+        })
+      })
+    })
+    const result = {}
+    Object.entries(byBU).forEach(([code, map]) => {
+      result[code] = Object.entries(map)
+        .map(([employeeNo, d]) => ({ employeeNo, name: d.name, employeeType: d.employeeType }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    })
+    return result
+  })()
 
   const resolveParent = (code) => {
     const buCode = sectionToDept[code] || (parentBUCodes.has(code) ? code : code)
@@ -124,6 +243,7 @@ export default function HR({ data }) {
     const grouped = {}
     rawByDeptByType.forEach(row => {
       const { buCode, buName } = resolveParent(row.deptCode)
+      if (!buCode || buCode === 'Unknown') return
       if (!grouped[buCode]) grouped[buCode] = { deptCode: buCode, deptName: buName, types: {} }
       Object.entries(row.types || {}).forEach(([t, v]) => {
         grouped[buCode].types[t] = (grouped[buCode].types[t] || 0) + v
@@ -141,11 +261,12 @@ export default function HR({ data }) {
     const grouped = {}
     rawByDeptByStatus.forEach(row => {
       const { buCode, buName } = resolveParent(row.deptCode)
-      if (!grouped[buCode]) grouped[buCode] = { deptCode: buCode, deptName: buName, Active: 0, Terminated: 0 }
-      grouped[buCode].Active     += row.Active     || 0
-      grouped[buCode].Terminated += row.Terminated || 0
+      if (!buCode || buCode === 'Unknown') return
+      if (!grouped[buCode]) grouped[buCode] = { deptCode: buCode, deptName: buName, Active: 0, Inactive: 0 }
+      grouped[buCode].Active   += row.Active   || 0
+      grouped[buCode].Inactive += row.Inactive || 0
     })
-    return Object.values(grouped).sort((a, b) => (b.Active + b.Terminated) - (a.Active + a.Terminated))
+    return Object.values(grouped).sort((a, b) => (b.Active + b.Inactive) - (a.Active + a.Inactive))
   })()
   const headcountEvolution  = hr.headcountEvolution || []
   const turnoverData        = hr.turnover           || []
@@ -197,25 +318,18 @@ export default function HR({ data }) {
       </div>
 
       {/* ── Workforce Composition + Contract Status ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">N° Employees per Entity</h3>
+          <h3 className="text-sm font-bold text-navy mb-4">No Employees per Entity</h3>
           {vcData.length > 0
             ? <MiniDonut data={vcData} size={140} />
             : <div className="h-36 flex items-center justify-center text-muted text-sm">No data</div>}
         </div>
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Employment Status</h3>
-          {statusData.length > 0
-            ? <MiniDonut data={statusData} size={140} />
-            : <div className="h-36 flex items-center justify-center text-muted text-sm">No data</div>}
-        </div>
-
-        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <h3 className="text-sm font-bold text-navy mb-4">HR Cost Allocation</h3>
-          <p className="text-[10px] text-muted mb-3">Kifiya (permanent) vs Programme (Safee)</p>
+          <p className="text-[10px] text-muted mb-3">Kifiya vs MSP / Programme</p>
           {costSourceData.length > 0 ? (
             <>
               <MiniDonut data={costSourceData} size={120} />
@@ -281,28 +395,255 @@ export default function HR({ data }) {
       </div>
 
       {/* ── Gender per Role / Job Title ── */}
-      {jobTitleData.length > 0 && (
-        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-2">Gender per Role / Job Title</h3>
-          <GenderLegend />
-          <ResponsiveContainer width="100%" height={Math.max(220, jobTitleData.length * 34)}>
-            <BarChart data={jobTitleData} layout="vertical" margin={{ top: 0, right: 32, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="jobTitle" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={160} />
-              <Tooltip content={<GenderTooltip />} cursor={{ fill: 'rgba(2,64,79,0.04)' }} />
-              <Bar dataKey="male"   name="Male"   stackId="g" fill={MALE_COLOR}   maxBarSize={16} />
-              <Bar dataKey="female" name="Female" stackId="g" fill={FEMALE_COLOR} maxBarSize={16} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {jobTitleData.length > 0 && (() => {
+        const genderTotal = jobTitleData.reduce((s, d) => ({ male: s.male + d.male, female: s.female + d.female }), { male: 0, female: 0 })
+        return (
+          <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+            <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-navy">Gender per Role / Job Title</h3>
+                <p className="text-[10px] text-muted mt-0.5">Click a row to expand employees · {jobTitleData.length} roles</p>
+              </div>
+              <div className="flex gap-4 text-[10px] font-semibold text-muted">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: MALE_COLOR }} /> Male
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: FEMALE_COLOR }} /> Female
+                </span>
+              </div>
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 480 }}>
+              <table className="text-[11px] border-collapse w-full">
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20" style={{ background: '#02404F', minWidth: 220 }}>
+                      Job Description
+                    </th>
+                    <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[70px]" style={{ color: FEMALE_COLOR }}>Female</th>
+                    <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[70px]" style={{ color: '#90D4CE' }}>Male</th>
+                    <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[70px]">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobTitleData.map((row, ri) => {
+                    const isOpen  = !!expandedGenderJob[row.jobTitle]
+                    const empList = jobEmpMap[row.jobTitle] || []
+                    const rowBg   = ri % 2 === 0 ? '#fff' : '#F9FBFD'
+                    return (
+                      <Fragment key={row.jobTitle}>
+                        <tr
+                          className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
+                          style={{ background: rowBg }}
+                          onClick={() => setExpandedGenderJob(prev => ({ ...prev, [row.jobTitle]: !prev[row.jobTitle] }))}
+                        >
+                          <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: rowBg }}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted w-3">{isOpen ? '▾' : '▸'}</span>
+                              {row.jobTitle}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: FEMALE_COLOR }}>{row.female || 0}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: MALE_COLOR }}>{row.male || 0}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-bold text-navy">{(row.male || 0) + (row.female || 0)}</td>
+                        </tr>
+                        {isOpen && empList.length > 0 && empList.map(emp => (
+                          <tr key={emp.employeeNo || emp.name} className="border-t border-border/30" style={{ background: '#F0FAF9' }}>
+                            <td className="pl-10 pr-4 py-1.5 sticky left-0 z-10" style={{ background: '#F0FAF9' }}>
+                              <span className="inline-flex items-center gap-1.5">
+                                {emp.employeeNo && (
+                                  <span className="font-mono text-[10px] text-muted">{emp.employeeNo}</span>
+                                )}
+                                <span className="text-[11px] font-medium text-navy">{emp.name}</span>
+                              </span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right tabular-nums font-semibold" style={{ color: FEMALE_COLOR }}>
+                              {emp.gender === 'Female' ? 1 : <span className="text-muted opacity-40">—</span>}
+                            </td>
+                            <td className="px-4 py-1.5 text-right tabular-nums font-semibold" style={{ color: MALE_COLOR }}>
+                              {emp.gender === 'Male' ? 1 : <span className="text-muted opacity-40">—</span>}
+                            </td>
+                            <td className="px-4 py-1.5 text-right tabular-nums font-bold text-navy">1</td>
+                          </tr>
+                        ))}
+                        {isOpen && empList.length === 0 && (
+                          <tr className="border-t border-border/30" style={{ background: '#F0FAF9' }}>
+                            <td className="pl-10 pr-4 py-1.5 text-muted italic" colSpan={4}>No payroll records for this role</td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="sticky bottom-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: '#02404F' }}>Total</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold" style={{ color: FEMALE_COLOR }}>{genderTotal.female}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold" style={{ color: '#90D4CE' }}>{genderTotal.male}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold text-white">{genderTotal.male + genderTotal.female}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Employee Cost by Job Type ── */}
+      {jobTitleData.length > 0 && (ec.payrollMonths || []).length > 0 && (() => {
+        const months = ec.payrollMonths || []
+
+        // Resolve a headcount fullName (possibly 3-part) to a payroll employeeNo.
+        // Payroll stores firstName+lastName only, so we try the full name first,
+        // then fall back to first + last word for Ethiopian 3-part names.
+        const resolveEmpNo = (fullName) => {
+          if (!fullName) return null
+          let no = nameToEmpNo[fullName]
+          if (no) return no
+          const parts = fullName.trim().split(/\s+/)
+          if (parts.length >= 3) no = nameToEmpNo[`${parts[0]} ${parts[parts.length - 1]}`]
+          return no || null
+        }
+
+        // Build job rows from headcount hierarchy (reliable job titles) joined to
+        // payroll costs via name → employeeNo lookup.
+        const jobRows = (() => {
+          const byTitle = {}
+          const seen = new Set()
+          ;(hr.byDeptHierarchy || []).forEach(d => {
+            ;(d.sections || []).forEach(sec => {
+              ;(sec.employees || []).forEach(emp => {
+                if (!emp.name || seen.has(emp.name)) return
+                seen.add(emp.name)
+                const title = emp.jobTitle
+                if (!title || title === 'Unknown') return
+                const empNo = resolveEmpNo(emp.name)
+                const costs = empNo ? empPayrollMap[empNo] : null
+                if (!byTitle[title]) byTitle[title] = { jobTitle: title, employees: [], monthTotals: {}, total: 0 }
+                const g = byTitle[title]
+                g.employees.push({
+                  employeeNo: empNo || '',
+                  name: emp.name,
+                  gender: emp.gender,
+                  monthly: costs?.monthly || {},
+                  total: costs?.total || 0
+                })
+                Object.entries(costs?.monthly || {}).forEach(([m, v]) => {
+                  g.monthTotals[m] = (g.monthTotals[m] || 0) + v
+                })
+                g.total += costs?.total || 0
+              })
+            })
+          })
+          return Object.values(byTitle)
+            .filter(j => j.total > 0)
+            .sort((a, b) => b.total - a.total)
+        })()
+        const fmtC = (n) => {
+          if (!n && n !== 0) return '—'
+          return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        }
+        const grandTotal = {}
+        jobRows.forEach(j => months.forEach(m => {
+          grandTotal[m] = (grandTotal[m] || 0) + (j.monthTotals[m] || 0)
+        }))
+        return (
+          <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+            <div className="px-5 pt-5 pb-3">
+              <h3 className="text-sm font-bold text-navy">Employee Cost by Job Type</h3>
+              <p className="text-[10px] text-muted mt-0.5">Click a row to expand employees · {jobRows.length} job types</p>
+            </div>
+            <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 700 }}>
+              <table className="text-[11px] border-collapse w-full" style={{ minWidth: Math.max(700, 240 + months.length * 130) }}>
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[220px]"
+                        style={{ background: '#02404F' }}>Job Description</th>
+                    {months.map(m => (
+                      <th key={m} className="px-3 py-3 font-bold text-white text-right whitespace-nowrap min-w-[120px]">{m}</th>
+                    ))}
+                    <th className="px-3 py-3 font-bold text-white text-right whitespace-nowrap min-w-[120px]">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobRows.map((job, ji) => {
+                    const isOpen = !!expandedJobs[job.jobTitle]
+                    const rowBg  = ji % 2 === 0 ? '#fff' : '#F9FBFD'
+                    return (
+                      <Fragment key={job.jobTitle}>
+                        <tr
+                          className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
+                          style={{ background: rowBg }}
+                          onClick={() => setExpandedJobs(prev => ({ ...prev, [job.jobTitle]: !prev[job.jobTitle] }))}
+                        >
+                          <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10"
+                              style={{ background: rowBg }}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted w-3">{isOpen ? '▾' : '▸'}</span>
+                              {job.jobTitle}
+                            </span>
+                          </td>
+                          {months.map(m => (
+                            <td key={m} className="px-3 py-2.5 text-right tabular-nums text-navy">
+                              {fmtC(job.monthTotals[m] || null)}
+                            </td>
+                          ))}
+                          <td className="px-3 py-2.5 text-right tabular-nums font-bold text-navy">{fmtC(job.total)}</td>
+                        </tr>
+                        {isOpen && job.employees.map(emp => (
+                          <tr key={emp.name} className="border-t border-border/30" style={{ background: '#F0FAF9' }}>
+                            <td className="pl-10 pr-4 py-2 sticky left-0 z-10" style={{ background: '#F0FAF9' }}>
+                              <div className="inline-flex items-center gap-1.5">
+                                {emp.employeeNo && (
+                                  <span className="font-mono text-[10px] text-muted">{emp.employeeNo}</span>
+                                )}
+                                <span className="text-[11px] font-medium text-navy">{emp.name}</span>
+                              </div>
+                              {emp.gender && (
+                                <div className="mt-0.5">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                    style={{ background: emp.gender === 'Male' ? 'rgba(2,64,79,.06)' : 'rgba(31,182,166,.1)', color: emp.gender === 'Male' ? MALE_COLOR : FEMALE_COLOR }}>
+                                    {emp.gender === 'Male' ? '♂' : '♀'} {emp.gender}
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            {months.map(m => (
+                              <td key={m} className="px-3 py-2 text-right tabular-nums text-muted">
+                                {fmtC(emp.monthly[m] || null)}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy">{fmtC(emp.total || null)}</td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="sticky bottom-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: '#02404F' }}>Total</td>
+                    {months.map(m => (
+                      <td key={m} className="px-3 py-3 text-right tabular-nums font-bold text-white">
+                        {fmtC(grandTotal[m] || null)}
+                      </td>
+                    ))}
+                    <td className="px-3 py-3 text-right tabular-nums font-bold text-white">
+                      {fmtC(jobRows.reduce((s, j) => s + j.total, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Headcount by Department (3-level drilldown) ── */}
       {deptChartData.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-navy">N° Employees per Business Unit</h3>
+            <h3 className="text-sm font-bold text-navy">No Employees per Business Unit</h3>
             {activeDept && (
               <button
                 onClick={() => { setActiveDept(null); setActiveSection(null) }}
@@ -363,7 +704,9 @@ export default function HR({ data }) {
                                 {(emp.name || '?').charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[11px] font-bold text-navy truncate">{emp.name || '—'}</p>
+                                <p className="text-[11px] font-bold text-navy truncate">
+                                  {[emp.employeeNo || nameToEmpNo[emp.name], emp.name].filter(Boolean).join(' ') || '—'}
+                                </p>
                                 <p className="text-[9px] text-muted truncate">{emp.jobTitle || emp.employeeType || '—'}</p>
                               </div>
                             </div>
@@ -443,7 +786,7 @@ export default function HR({ data }) {
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Active Contract Type per Business Unit</h3>
-            <p className="text-[10px] text-muted mt-0.5">Headcount by contract type across business units</p>
+            <p className="text-[10px] text-muted mt-0.5">Headcount by contract type · click a row to see employees</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] border-collapse">
@@ -461,23 +804,59 @@ export default function HR({ data }) {
                   const maxVal = Math.max(...byDeptByType.flatMap(d => Object.values(d.types)));
                   return byDeptByType.map((row, i) => {
                     const total = Object.values(row.types).reduce((s, v) => s + v, 0);
+                    const isOpen = !!expandedStatusBU[row.deptCode];
+                    const emps   = buEmpList[row.deptCode] || [];
+                    const bg = i % 2 === 0 ? '#fff' : '#F9FBFD';
                     return (
-                      <tr key={row.deptCode} className="border-t border-border" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
-                        <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>{row.deptName}</td>
-                        {allContractTypes.map(t => {
-                          const val = row.types[t] || 0;
-                          const intensity = maxVal > 0 ? val / maxVal : 0;
+                      <Fragment key={row.deptCode}>
+                        <tr
+                          className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
+                          style={{ background: bg }}
+                          onClick={() => setExpandedStatusBU(prev => ({ ...prev, [row.deptCode]: !prev[row.deptCode] }))}
+                        >
+                          <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: bg }}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-[10px] text-muted w-3 flex-shrink-0">{isOpen ? '▾' : '▸'}</span>
+                              {row.deptName}
+                            </span>
+                          </td>
+                          {allContractTypes.map(t => {
+                            const val = row.types[t] || 0;
+                            const intensity = maxVal > 0 ? val / maxVal : 0;
+                            return (
+                              <td key={t} className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{
+                                background: val > 0 ? `rgba(2,64,79,${0.06 + intensity * 0.22})` : 'transparent',
+                                color: intensity > 0.6 ? '#02404F' : '#6B7C93'
+                              }}>
+                                {val > 0 ? val : <span className="opacity-20">—</span>}
+                              </td>
+                            )
+                          })}
+                          <td className="px-4 py-2.5 text-right font-bold text-navy tabular-nums">{total}</td>
+                        </tr>
+                        {isOpen && emps.map(emp => {
+                          const empType = empNoToType[emp.employeeNo] || emp.employeeType || '';
                           return (
-                            <td key={t} className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{
-                              background: val > 0 ? `rgba(2,64,79,${0.06 + intensity * 0.22})` : 'transparent',
-                              color: intensity > 0.6 ? '#02404F' : '#6B7C93'
-                            }}>
-                              {val > 0 ? val : <span className="opacity-20">—</span>}
-                            </td>
+                            <tr key={emp.employeeNo} className="border-t border-border/30" style={{ background: '#F0FAF9' }}>
+                              <td className="pl-9 pr-4 py-1.5 sticky left-0 z-10" style={{ background: '#F0FAF9' }}>
+                                <span className="inline-flex items-center gap-1.5">
+                                  {emp.employeeNo && <span className="font-mono text-[10px] text-muted">{emp.employeeNo}</span>}
+                                  <span className="text-[11px] font-medium text-navy">{emp.name}</span>
+                                </span>
+                              </td>
+                              {allContractTypes.map(t => (
+                                <td key={t} className="px-3 py-1.5 text-right tabular-nums">
+                                  {empType === t
+                                    ? <span className="font-bold" style={{ color: '#02404F' }}>1</span>
+                                    : <span className="opacity-20">—</span>
+                                  }
+                                </td>
+                              ))}
+                              <td className="px-4 py-1.5 text-right font-bold tabular-nums" style={{ color: '#02404F' }}>1</td>
+                            </tr>
                           )
                         })}
-                        <td className="px-4 py-2.5 text-right font-bold text-navy tabular-nums">{total}</td>
-                      </tr>
+                      </Fragment>
                     )
                   })
                 })()}
@@ -487,64 +866,15 @@ export default function HR({ data }) {
         </div>
       )}
 
-      {/* ── Contract Status per BU matrix ── */}
-      {byDeptByStatus.length > 0 && (
-        <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Contract Status per Business Unit</h3>
-            <p className="text-[10px] text-muted mt-0.5">Active headcount vs total separations per BU</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px] border-collapse">
-              <thead>
-                <tr style={{ background: '#02404F' }}>
-                  <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-10 min-w-[160px]" style={{ background: '#02404F' }}>Business Unit</th>
-                  <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[90px]" style={{ color: '#86EFCF' }}>Active</th>
-                  <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[90px]" style={{ color: '#FBB97B' }}>Terminated</th>
-                  <th className="px-4 py-3 font-bold text-white text-right min-w-[90px]">Active %</th>
-                  <th className="px-4 py-3 font-bold text-white text-right min-w-[72px]">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byDeptByStatus.map((row, i) => {
-                  const total   = (row.Active || 0) + (row.Inactive || 0);
-                  const activePct = total > 0 ? ((row.Active / total) * 100).toFixed(0) : 0;
-                  const bg = i % 2 === 0 ? '#fff' : '#F9FBFD';
-                  return (
-                    <tr key={row.deptCode} className="border-t border-border" style={{ background: bg }}>
-                      <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: bg }}>{row.deptName}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: '#02404F' }}>
-                        {row.Active || <span className="opacity-20">—</span>}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: '#EB7D23' }}>
-                        {row.Terminated || <span className="opacity-20">—</span>}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
-                            <div className="h-full rounded-full" style={{ width: activePct + '%', background: '#02404F' }} />
-                          </div>
-                          <span className="font-semibold text-navy w-8 text-right">{activePct}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-bold text-navy tabular-nums">{total}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ── Employee Seniority List ── */}
       {seniorityList.length > 0 && (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Employee Seniority List</h3>
-            <p className="text-[10px] text-muted mt-0.5">Active employees sorted by hire date — longest serving first</p>
+            <p className="text-[10px] text-muted mt-0.5">All {seniorityList.length} active employees sorted by hire date — longest serving first · scroll to see all</p>
           </div>
-          <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+          <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 480 }}>
             <table className="w-full text-[11px] border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr style={{ background: '#02404F' }}>
@@ -561,7 +891,8 @@ export default function HR({ data }) {
                 {seniorityList.map((emp, i) => (
                   <tr key={i} className="border-t border-border" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
                     <td className="px-4 py-2 sticky left-0 z-10 font-medium text-navy" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
-                      <span className="text-muted font-mono mr-2">{String(i + 1).padStart(2, '0')}</span>{emp.name || '—'}
+                      <span className="text-muted font-mono mr-2">{String(i + 1).padStart(2, '0')}</span>
+                      {[nameToEmpNo[emp.name], emp.name].filter(Boolean).join(' ') || '—'}
                     </td>
                     <td className="px-3 py-2 text-muted tabular-nums">{emp.hired || '—'}</td>
                     <td className="px-3 py-2 font-semibold text-navy tabular-nums">{yearsOfService(emp.hired)}</td>

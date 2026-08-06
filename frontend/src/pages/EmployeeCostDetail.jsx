@@ -131,7 +131,7 @@ export default function EmployeeCostDetail({ data }) {
   }).sort((a, b) => b.total - a.total)
   const buCostGrand = buCostData.reduce((s, d) => s + d.total, 0)
 
-  // ── Cost per Employee (top 25) ────────────────────────────────────────────
+  // ── Cost per Employee (all employees) ────────────────────────────────────
   const [selectedEmp, setSelectedEmp] = useState(null)
   const allEmployees = normalizedDrillDown.flatMap(bu =>
     bu.sections.flatMap(sec =>
@@ -139,10 +139,10 @@ export default function EmployeeCostDetail({ data }) {
         ...e,
         buName:      bu.buName,
         sectionName: sec.sectionName,
-        displayName: (e.name || e.employeeNo).slice(0, 22)
+        displayName: [e.employeeNo, e.name].filter(Boolean).join(' ').slice(0, 26)
       }))
     )
-  ).sort((a, b) => b.total - a.total).slice(0, 25)
+  ).sort((a, b) => b.total - a.total)
   const selectedEmpData = selectedEmp ? allEmployees.find(e => e.employeeNo === selectedEmp) : null
   const empTrendData = selectedEmpData
     ? months.map(m => ({ month: m, cost: selectedEmpData.monthly[m] || 0 }))
@@ -197,7 +197,7 @@ export default function EmployeeCostDetail({ data }) {
       <div className="grid grid-cols-3 gap-4">
         <KpiCard label="Ethiopia" value={fmt(eth)}   sub="Virtual Company: ETH" />
         <KpiCard label="HUB"      value={fmt(hub)}   sub="Virtual Company: HUB" />
-        <KpiCard label="Total"    value={fmt(grand)}  sub={selectedBU ? selectedBUHR?.name || selectedBU : 'KIFIYA + SAFEE combined'} />
+        <KpiCard label="Total"    value={fmt(grand)}  sub={selectedBU ? selectedBUHR?.name || selectedBU : 'Kifiya + MSP / Programme'} />
       </div>
 
       {/* Entity × Payroll Source tiles */}
@@ -243,7 +243,7 @@ export default function EmployeeCostDetail({ data }) {
                     style={{ borderColor: entityFilter === safKey ? SAF_COLOR : '#E3E9F2', background: entityFilter === safKey ? '#FEF3EA' : '#F9FBFD' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="w-2 h-2 rounded-full" style={{ background: SAF_COLOR }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>{row.entity} · Safee</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>{row.entity} · MSP / Programme</span>
                     </div>
                     <p className="text-lg font-extrabold text-navy tabular-nums">{fmt(row.safeeTotal)}</p>
                     <p className="text-[10px] text-muted mt-0.5">{row.safeeCount} employee{row.safeeCount !== 1 ? 's' : ''}</p>
@@ -255,13 +255,13 @@ export default function EmployeeCostDetail({ data }) {
 
           <div className="mt-4">
             <ResponsiveContainer width="100%" height={entitySrcData.length * 34 + 10}>
-              <BarChart data={entitySrcData.map(r => ({ name: r.entity, Kifiya: r.kifiyaTotal, Safee: r.safeeTotal }))}
+              <BarChart data={entitySrcData.map(r => ({ name: r.entity, Kifiya: r.kifiyaTotal, 'MSP / Programme': r.safeeTotal }))}
                 layout="vertical" margin={{ top: 0, right: 10, left: 40, bottom: 0 }}>
                 <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fontWeight: 700, fill: '#02404F' }} axisLine={false} tickLine={false} width={36} />
                 <Tooltip formatter={(v, name) => [fmt(v) + ' ETB', name]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
                 <Bar dataKey="Kifiya" stackId="s" fill={KIF_COLOR} maxBarSize={16} />
-                <Bar dataKey="Safee"  stackId="s" fill={SAF_COLOR} maxBarSize={16} radius={[0, 3, 3, 0]} />
+                <Bar dataKey="MSP / Programme" stackId="s" fill={SAF_COLOR} maxBarSize={16} radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -272,7 +272,7 @@ export default function EmployeeCostDetail({ data }) {
       {buCostData.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <h3 className="text-sm font-bold text-navy mb-1">Company Cost per Business Unit</h3>
-          <p className="text-[10px] text-muted mb-4">Total payroll cost (KIFIYA + SAFEE) per parent BU — % of grand total</p>
+          <p className="text-[10px] text-muted mb-4">Total payroll cost (Kifiya + MSP / Programme) per parent BU — % of grand total</p>
           <ResponsiveContainer width="100%" height={Math.max(200, buCostData.length * 42)}>
             <BarChart data={buCostData} layout="vertical" margin={{ top: 0, right: 80, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
@@ -296,76 +296,106 @@ export default function EmployeeCostDetail({ data }) {
         </div>
       )}
 
-      {/* ── Company Cost per Employee (top 25) ── */}
+      {/* ── Company Cost per Employee ── */}
       {allEmployees.length > 0 && (
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-          <div className="xl:col-span-2 bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-1">Company Cost per Employee</h3>
-            <p className="text-[10px] text-muted mb-3">Top 25 by total payroll — click to see monthly trend</p>
-            <div className="overflow-y-auto max-h-[420px] space-y-1 pr-1">
-              {allEmployees.map((emp, i) => {
-                const isSelected = selectedEmp === emp.employeeNo
-                const pctOfGrand = buCostGrand > 0 ? (emp.total / buCostGrand) * 100 : 0
-                return (
-                  <button
-                    key={emp.employeeNo}
-                    onClick={() => setSelectedEmp(prev => prev === emp.employeeNo ? null : emp.employeeNo)}
-                    className="w-full text-left px-3 py-2 rounded-xl transition-all flex items-center gap-3"
-                    style={{ background: isSelected ? '#EBF8F6' : i % 2 === 0 ? '#F9FBFD' : '#fff' }}
-                  >
-                    <span className="text-[10px] font-mono text-muted w-5 flex-shrink-0">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-semibold text-navy truncate">{emp.name || emp.employeeNo}</p>
-                      <p className="text-[9px] text-muted truncate">{emp.sectionName}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-[11px] font-bold text-navy tabular-nums">{fmt(emp.total)}</p>
-                      <p className="text-[9px] text-muted">{pctOfGrand.toFixed(1)}%</p>
-                    </div>
-                  </button>
-                )
-              })}
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+            <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-navy">Company Cost per Employee</h3>
+                <p className="text-[10px] text-muted mt-0.5">{allEmployees.length} employees · click a row to see monthly cost trend</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 480 }}>
+              <table className="text-[11px] border-collapse w-full" style={{ minWidth: 700 }}>
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <th className="px-3 py-3 font-bold text-white text-left w-8">#</th>
+                    <th className="px-3 py-3 font-bold text-white text-left min-w-[180px]">Employee</th>
+                    <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Business Unit</th>
+                    <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Section</th>
+                    <th className="px-3 py-3 font-bold text-right min-w-[100px]" style={{ color: '#90D4CE' }}>Kifiya</th>
+                    <th className="px-3 py-3 font-bold text-right min-w-[100px]" style={{ color: '#EB7D23' }}>MSP / Programme</th>
+                    <th className="px-3 py-3 font-bold text-white text-right min-w-[110px]">Total Cost</th>
+                    <th className="px-3 py-3 font-bold text-white text-right min-w-[60px]">% of Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allEmployees.map((emp, i) => {
+                    const isSelected  = selectedEmp === emp.employeeNo
+                    const pctOfGrand  = buCostGrand > 0 ? (emp.total / buCostGrand) * 100 : 0
+                    const rowBg       = isSelected ? '#EBF8F6' : i % 2 === 0 ? '#fff' : '#F9FBFD'
+                    return (
+                      <tr
+                        key={emp.employeeNo}
+                        className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
+                        style={{ background: rowBg }}
+                        onClick={() => setSelectedEmp(prev => prev === emp.employeeNo ? null : emp.employeeNo)}
+                      >
+                        <td className="px-3 py-2 text-muted font-mono">{i + 1}</td>
+                        <td className="px-3 py-2 font-semibold text-navy">
+                          {[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{emp.buName}</td>
+                        <td className="px-3 py-2 text-muted">{emp.sectionName}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>{fmtFull(emp.kifiya || null)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>{fmtFull(emp.safee  || null)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-bold text-navy">{fmtFull(emp.total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted">{pctOfGrand.toFixed(1)}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="sticky bottom-0 z-10">
+                  <tr style={{ background: '#02404F' }}>
+                    <td className="px-3 py-3 font-extrabold text-white" colSpan={4}>Total</td>
+                    <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#90D4CE' }}>
+                      {fmtFull(allEmployees.reduce((s, e) => s + (e.kifiya || 0), 0))}
+                    </td>
+                    <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#EB7D23' }}>
+                      {fmtFull(allEmployees.reduce((s, e) => s + (e.safee || 0), 0))}
+                    </td>
+                    <td className="px-3 py-3 text-right font-bold text-white tabular-nums">
+                      {fmtFull(allEmployees.reduce((s, e) => s + e.total, 0))}
+                    </td>
+                    <td className="px-3 py-3 text-right font-bold text-white">100%</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
 
-          <div className="xl:col-span-3 bg-white rounded-2xl border border-border p-5 shadow-card">
-            {selectedEmpData ? (
-              <>
-                <div className="mb-4">
-                  <h3 className="text-sm font-bold text-navy">{selectedEmpData.name || selectedEmpData.employeeNo}</h3>
-                  <p className="text-[10px] text-muted">{selectedEmpData.sectionName} · {selectedEmpData.buName}</p>
-                  <div className="flex gap-4 mt-2">
-                    <span className="text-[10px] font-semibold" style={{ color: '#02404F' }}>
-                      Kifiya: <strong>{fmt(selectedEmpData.kifiya || 0)}</strong>
-                    </span>
-                    <span className="text-[10px] font-semibold" style={{ color: '#EB7D23' }}>
-                      Safee: <strong>{fmt(selectedEmpData.safee || 0)}</strong>
-                    </span>
-                    <span className="text-[10px] font-semibold text-muted">
-                      Total: <strong className="text-navy">{fmt(selectedEmpData.total)}</strong>
-                    </span>
-                  </div>
+          {selectedEmpData && (
+            <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+              <div className="mb-4">
+                <h3 className="text-sm font-bold text-navy">{[selectedEmpData.employeeNo, selectedEmpData.name].filter(Boolean).join(' ')}</h3>
+                <p className="text-[10px] text-muted">{selectedEmpData.sectionName} · {selectedEmpData.buName}</p>
+                <div className="flex gap-4 mt-2">
+                  <span className="text-[10px] font-semibold" style={{ color: '#02404F' }}>
+                    Kifiya: <strong>{fmt(selectedEmpData.kifiya || 0)}</strong>
+                  </span>
+                  <span className="text-[10px] font-semibold" style={{ color: '#EB7D23' }}>
+                    MSP / Programme: <strong>{fmt(selectedEmpData.safee || 0)}</strong>
+                  </span>
+                  <span className="text-[10px] font-semibold text-muted">
+                    Total: <strong className="text-navy">{fmt(selectedEmpData.total)}</strong>
+                  </span>
                 </div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={empTrendData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" />
-                    <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={v => [fmt(v) + ' ETB', 'Cost']}
-                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-                    <Line type="monotone" dataKey="cost" stroke="#02404F" strokeWidth={2.5}
-                      dot={{ r: 4, fill: '#02404F', strokeWidth: 0 }}
-                      activeDot={{ r: 6, fill: '#EB7D23', strokeWidth: 0 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted text-sm gap-2 min-h-[280px]">
-                <span className="text-2xl opacity-30">📈</span>
-                <p>Select an employee to see their monthly cost trend</p>
               </div>
-            )}
-          </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={empTrendData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" />
+                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={v => [fmt(v) + ' ETB', 'Cost']}
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+                  <Line type="monotone" dataKey="cost" stroke="#02404F" strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#02404F', strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#EB7D23', strokeWidth: 0 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 
@@ -473,7 +503,7 @@ export default function EmployeeCostDetail({ data }) {
                       )}
                       {safTotal > 0 && (
                         <div className="flex-1 rounded-lg p-2 text-center" style={{ background: '#FEF3EA' }}>
-                          <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>Safee</p>
+                          <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>MSP / Programme</p>
                           <p className="text-sm font-extrabold text-navy tabular-nums">{fmt(safTotal)}</p>
                           <p className="text-[9px] text-muted">{pct(safTotal, buTotal)}</p>
                         </div>
@@ -503,7 +533,7 @@ export default function EmployeeCostDetail({ data }) {
                       <th key={m} className="px-3 py-3 font-bold text-white text-right whitespace-nowrap min-w-[72px]">{m}</th>
                     ))}
                     <th className="px-3 py-3 font-bold text-right whitespace-nowrap min-w-[80px]" style={{ color: '#86EFCF' }}>Kifiya</th>
-                    <th className="px-3 py-3 font-bold text-right whitespace-nowrap min-w-[80px]" style={{ color: '#FBB97B' }}>Safee</th>
+                    <th className="px-3 py-3 font-bold text-right whitespace-nowrap min-w-[80px]" style={{ color: '#FBB97B' }}>MSP / Programme</th>
                     <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px] sticky right-0 z-20" style={{ background: '#02404F' }}>
                       Total
                     </th>
@@ -585,15 +615,14 @@ export default function EmployeeCostDetail({ data }) {
                               {/* Level 3: Employees */}
                               {secOpen && sec.employees.map(emp => {
                                 const hasBoth = (emp.kifiya || 0) > 0 && (emp.safee || 0) > 0
-                                const source  = hasBoth ? 'Both' : (emp.safee || 0) > 0 ? 'Safee' : 'Kifiya'
-                                const srcClr  = source === 'Safee' ? SAF_COLOR : source === 'Both' ? '#2EBD85' : KIF_COLOR
+                                const source  = hasBoth ? 'Both' : (emp.safee || 0) > 0 ? 'MSP / Programme' : 'Kifiya'
+                                const srcClr  = source === 'MSP / Programme' ? SAF_COLOR : source === 'Both' ? '#2EBD85' : KIF_COLOR
                                 return (
                                   <tr key={emp.employeeNo} className="border-t border-border/20 group" style={{ background: '#FAFFFE' }}>
                                     <td className="pl-14 pr-4 py-1.5 sticky left-0 z-10" style={{ background: '#FAFFFE' }}>
                                       <div className="flex items-center gap-2">
                                         <div className="min-w-0">
-                                          <span className="font-medium text-navy block leading-tight">{emp.name || emp.employeeNo}</span>
-                                          <span className="text-[9px] text-muted font-mono">{emp.employeeNo}</span>
+                                          <span className="font-medium text-navy block leading-tight">{[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}</span>
                                         </div>
                                         <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded-full flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                                           style={{ background: `${srcClr}18`, color: srcClr }}>

@@ -675,6 +675,7 @@ async function buildSnapshot(targetDate) {
     const sec = dept.sections[sectionCode];
     if (g === 'Male') sec.male++; else sec.female++;
     sec.employees.push({
+      employeeNo:     r.employeeNo    || '',
       name:           r.fullName      || '',
       gender:         r.gender        || '',
       jobTitle:       r.jobTitle      || '',
@@ -704,7 +705,7 @@ async function buildSnapshot(targetDate) {
     dept: d.deptCode, male: d.male, female: d.female, count: d.count
   }));
 
-  // Gender breakdown by job title (top 15)
+  // Gender breakdown by job title — all titles, no cap
   const hrByJobTitle = {};
   headcountRows.forEach(r => {
     const job = (r.jobTitle || '').trim() || 'Unknown';
@@ -712,8 +713,7 @@ async function buildSnapshot(targetDate) {
   });
   const byJobTitle = Object.entries(hrByJobTitle)
     .map(([jobTitle, v]) => ({ jobTitle, male: v.male, female: v.female, count: v.male + v.female }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 15);
+    .sort((a, b) => b.count - a.count);
 
   // Employee seniority list (active, oldest hire date first)
   const NULL_DATE_STR = '0001-01-01';
@@ -727,8 +727,7 @@ async function buildSnapshot(targetDate) {
       gender: r.gender || '',
       vc:     r.virtualCompany || ''
     }))
-    .sort((a, b) => a.hired.localeCompare(b.hired))
-    .slice(0, 50);
+    .sort((a, b) => a.hired.localeCompare(b.hired));
 
   // ── Active Contract Type per BU matrix ──────────────────────────────────────
   const deptByTypeMap = {};
@@ -747,7 +746,7 @@ async function buildSnapshot(targetDate) {
   // ── Contract Status per BU matrix ───────────────────────────────────────────
   const deptByStatusMap = {};
   const ensureDSEntry = (dc, dn) => {
-    if (!deptByStatusMap[dc]) deptByStatusMap[dc] = { deptCode: dc, deptName: dn, Active: 0, Terminated: 0 };
+    if (!deptByStatusMap[dc]) deptByStatusMap[dc] = { deptCode: dc, deptName: dn, Active: 0, Inactive: 0 };
   };
   headcountRows.forEach(r => {
     const sc = r.businessUnitDept || 'Unknown';
@@ -759,17 +758,17 @@ async function buildSnapshot(targetDate) {
     const sc = e.dimension2 || 'Unknown';
     const dc = sectionToDept[sc] || sc;
     const dn = deptDisplayNames[dc] || dimensionNames[dc] || dc;
-    ensureDSEntry(dc, dn); deptByStatusMap[dc].Terminated++;
+    ensureDSEntry(dc, dn); deptByStatusMap[dc].Inactive++;
   });
   const byDeptByStatus = Object.values(deptByStatusMap)
-    .sort((a, b) => (b.Active + b.Terminated) - (a.Active + a.Terminated));
+    .sort((a, b) => (b.Active + b.Inactive) - (a.Active + a.Inactive));
 
   // ── Monthly headcount evolution (last 12 months) ────────────────────────────
   const targetDt   = new Date(targetDate);
   const months12   = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(targetDt.getFullYear(), targetDt.getMonth() - (11 - i), 1);
     return {
-      label: d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
       start: new Date(d.getFullYear(), d.getMonth(), 1),
       end:   new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
     };
@@ -848,6 +847,7 @@ async function buildSnapshot(targetDate) {
   // Payroll cost — standard (KIFIYA) + programme (SAFEE)
   // AL Query has no UNION, so we fetch both and merge here.
   let employeeCost = { byVirtualCompany: [], byDeptAndSource: [], monthly: [] };
+  let hrReview     = { headcountMatrix: [], costMatrix: [], allEmployeeTypes: [], allVirtualCompanies: [], payrollMonths: [] };
   try {
     const [stdPay, progPay] = await Promise.all([
       bcAvail ? bc('KFT_Payroll_Cost').catch(() => []) : Promise.resolve([]),
@@ -873,6 +873,50 @@ async function buildSnapshot(targetDate) {
     });
     if (allPay.length === 0 && (stdPay.length + progPay.length) > 0)
       console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
+
+    // Build headcount name → employeeType and name → jobTitle maps
+    // Both use a shortKey (first + last) to handle 3-part Ethiopian names where
+    // payroll stores firstName+lastName but headcount stores the full 3-part name.
+    const hcTypeByName     = {};
+    const hcJobTitleByName = {};
+    headcountRows.forEach(r => {
+      if (!r.fullName) return;
+      const key   = r.fullName.trim().toLowerCase();
+      const parts = r.fullName.trim().split(/\s+/);
+      const short = parts.length >= 3 ? `${parts[0]} ${parts[parts.length - 1]}`.toLowerCase() : null;
+      if (r.employeeType && r.employeeType !== 'Unknown') {
+        if (!hcTypeByName[key]) hcTypeByName[key] = r.employeeType;
+        if (short && !hcTypeByName[short]) hcTypeByName[short] = r.employeeType;
+      }
+      if (r.jobTitle && r.jobTitle !== 'Unknown') {
+        if (!hcJobTitleByName[key]) hcJobTitleByName[key] = r.jobTitle;
+        if (short && !hcJobTitleByName[short]) hcJobTitleByName[short] = r.jobTitle;
+      }
+    });
+
+    // employeeNo → employeeType: payroll row first, then headcount name bridge as fallback
+    const empNoToType = {};
+    allPay.forEach(r => {
+      if (!r.employeeNo || empNoToType[r.employeeNo]) return;
+      if (r.employeeType && r.employeeType !== 'Unknown') {
+        empNoToType[r.employeeNo] = r.employeeType;
+      } else {
+        const name = [r.firstName, r.lastName].filter(Boolean).join(' ').trim().toLowerCase();
+        const t = hcTypeByName[name];
+        if (t) empNoToType[r.employeeNo] = t;
+      }
+    });
+    hr.empNoToType = empNoToType;
+
+    // employeeNo → jobTitle ("Job Description") via headcount name bridge
+    const empNoToJobTitle = {};
+    allPay.forEach(r => {
+      if (!r.employeeNo || empNoToJobTitle[r.employeeNo]) return;
+      const name  = [r.firstName, r.lastName].filter(Boolean).join(' ').trim().toLowerCase();
+      const title = hcJobTitleByName[name];
+      if (title) empNoToJobTitle[r.employeeNo] = title;
+    });
+    hr.empNoToJobTitle = empNoToJobTitle;
 
     // ETH / HUB KPI card totals
     const vcMap = {};
@@ -936,7 +980,7 @@ async function buildSnapshot(targetDate) {
       if (!r.payrollPeriod) return;
       const d     = new Date(r.payrollPeriod);
       const key   = d.getFullYear() * 100 + (d.getMonth() + 1);
-      const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       if (!mthMap[key]) mthMap[key] = { key, label, total: 0 };
       mthMap[key].total += num(r.totalEarning);
     });
@@ -950,7 +994,7 @@ async function buildSnapshot(targetDate) {
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
       const d       = new Date(r.payrollPeriod);
       const mthKey  = d.getFullYear() * 100 + (d.getMonth() + 1);
-      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const earning = num(r.totalEarning);
 
       if (!drillMap[dept]) drillMap[dept] = {
@@ -974,7 +1018,7 @@ async function buildSnapshot(targetDate) {
       if (!r.payrollPeriod) return;
       const d = new Date(r.payrollPeriod);
       const k = d.getFullYear() * 100 + (d.getMonth() + 1);
-      mthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      mthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     });
     const payrollMonths = Object.entries(mthKeyLblMap)
       .sort(([a], [b]) => Number(a) - Number(b))
@@ -1004,7 +1048,7 @@ async function buildSnapshot(targetDate) {
       const empKey  = r.employeeNo || 'Unknown';
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
       const d       = new Date(r.payrollPeriod);
-      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const earning = num(r.totalEarning);
 
       if (!buDrillMap[buCode]) buDrillMap[buCode] = { buCode, buName, sections: {}, monthTotals: {}, total: 0 };
@@ -1017,7 +1061,7 @@ async function buildSnapshot(targetDate) {
       sec.monthTotals[mthLbl] = (sec.monthTotals[mthLbl] || 0) + earning;
       sec.total += earning;
 
-      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', monthly: {}, total: 0, kifiya: 0, safee: 0 };
+      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', employeeType: r.employeeType || '', monthly: {}, total: 0, kifiya: 0, safee: 0 };
       const ee = sec.employees[empKey];
       ee.monthly[mthLbl] = (ee.monthly[mthLbl] || 0) + earning;
       ee.total += earning;
@@ -1042,16 +1086,52 @@ async function buildSnapshot(targetDate) {
             employees:    Object.values(sec.employees)
               .sort((a, b) => b.total - a.total)
               .map(e => ({
-                employeeNo: e.employeeNo,
-                name:       e.name,
-                vc:         e.vc,
-                monthly:    e.monthly,
-                total:      Math.round(e.total),
-                kifiya:     Math.round(e.kifiya || 0),
-                safee:      Math.round(e.safee  || 0)
+                employeeNo:   e.employeeNo,
+                name:         e.name,
+                vc:           e.vc,
+                employeeType: e.employeeType || '',
+                monthly:      e.monthly,
+                total:        Math.round(e.total),
+                kifiya:       Math.round(e.kifiya || 0),
+                safee:        Math.round(e.safee  || 0)
               }))
           }))
       }));
+
+    // Job type drill-down: jobTitle → employees → monthly costs
+    const jobDrillMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const jobTitle = (r.jobTitle || '').trim() || 'Unknown';
+      const empKey   = r.employeeNo || 'Unknown';
+      const name     = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
+      const d        = new Date(r.payrollPeriod);
+      const mthLbl   = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const earning  = num(r.totalEarning);
+      if (!jobDrillMap[jobTitle]) jobDrillMap[jobTitle] = { jobTitle, employees: {}, monthTotals: {}, total: 0 };
+      const jd = jobDrillMap[jobTitle];
+      if (!jd.employees[empKey]) jd.employees[empKey] = { employeeNo: empKey, name, monthly: {}, total: 0 };
+      const ee = jd.employees[empKey];
+      ee.monthly[mthLbl] = (ee.monthly[mthLbl] || 0) + earning;
+      ee.total           += earning;
+      jd.monthTotals[mthLbl] = (jd.monthTotals[mthLbl] || 0) + earning;
+      jd.total               += earning;
+    });
+    const byJobDrillDown = Object.values(jobDrillMap)
+      .map(jd => ({
+        jobTitle:    jd.jobTitle,
+        total:       Math.round(jd.total),
+        monthTotals: Object.fromEntries(Object.entries(jd.monthTotals).map(([k, v]) => [k, Math.round(v)])),
+        employees:   Object.values(jd.employees)
+          .map(e => ({
+            employeeNo: e.employeeNo,
+            name:       e.name,
+            total:      Math.round(e.total),
+            monthly:    Object.fromEntries(Object.entries(e.monthly).map(([k, v]) => [k, Math.round(v)]))
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      }))
+      .sort((a, b) => a.jobTitle.localeCompare(b.jobTitle));
 
     employeeCost = {
       byVirtualCompany: Object.entries(vcMap)
@@ -1068,8 +1148,85 @@ async function buildSnapshot(targetDate) {
         .map(({ label, total }) => ({ label, total: Math.round(total) })),
       drillDown,
       buDrillDown,
+      byJobDrillDown,
       payrollMonths
     };
+
+    // ── HR Page Review ────────────────────────────────────────────────────────
+    // Step 1: headcount name → employeeType lookup (for joining onto payroll rows)
+    // Index by both the full BC "Full Name" and a shortened first+last key so we
+    // can match Ethiopian 3-part names whose payroll record only has first+last.
+    const hcByName = {};
+    headcountRows.forEach(r => {
+      if (!r.fullName) return;
+      const key = r.fullName.trim().toLowerCase();
+      hcByName[key] = r.employeeType || 'Unknown';
+      const parts = r.fullName.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        const shortKey = `${parts[0]} ${parts[parts.length - 1]}`.toLowerCase();
+        if (!hcByName[shortKey]) hcByName[shortKey] = r.employeeType || 'Unknown';
+      }
+    });
+
+    // Step 2: per-employee payroll enriched with employeeType via name join.
+    // Best-effort: try firstName+lastName match against headcount full names.
+    // Unmatched rows still included (employeeType = 'Unknown') so cost data is never lost.
+    const empPayMap = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim();
+      const et      = hcByName[name.toLowerCase()] || 'Unknown';
+      const sc      = r.businessUnitDept || 'Unknown';
+      const buCode  = sectionToDept[sc] || sc;
+      const buName  = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
+      const empKey  = r.employeeNo || 'Unknown';
+      const src     = r.payrollSource || 'KIFIYA';
+      const vc      = (r.virtualCompany || 'Unknown').trim();
+      const d       = new Date(r.payrollPeriod);
+      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const earning = num(r.totalEarning);
+      const key     = `${empKey}||${src}`;   // one record per employee per payroll source
+      if (!empPayMap[key]) empPayMap[key] = {
+        employeeNo: empKey, name, buCode, buName,
+        payrollSource: src, virtualCompany: vc, employeeType: et,
+        monthTotals: {}, total: 0
+      };
+      const e = empPayMap[key];
+      e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + earning;
+      e.total += earning;
+    });
+    const employeePayroll = Object.values(empPayMap).map(e => ({
+      ...e,
+      total:       Math.round(e.total),
+      monthTotals: Object.fromEntries(Object.entries(e.monthTotals).map(([k, v]) => [k, Math.round(v)]))
+    }));
+
+    // Step 3: headcountMatrix — buCode × employeeType × virtualCompany → count
+    const hcMatrixMap = {};
+    headcountRows.forEach(r => {
+      const sc     = r.businessUnitDept || 'Unknown';
+      const buCode = sectionToDept[sc] || sc;
+      const buName = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
+      const et     = (r.employeeType || 'Unknown').trim();
+      const vc     = (r.virtualCompany || 'Unknown').trim();
+      const key    = `${buCode}||${et}||${vc}`;
+      if (!hcMatrixMap[key]) hcMatrixMap[key] = { buCode, buName, employeeType: et, virtualCompany: vc, count: 0 };
+      hcMatrixMap[key].count++;
+    });
+
+    const allEmployeeTypes = [...new Set([
+      ...headcountRows.map(r => (r.employeeType || '').trim()),
+      ...employeePayroll.map(e => e.employeeType)
+    ].filter(t => t && t !== 'Unknown'))].sort();
+
+    hrReview = {
+      headcountMatrix: Object.values(hcMatrixMap),
+      employeePayroll,
+      allEmployeeTypes,
+      allVirtualCompanies: [...new Set(headcountRows.map(r => (r.virtualCompany || '').trim()).filter(Boolean))].sort(),
+      payrollMonths
+    };
+
     console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);
   } catch (e) {
     console.warn('  Payroll cost fetch failed:', e.message);
@@ -1111,7 +1268,7 @@ async function buildSnapshot(targetDate) {
     })
     .sort((a, b) => a.month - b.month)
     .map(r => ({
-      label:  new Date(r.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      label:  new Date(r.month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
       Amount: safeM(r['Total Kifiya Share'])
     }));
 
@@ -1153,7 +1310,7 @@ async function buildSnapshot(targetDate) {
     })
     .sort((a, b) => new Date(a.month) - new Date(b.month))
     .map(r => ({
-      label:     new Date(r.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      label:     new Date(r.month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
       Revenue:   safeM(r['100% revenue']),
       Provision: safeM(r['Provision amount']),
       ProvPct:   r['Provision %'] != null ? parseFloat(Number(r['Provision %']).toFixed(1)) : null
@@ -1206,7 +1363,7 @@ async function buildSnapshot(targetDate) {
       .filter(r => r.maturity_date != null)
       .sort((a, b) => new Date(a.maturity_date) - new Date(b.maturity_date))
       .map(r => ({
-        label:   new Date(r.maturity_date).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+        label:   new Date(r.maturity_date).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
         Revenue: safeM(r.Revenue)
       })),
     netProfitBeforeTax: safeM(c27?.[0]?.['SUM(net_profit_before_tax::NUMERIC)'] ?? null),
@@ -1224,6 +1381,7 @@ async function buildSnapshot(targetDate) {
     cashflow,
     reports,
     hr,
+    hrReview,
     employeeCost,
     lending,
     loanOps,

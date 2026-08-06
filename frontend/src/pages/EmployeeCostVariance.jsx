@@ -65,26 +65,24 @@ export default function EmployeeCostVariance({ data }) {
     return Object.values(grouped).sort((a, b) => b.total - a.total)
   })()
 
-  // Default to most recent month
-  const [selectedMonth, setSelectedMonth] = useState(() => months[months.length - 1] || '')
+  // Two freely-selectable months for comparison
+  const [monthB, setMonthB] = useState(() => months[months.length - 1] || '')
+  const [monthA, setMonthA] = useState(() => months.length >= 2 ? months[months.length - 2] : months[0] || '')
 
-  const selectedIdx = months.indexOf(selectedMonth)
-  const prevMonth   = selectedIdx > 0 ? months[selectedIdx - 1] : null
+  const selectedMonth = monthB
+  const prevMonth     = monthA
 
   // Build per-employee rows + BU-level variance aggregation
   const empRows    = []
   const buVarMap   = {}
-
-  // Use buDrillDown when available (parent BU level), else fall back to drillDown
-  const source = buDrillDown.length > 0 ? buDrillDown : drillDown
 
   if (buDrillDown.length > 0) {
     // 3-level source: BU → sections → employees
     buDrillDown.forEach(bu => {
       bu.sections.forEach(sec => {
         sec.employees.forEach(emp => {
-          const prevCost = prevMonth ? (emp.monthly[prevMonth] || 0) : 0
-          const currCost = emp.monthly[selectedMonth] || 0
+          const prevCost = monthA ? (emp.monthly[monthA] || 0) : 0
+          const currCost = emp.monthly[monthB] || 0
           if (prevCost === 0 && currCost === 0) return
           const variance = currCost - prevCost
           const pct = prevCost !== 0 ? (variance / prevCost) * 100 : (currCost !== 0 ? 100 : 0)
@@ -98,8 +96,8 @@ export default function EmployeeCostVariance({ data }) {
     // Fallback to 2-level drillDown (section → employees)
     drillDown.forEach(dept => {
       dept.employees.forEach(emp => {
-        const prevCost = prevMonth ? (emp.monthly[prevMonth] || 0) : 0
-        const currCost = emp.monthly[selectedMonth] || 0
+        const prevCost = monthA ? (emp.monthly[monthA] || 0) : 0
+        const currCost = emp.monthly[monthB] || 0
         if (prevCost === 0 && currCost === 0) return
         const variance = currCost - prevCost
         const pct = prevCost !== 0 ? (variance / prevCost) * 100 : (currCost !== 0 ? 100 : 0)
@@ -128,7 +126,10 @@ export default function EmployeeCostVariance({ data }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-extrabold text-navy mb-0.5">Month to Month Employee Cost Comparison</h2>
-        <p className="text-xs text-muted font-medium">Compare each employee's payroll cost against the previous month</p>
+        {monthA && monthB
+          ? <p className="text-xs text-muted font-medium">Comparing <span className="font-bold text-navy">{monthA}</span> vs <span className="font-bold text-navy">{monthB}</span> — select any two months to compare</p>
+          : <p className="text-xs text-muted font-medium">Select two months below to compare payroll costs</p>
+        }
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
@@ -136,22 +137,47 @@ export default function EmployeeCostVariance({ data }) {
         {/* ── Left panel ── */}
         <div className="xl:col-span-1 space-y-4">
 
-          {/* Period filter */}
-          <div className="bg-white rounded-2xl border border-border p-4 shadow-card">
-            <p className="text-[10px] uppercase tracking-wider font-bold text-muted mb-2">Period Filter</p>
-            <select
-              value={selectedMonth}
-              onChange={e => setSelectedMonth(e.target.value)}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm font-semibold text-navy bg-white focus:outline-none"
-              style={{ color: '#02404F' }}
-            >
-              {months.slice().reverse().map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            {prevMonth
-              ? <p className="text-[10px] text-muted mt-2">Comparing <b>{selectedMonth}</b> vs <b>{prevMonth}</b></p>
-              : <p className="text-[10px] text-muted mt-2">No previous month available</p>
+          {/* Period filter — two freely selectable months */}
+          <div className="bg-white rounded-2xl border border-border p-4 shadow-card space-y-3">
+            <p className="text-[10px] uppercase tracking-wider font-bold text-muted">Compare Months</p>
+
+            <div>
+              <p className="text-[10px] text-muted mb-1 font-semibold">From Month</p>
+              <select
+                value={monthA}
+                onChange={e => setMonthA(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none"
+                style={{ color: '#02404F' }}
+              >
+                {months.slice().reverse().map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border-t border-border" />
+              <span className="text-[10px] text-muted font-bold">vs</span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+
+            <div>
+              <p className="text-[10px] text-muted mb-1 font-semibold">To Month</p>
+              <select
+                value={monthB}
+                onChange={e => setMonthB(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none"
+                style={{ color: '#02404F' }}
+              >
+                {months.slice().reverse().map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            {monthA === monthB
+              ? <p className="text-[10px] text-amber-600 font-semibold mt-1">⚠ Same month selected — variance will be zero</p>
+              : <p className="text-[10px] text-muted mt-1">Variance = <b>{monthB}</b> minus <b>{monthA}</b></p>
             }
           </div>
 
@@ -208,10 +234,10 @@ export default function EmployeeCostVariance({ data }) {
                       Employees
                     </th>
                     <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[120px]">
-                      {prevMonth ? `Previous M. (${prevMonth})` : 'Previous M.'}
+                      From ({monthA || '—'})
                     </th>
                     <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[120px]">
-                      Current M. ({selectedMonth})
+                      To ({monthB || '—'})
                     </th>
                     <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[100px]">
                       Variance
