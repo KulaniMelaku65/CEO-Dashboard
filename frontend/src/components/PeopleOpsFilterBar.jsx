@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
+
+const MONTH_ORDER = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function Sel({ label, value, onChange, options }) {
   return (
@@ -66,8 +69,31 @@ export default function PeopleOpsFilterBar({ data }) {
     return [...set].sort().map(v => ({ value: v, label: v }))
   })()
 
-  // Available months — newest first
-  const allMonths = [...(ec.payrollMonths || [])].reverse().map(m => ({ value: m, label: m }))
+  // Available "Month Year" combos, e.g. "January 2025" — split into separate
+  // month-name and year option lists for the two dropdowns below.
+  const periods = ec.payrollMonths || []
+  const monthNames = MONTH_ORDER.filter(m => periods.some(p => p.startsWith(m + ' ')))
+    .map(m => ({ value: m, label: m }))
+  const years = [...new Set(periods.map(p => p.split(' ')[1]).filter(Boolean))]
+    .sort((a, b) => b - a)
+    .map(y => ({ value: y, label: y }))
+
+  // Local month/year selection, kept in sync with the combined filterMonth string
+  const [selMonth, setSelMonth] = useState('All')
+  const [selYear,  setSelYear]  = useState('All')
+
+  useEffect(() => {
+    if (filterMonth === 'All') { setSelMonth('All'); setSelYear('All'); return }
+    const [m, y] = [filterMonth.split(' ').slice(0, -1).join(' '), filterMonth.split(' ').slice(-1)[0]]
+    setSelMonth(m || 'All')
+    setSelYear(y || 'All')
+  }, [filterMonth])
+
+  const applyPeriod = (month, year) => {
+    setSelMonth(month)
+    setSelYear(year)
+    setFilterMonth(month !== 'All' && year !== 'All' ? `${month} ${year}` : 'All')
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-border p-4 shadow-card">
@@ -79,7 +105,8 @@ export default function PeopleOpsFilterBar({ data }) {
           { value: 'KIFIYA', label: 'Kifiya' },
           { value: 'SAFEE',  label: 'MSP / Programme' }
         ]} />
-        <Sel label="Period (Month)"  value={filterMonth}  onChange={setFilterMonth}  options={allMonths} />
+        <Sel label="Month" value={selMonth} onChange={m => applyPeriod(m, selYear)} options={monthNames} />
+        <Sel label="Year"  value={selYear}  onChange={y => applyPeriod(selMonth, y)} options={years} />
         {anyActive && (
           <button
             onClick={clearFilters}

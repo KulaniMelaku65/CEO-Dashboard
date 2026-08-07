@@ -43,6 +43,7 @@ export default function EmployeeCostVariance({ data }) {
   // sectionToDept from backend — covers ALL dimension values including payroll-only sections
   const sectionToDept    = hr.sectionToDept    || {}
   const deptDisplayNames = hr.deptDisplayNames || {}
+
   const resolveBU = (code, fallbackName) => {
     const buCode = sectionToDept[code] || code
     const buName = deptDisplayNames[buCode] || fallbackName || buCode

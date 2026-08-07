@@ -299,20 +299,34 @@ export default function HR({ data }) {
     return result
   })()
 
-  const filteredTotal = filteredHCEmployees.length
+  // Headcount is a point-in-time figure — hr.byDeptHierarchy only reflects "now", so
+  // BU/type/VC/source filters can narrow it directly, but a month selection needs the
+  // separate month-by-month reconstruction in hr.headcountEvolution instead (which also
+  // carries its own male/female/eth/hub breakdown for that same point in time).
+  const monthEvo = filterMonth !== 'All'
+    ? (hr.headcountEvolution || []).find(m => m.label === filterMonth)
+    : null
+  const monthHeadcount = monthEvo?.count ?? null
+  const filteredTotal = monthHeadcount != null ? monthHeadcount : filteredHCEmployees.length
 
+  // Strict Male/Female match only — a stray whitespace-only or otherwise malformed
+  // gender value should never create its own phantom bucket.
   const _gC = {}
   filteredHCEmployees.forEach(e => {
-    if (e.gender && e.gender !== 'Unknown') _gC[e.gender] = (_gC[e.gender] || 0) + 1
+    if (e.gender === 'Male' || e.gender === 'Female') _gC[e.gender] = (_gC[e.gender] || 0) + 1
   })
-  const filteredGenderData = Object.entries(_gC).map(([gender, count]) => ({ gender, count }))
+  const filteredGenderData = monthEvo
+    ? [{ gender: 'Male', count: monthEvo.male }, { gender: 'Female', count: monthEvo.female }].filter(g => g.count > 0)
+    : Object.entries(_gC).map(([gender, count]) => ({ gender, count }))
   const filteredMale   = _gC['Male']   || 0
   const filteredFemale = _gC['Female'] || 0
   const filteredGenderTotal = filteredMale + filteredFemale
 
   const _vcC = {}
-  filteredHCEmployees.forEach(e => { if (e.vc && e.vc !== 'Unknown') _vcC[e.vc] = (_vcC[e.vc] || 0) + 1 })
-  const filteredVCData = Object.entries(_vcC).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  filteredHCEmployees.forEach(e => { if (e.vc === 'ETH' || e.vc === 'HUB') _vcC[e.vc] = (_vcC[e.vc] || 0) + 1 })
+  const filteredVCData = monthEvo
+    ? [{ name: 'ETH', value: monthEvo.eth }, { name: 'HUB', value: monthEvo.hub }].filter(v => v.value > 0)
+    : Object.entries(_vcC).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
   const filteredETH = _vcC['ETH'] || 0
   const filteredHUB = _vcC['HUB'] || 0
 
@@ -334,6 +348,7 @@ export default function HR({ data }) {
 
   const _dC = {}
   filteredHCEmployees.forEach(e => {
+    if (!e.buCode || e.buCode === 'Unknown') return
     if (!_dC[e.buCode]) _dC[e.buCode] = { dept: e.buCode, name: e.buName, male: 0, female: 0 }
     if (e.gender === 'Male') _dC[e.buCode].male++; else if (e.gender === 'Female') _dC[e.buCode].female++
   })
@@ -351,6 +366,7 @@ export default function HR({ data }) {
 
   const _dtM = {}
   filteredHCEmployees.forEach(emp => {
+    if (!emp.buCode || emp.buCode === 'Unknown') return
     if (!_dtM[emp.buCode]) _dtM[emp.buCode] = { deptCode: emp.buCode, deptName: emp.buName, types: {} }
     const t = emp.employeeType === 'Unknown' ? 'Unknown' : emp.employeeType
     _dtM[emp.buCode].types[t] = (_dtM[emp.buCode].types[t] || 0) + 1
@@ -490,10 +506,10 @@ export default function HR({ data }) {
   const totalCost  = costSourceData.reduce((s, d) => s + d.value, 0)
   const costPerEmp = filteredTotal > 0 ? Math.round(totalCost / filteredTotal) : 0
 
-  const male   = filteredMale
-  const female = filteredFemale
-  const eth    = filteredETH
-  const hub    = filteredHUB
+  const male   = monthEvo ? monthEvo.male   : filteredMale
+  const female = monthEvo ? monthEvo.female : filteredFemale
+  const eth    = monthEvo ? monthEvo.eth    : filteredETH
+  const hub    = monthEvo ? monthEvo.hub    : filteredHUB
 
   const handleDeptBarClick = (entry) => {
     if (!entry) return
@@ -1111,7 +1127,7 @@ export default function HR({ data }) {
                 {filteredSeniorityList.map((emp, i) => (
                   <tr key={i} className="border-t border-border" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
                     <td className="px-4 py-2 sticky left-0 z-10 font-medium text-navy" style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
-                      {[nameToEmpNo[emp.name], emp.name].filter(Boolean).join(' ') || '—'}
+                      {[emp.employeeNo || nameToEmpNo[emp.name], emp.name].filter(Boolean).join(' ') || '—'}
                     </td>
                     <td className="px-3 py-2 text-muted tabular-nums">{emp.hired || '—'}</td>
                     <td className="px-3 py-2 font-semibold text-navy tabular-nums">{yearsOfService(emp.hired)}</td>

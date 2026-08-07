@@ -675,9 +675,9 @@ async function buildSnapshot(targetDate) {
     const sec = dept.sections[sectionCode];
     if (g === 'Male') sec.male++; else sec.female++;
     sec.employees.push({
-      employeeNo:     r.employeeNo    || '',
+      employeeNo:     r.AuxiliaryIndex1 || '',
       name:           r.fullName      || '',
-      gender:         r.gender        || '',
+      gender:         ['Male', 'Female'].includes((r.gender || '').trim()) ? r.gender.trim() : '',
       jobTitle:       r.jobTitle      || '',
       employeeType:   r.employeeType  || '',
       virtualCompany: r.virtualCompany || ''
@@ -720,11 +720,12 @@ async function buildSnapshot(targetDate) {
   const seniorityList = headcountRows
     .filter(r => r.employmentDate && String(r.employmentDate).slice(0, 10) > NULL_DATE_STR)
     .map(r => ({
+      employeeNo: r.AuxiliaryIndex1 || '',
       name:   r.fullName || '',
       hired:  String(r.employmentDate).slice(0, 10),
       title:  r.jobTitle || '',
       type:   r.employeeType || '',
-      gender: r.gender || '',
+      gender: ['Male', 'Female'].includes((r.gender || '').trim()) ? r.gender.trim() : '',
       vc:     r.virtualCompany || ''
     }))
     .sort((a, b) => a.hired.localeCompare(b.hired));
@@ -780,12 +781,58 @@ async function buildSnapshot(targetDate) {
     employees.filter(e => e.employeeStatus === 'Active').map(e => e.no).filter(Boolean)
   );
 
-  const headcountEvolution = months12.map(m => {
-    let count = 0;
+  // virtualCompany / parent-BU by employeeNo, sourced from the employee table
+  // (KFT_Employee_Headcount, keyed by AuxiliaryIndex1) — GetEmployee and
+  // KFT_Employment_History don't carry VC at all, so this is the only source. Current
+  // VC/dept is used as a best-effort proxy for past months too (rarely changes).
+  const vcByEmpNo = {};
+  const buByEmpNo = {};
+  headcountRows.forEach(r => {
+    if (!r.AuxiliaryIndex1) return;
+    vcByEmpNo[r.AuxiliaryIndex1] = r.virtualCompany || 'Unknown';
+    const sc = r.businessUnitDept || 'Unknown';
+    buByEmpNo[r.AuxiliaryIndex1] = sectionToDept[sc] || sc;
+  });
+
+  // Clean, trusted gender: BC occasionally has stray whitespace instead of a real value
+  // (blank/whitespace should never silently become its own bucket).
+  const cleanGender = g => { const t = (g || '').trim(); return (t === 'Male' || t === 'Female') ? t : null; };
+
+  const bumpBU = (byBU, buCode, vc) => {
+    if (!buCode || buCode === 'Unknown') return;
+    if (!byBU[buCode]) byBU[buCode] = { count: 0, eth: 0, hub: 0 };
+    byBU[buCode].count++;
+    if (vc === 'ETH') byBU[buCode].eth++; else if (vc === 'HUB') byBU[buCode].hub++;
+  };
+
+  const headcountEvolution = months12.map((m, i) => {
+    // Last bucket = the current month: tally directly from headcountRows (the employee
+    // table), the same source and same values already shown when no month filter is applied.
+    if (i === months12.length - 1) {
+      let male = 0, female = 0, eth = 0, hub = 0;
+      const byBU = {};
+      headcountRows.forEach(r => {
+        const g = cleanGender(r.gender);
+        if (g === 'Male') male++; else if (g === 'Female') female++;
+        if (r.virtualCompany === 'ETH') eth++; else if (r.virtualCompany === 'HUB') hub++;
+        const sc = r.businessUnitDept || 'Unknown';
+        bumpBU(byBU, sectionToDept[sc] || sc, r.virtualCompany);
+      });
+      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU };
+    }
+
+    let count = 0, male = 0, female = 0, eth = 0, hub = 0;
+    const byBU = {};
     employees.forEach(e => {
       if (e.employeeStatus !== 'Active') return;
       const hired = e.employmentDate ? new Date(e.employmentDate) : null;
-      if (hired && hired <= m.end) count++;
+      if (!(hired && hired <= m.end)) return;
+      count++;
+      const g = cleanGender(e.gender);
+      if (g === 'Male') male++; else if (g === 'Female') female++;
+      const vc = vcByEmpNo[e.no];
+      if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
+      bumpBU(byBU, buByEmpNo[e.no], vc);
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return; // already counted above
@@ -794,8 +841,16 @@ async function buildSnapshot(targetDate) {
       if (!hired || hired > m.end) return;
       if (separated && separated.getTime() > NULL_EPOCH && separated < m.start) return;
       count++;
+      // Gender isn't available on KFT_Employment_History — these people contribute to
+      // count but not to the male/female split for months before they'd otherwise be found.
+      const vc = vcByEmpNo[e.employeeNo];
+      if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
+      // Department for historical entries comes straight from empHist's own dimension2,
+      // since they may no longer be in the current employee table at all.
+      const sc = e.dimension2 || 'Unknown';
+      bumpBU(byBU, sectionToDept[sc] || sc, vc);
     });
-    return { label: m.label, count };
+    return { label: m.label, count, male, female, eth, hub, byBU };
   });
 
   // ── Turnover rate (last 12 months) ──────────────────────────────────────────
@@ -976,11 +1031,33 @@ async function buildSnapshot(targetDate) {
       }
     });
 
-    // employeeNo → employeeType: payroll row first, then headcount name bridge as fallback
+    // employeeNo → { vc, type, bu } straight from the employee table (KFT_Employee_Headcount,
+    // keyed by AuxiliaryIndex1). This is the authoritative source for Virtual Company / Hub,
+    // Business Unit, and Employment Type — payroll rows carry their own copies of these fields
+    // but those can be stale or, for Individual Consultants, hardcoded/self-declared. Every
+    // payroll-derived employee record below prefers this lookup and only falls back to the
+    // payroll row's own fields for people who genuinely have no employee-table record
+    // (e.g. external consultants who never appear in KFT_Employee_Headcount).
+    const empNoToHC = {};
+    headcountRows.forEach(r => {
+      const no = r.AuxiliaryIndex1;
+      if (!no || empNoToHC[no]) return;
+      empNoToHC[no] = {
+        vc:   r.virtualCompany   || 'Unknown',
+        type: r.employeeType     || 'Unknown',
+        bu:   r.businessUnitDept || 'Unknown'
+      };
+    });
+
+    // employeeNo → employeeType: employee table first (authoritative), then payroll row's
+    // own field, then the headcount name-bridge for edge cases the ID lookup misses.
     const empNoToType = {};
     allPay.forEach(r => {
       if (!r.employeeNo || empNoToType[r.employeeNo]) return;
-      if (r.employeeType && r.employeeType !== 'Unknown') {
+      const hc = empNoToHC[r.employeeNo];
+      if (hc && hc.type !== 'Unknown') {
+        empNoToType[r.employeeNo] = hc.type;
+      } else if (r.employeeType && r.employeeType !== 'Unknown') {
         empNoToType[r.employeeNo] = r.employeeType;
       } else {
         const name = [r.firstName, r.lastName].filter(Boolean).join(' ').trim().toLowerCase();
@@ -989,6 +1066,16 @@ async function buildSnapshot(targetDate) {
       }
     });
     hr.empNoToType = empNoToType;
+
+    // employeeNo → virtualCompany / businessUnitDept: same employee-table-first priority.
+    const empNoToVC = {};
+    const empNoToBU = {};
+    allPay.forEach(r => {
+      if (!r.employeeNo) return;
+      const hc = empNoToHC[r.employeeNo];
+      if (!empNoToVC[r.employeeNo]) empNoToVC[r.employeeNo] = (hc && hc.vc !== 'Unknown') ? hc.vc : (r.virtualCompany   || 'Unknown');
+      if (!empNoToBU[r.employeeNo]) empNoToBU[r.employeeNo] = (hc && hc.bu !== 'Unknown') ? hc.bu : (r.businessUnitDept || 'Unknown');
+    });
 
     // Individual Consultants are MSP/programme costs — reclassify any that ended up
     // in the KIFIYA source (e.g. appearing in standard payroll) to SAFEE so they show
@@ -1182,7 +1269,10 @@ async function buildSnapshot(targetDate) {
     const buDrillMap = {};
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
-      const sectionCode = r.businessUnitDept || 'Unknown';
+      // Group by the employee's home department from the employee table when known,
+      // rather than whichever department the payroll transaction happened to post to.
+      const hcBU        = empNoToHC[r.employeeNo || '']?.bu;
+      const sectionCode = (hcBU && hcBU !== 'Unknown') ? hcBU : (r.businessUnitDept || 'Unknown');
       const buCode      = sectionToDept[sectionCode] || sectionCode;
       const buName      = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
       const sectionName = dimensionNames[sectionCode] || sectionCode;
@@ -1202,7 +1292,7 @@ async function buildSnapshot(targetDate) {
       sec.monthTotals[mthLbl] = (sec.monthTotals[mthLbl] || 0) + earning;
       sec.total += earning;
 
-      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', employeeType: empNoToType[empKey] || r.employeeType || '', monthly: {}, pensionMonthly: {}, total: 0, pension: 0, kifiya: 0, safee: 0 };
+      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: empNoToVC[empKey] || r.virtualCompany || 'Unknown', employeeType: empNoToType[empKey] || r.employeeType || '', monthly: {}, pensionMonthly: {}, total: 0, pension: 0, kifiya: 0, safee: 0 };
       const ee = sec.employees[empKey];
       ee.monthly[mthLbl] = (ee.monthly[mthLbl] || 0) + earning;
       ee.total += earning;
@@ -1328,18 +1418,21 @@ async function buildSnapshot(targetDate) {
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim();
-      // Honour the employeeType already set on normalised rows (e.g. 'Individual Consultant'
-      // on consPay rows). Only fall back to the headcount name-lookup for standard employees
-      // whose type was not pre-populated.
-      const et      = (r.employeeType && r.employeeType !== 'Unknown')
-        ? r.employeeType
+      const empKey  = r.employeeNo || 'Unknown';
+      const hc      = empNoToHC[empKey];
+      // Employee table (KFT_Employee_Headcount, by ID) is authoritative. Fall back to the
+      // payroll row's own field (e.g. 'Individual Consultant' on consPay rows, which have no
+      // employee-table record), then the headcount name-bridge as a last resort.
+      const et      = (hc && hc.type !== 'Unknown') ? hc.type
+        : (r.employeeType && r.employeeType !== 'Unknown') ? r.employeeType
         : hcByName[name.toLowerCase()] || 'Unknown';
-      const sc      = r.businessUnitDept || 'Unknown';
+      // Group by the employee's home department from the employee table when known,
+      // rather than whichever department the payroll transaction happened to post to.
+      const sc      = (hc && hc.bu !== 'Unknown') ? hc.bu : (r.businessUnitDept || 'Unknown');
       const buCode  = sectionToDept[sc] || sc;
       const buName  = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
-      const empKey  = r.employeeNo || 'Unknown';
       const src     = r.payrollSource || 'KIFIYA';
-      const vc      = (r.virtualCompany || 'Unknown').trim();
+      const vc      = ((hc && hc.vc !== 'Unknown') ? hc.vc : (r.virtualCompany || 'Unknown')).trim();
       const d       = new Date(r.payrollPeriod);
       const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const earning = num(r.totalEarning);

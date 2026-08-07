@@ -106,8 +106,21 @@ export default function HRPageReview({ data }) {
   }), [employeePayroll, filterBU, filterType, filterVC, filterSource, sectionToDept])
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
-  // Headcount: from hr.byDept (same as chart) when no BU filter, else sum filteredHC
+  // Headcount is a point-in-time figure — headcountMatrix only reflects "now", so a
+  // month/year selection needs hr.headcountEvolution's separate reconstruction instead,
+  // which also carries a byBU breakdown (used below for the per-row table headcount) —
+  // same source and same behaviour as the People & HR page.
+  const monthEvo = filterMonth !== 'All'
+    ? (hr.headcountEvolution || []).find(m => m.label === filterMonth)
+    : null
+  // byBU has no further type/VC split, so only trust it for the overall KPI when those
+  // filters aren't also narrowing things (BU filter alone is fine — byBU is per-BU already).
+  const monthHeadcount = (monthEvo && filterType === 'All' && filterVC === 'All')
+    ? (filterBU === 'All' ? monthEvo.count : monthEvo.byBU?.[filterBU]?.count ?? 0)
+    : null
+
   const totalHeadcount = useMemo(() => {
+    if (monthHeadcount != null) return monthHeadcount
     const hcCount = (filterBU === 'All' && filterType === 'All' && filterVC === 'All')
       ? validHC.reduce((s, r) => s + r.count, 0)
       : filteredHC.reduce((s, r) => s + r.count, 0)
@@ -116,7 +129,7 @@ export default function HRPageReview({ data }) {
     if (hcCount === 0 && filteredPay.length > 0)
       return new Set(filteredPay.map(r => r.employeeNo)).size
     return hcCount
-  }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC])
+  }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, monthHeadcount])
 
   const { totalMonthly, kifiyaMonthly, safeeMonthly } = useMemo(() => {
     let total = 0, kifiya = 0, safee = 0
@@ -188,16 +201,21 @@ export default function HRPageReview({ data }) {
 
     const rows = Object.values(map)
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
-      .map(r => ({
-        ...r,
-        // Use payroll-derived unique count when headcountMatrix has no data for this BU
-        // (e.g. Individual Consultants absent from the BC employee headcount query)
-        headcount: r.headcount || (empMap[r.buCode] ? empMap[r.buCode].size : 0),
-        monthly:  Math.round(r.monthly),
-        kifiya:   Math.round(r.kifiya),
-        safee:    Math.round(r.safee),
-        vcLabel:  [...r.vcs].filter(v => v && v !== 'Unknown').sort().join(' + ') || '—'
-      }))
+      .map(r => {
+        // Month/year selected: use the point-in-time reconstruction for that BU instead
+        // of "now" — same headcount source as the People & HR page for that month.
+        const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[r.buCode] : null
+        return {
+          ...r,
+          // Use payroll-derived unique count when headcountMatrix has no data for this BU
+          // (e.g. Individual Consultants absent from the BC employee headcount query)
+          headcount: buMonthEvo ? buMonthEvo.count : (r.headcount || (empMap[r.buCode] ? empMap[r.buCode].size : 0)),
+          monthly:  Math.round(r.monthly),
+          kifiya:   Math.round(r.kifiya),
+          safee:    Math.round(r.safee),
+          vcLabel:  [...r.vcs].filter(v => v && v !== 'Unknown').sort().join(' + ') || '—'
+        }
+      })
 
     const empsByKey = {}
     Object.entries(empMap).forEach(([k, empSet]) => {
@@ -205,7 +223,7 @@ export default function HRPageReview({ data }) {
     })
 
     return { tableRows: rows, empsByKey }
-  }, [filteredHC, filteredPay, effectiveMonth, hcByBU, allBUs, filterType, filterVC, filterBU, validHC])
+  }, [filteredHC, filteredPay, effectiveMonth, hcByBU, allBUs, filterType, filterVC, filterBU, validHC, monthEvo])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
