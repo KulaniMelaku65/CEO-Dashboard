@@ -27,6 +27,7 @@ export default function PeopleOpsFilterBar({ data }) {
     filterVC, setFilterVC,
     filterSource, setFilterSource,
     filterMonth, setFilterMonth,
+    filterYear, setFilterYear,
     clearFilters, anyActive
   } = usePeopleOpsFilters()
 
@@ -78,20 +79,27 @@ export default function PeopleOpsFilterBar({ data }) {
     .sort((a, b) => b - a)
     .map(y => ({ value: y, label: y }))
 
-  // Local month/year selection, kept in sync with the combined filterMonth string
+  // Local month/year selection, kept in sync with the shared filterMonth/filterYear values.
+  // Needs to be local (not derived on every render) so that selecting Month alone — before
+  // Year is also picked — visibly sticks instead of reverting (filterMonth itself can't
+  // represent "month picked, year not yet", it's only ever a full "Month Year" string or
+  // 'All'; filterYear can stand alone, which is exactly what lets a year-only selection —
+  // "show me all of 2025" — work without also requiring a specific month).
   const [selMonth, setSelMonth] = useState('All')
   const [selYear,  setSelYear]  = useState('All')
 
   useEffect(() => {
-    if (filterMonth === 'All') { setSelMonth('All'); setSelYear('All'); return }
-    const [m, y] = [filterMonth.split(' ').slice(0, -1).join(' '), filterMonth.split(' ').slice(-1)[0]]
+    if (filterMonth === 'All') { setSelMonth('All'); return }
+    const m = filterMonth.split(' ').slice(0, -1).join(' ')
     setSelMonth(m || 'All')
-    setSelYear(y || 'All')
   }, [filterMonth])
+
+  useEffect(() => { setSelYear(filterYear) }, [filterYear])
 
   const applyPeriod = (month, year) => {
     setSelMonth(month)
     setSelYear(year)
+    setFilterYear(year)
     setFilterMonth(month !== 'All' && year !== 'All' ? `${month} ${year}` : 'All')
   }
 
@@ -100,10 +108,10 @@ export default function PeopleOpsFilterBar({ data }) {
       <div className="flex flex-wrap gap-4 items-end">
         <Sel label="Business Unit"   value={filterBU}     onChange={setFilterBU}     options={allBUs} />
         <Sel label="Employment Type" value={filterType}   onChange={setFilterType}   options={allEmployeeTypes} />
-        <Sel label="Hub / Country"   value={filterVC}     onChange={setFilterVC}     options={allVCs} />
+        <Sel label="Virtual Company" value={filterVC}     onChange={setFilterVC}     options={allVCs} />
         <Sel label="Budget Source"   value={filterSource} onChange={setFilterSource} options={[
           { value: 'KIFIYA', label: 'Kifiya' },
-          { value: 'SAFEE',  label: 'MSP / Programme' }
+          { value: 'SAFEE',  label: 'MSP/Program' }
         ]} />
         <Sel label="Month" value={selMonth} onChange={m => applyPeriod(m, selYear)} options={monthNames} />
         <Sel label="Year"  value={selYear}  onChange={y => applyPeriod(selMonth, y)} options={years} />

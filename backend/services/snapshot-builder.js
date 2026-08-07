@@ -781,10 +781,10 @@ async function buildSnapshot(targetDate) {
     employees.filter(e => e.employeeStatus === 'Active').map(e => e.no).filter(Boolean)
   );
 
-  // virtualCompany / parent-BU by employeeNo, sourced from the employee table
-  // (KFT_Employee_Headcount, keyed by AuxiliaryIndex1) — GetEmployee and
-  // KFT_Employment_History don't carry VC at all, so this is the only source. Current
-  // VC/dept is used as a best-effort proxy for past months too (rarely changes).
+  // virtualCompany / parent-BU for currently active employees, sourced from the employee
+  // table (KFT_Employee_Headcount, keyed by AuxiliaryIndex1). Used only for the `employees`
+  // loop below (which is already active-only) — KFT_Employment_History carries its own
+  // dimension1 (VC) / dimension2 (BU) directly, so departed employees don't need this map.
   const vcByEmpNo = {};
   const buByEmpNo = {};
   headcountRows.forEach(r => {
@@ -794,15 +794,33 @@ async function buildSnapshot(targetDate) {
     buByEmpNo[r.AuxiliaryIndex1] = sectionToDept[sc] || sc;
   });
 
+  // Gender by employeeNo from the FULL GetEmployee result (not just the Active-filtered
+  // subset already used elsewhere) — GetEmployee actually returns every status (Active,
+  // Inactive, Terminated, New), so this covers departed employees too, unlike
+  // KFT_Employment_History which has no gender field of its own at all.
+  const genderByEmpNo = {};
+  employees.forEach(e => { if (e.no) genderByEmpNo[e.no] = e.gender; });
+
   // Clean, trusted gender: BC occasionally has stray whitespace instead of a real value
   // (blank/whitespace should never silently become its own bucket).
   const cleanGender = g => { const t = (g || '').trim(); return (t === 'Male' || t === 'Female') ? t : null; };
 
-  const bumpBU = (byBU, buCode, vc) => {
+  const bumpBU = (byBU, buCode, vc, g, type) => {
     if (!buCode || buCode === 'Unknown') return;
-    if (!byBU[buCode]) byBU[buCode] = { count: 0, eth: 0, hub: 0 };
-    byBU[buCode].count++;
-    if (vc === 'ETH') byBU[buCode].eth++; else if (vc === 'HUB') byBU[buCode].hub++;
+    if (!byBU[buCode]) byBU[buCode] = { count: 0, eth: 0, hub: 0, male: 0, female: 0, byType: {} };
+    const b = byBU[buCode];
+    b.count++;
+    if (vc === 'ETH') b.eth++; else if (vc === 'HUB') b.hub++;
+    if (g === 'Male') b.male++; else if (g === 'Female') b.female++;
+    if (type && type !== 'Unknown') {
+      if (!b.byType[type]) b.byType[type] = { male: 0, female: 0 };
+      if (g === 'Male') b.byType[type].male++; else if (g === 'Female') b.byType[type].female++;
+    }
+  };
+  const bumpGenderMap = (map, key, g) => {
+    if (!key || key === 'Unknown') return;
+    if (!map[key]) map[key] = { male: 0, female: 0 };
+    if (g === 'Male') map[key].male++; else if (g === 'Female') map[key].female++;
   };
 
   const headcountEvolution = months12.map((m, i) => {
@@ -810,19 +828,24 @@ async function buildSnapshot(targetDate) {
     // table), the same source and same values already shown when no month filter is applied.
     if (i === months12.length - 1) {
       let male = 0, female = 0, eth = 0, hub = 0;
-      const byBU = {};
+      const byBU = {}, byType = {}, byJobTitle = {};
       headcountRows.forEach(r => {
         const g = cleanGender(r.gender);
         if (g === 'Male') male++; else if (g === 'Female') female++;
         if (r.virtualCompany === 'ETH') eth++; else if (r.virtualCompany === 'HUB') hub++;
         const sc = r.businessUnitDept || 'Unknown';
-        bumpBU(byBU, sectionToDept[sc] || sc, r.virtualCompany);
+        bumpBU(byBU, sectionToDept[sc] || sc, r.virtualCompany, g, r.employeeType);
+        bumpGenderMap(byType, r.employeeType, g);
+        bumpGenderMap(byJobTitle, r.jobTitle, g);
       });
-      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU };
+      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU, byType, byJobTitle };
     }
 
     let count = 0, male = 0, female = 0, eth = 0, hub = 0;
-    const byBU = {};
+    const byBU = {}, byType = {};
+    // No byJobTitle for past months — GetEmployee carries no job-title field at all
+    // (only headcountRows/KFT_Employee_Headcount does, which is current-only), so there's
+    // no historical source to fall back to, not even a partial/best-effort one.
     employees.forEach(e => {
       if (e.employeeStatus !== 'Active') return;
       const hired = e.employmentDate ? new Date(e.employmentDate) : null;
@@ -832,7 +855,8 @@ async function buildSnapshot(targetDate) {
       if (g === 'Male') male++; else if (g === 'Female') female++;
       const vc = vcByEmpNo[e.no];
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
-      bumpBU(byBU, buByEmpNo[e.no], vc);
+      bumpBU(byBU, buByEmpNo[e.no], vc, g, e.employeeType);
+      bumpGenderMap(byType, e.employeeType, g);
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return; // already counted above
@@ -841,16 +865,20 @@ async function buildSnapshot(targetDate) {
       if (!hired || hired > m.end) return;
       if (separated && separated.getTime() > NULL_EPOCH && separated < m.start) return;
       count++;
-      // Gender isn't available on KFT_Employment_History — these people contribute to
-      // count but not to the male/female split for months before they'd otherwise be found.
-      const vc = vcByEmpNo[e.employeeNo];
+      const g = cleanGender(genderByEmpNo[e.employeeNo]);
+      if (g === 'Male') male++; else if (g === 'Female') female++;
+      // VC and department for historical entries come straight from empHist's own
+      // dimension1 (VC) / dimension2 (BU) — they may no longer be in the current
+      // employee table at all, so the headcountRows-based lookup can't reach them.
+      const vc = e.dimension1;
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
-      // Department for historical entries comes straight from empHist's own dimension2,
-      // since they may no longer be in the current employee table at all.
       const sc = e.dimension2 || 'Unknown';
-      bumpBU(byBU, sectionToDept[sc] || sc, vc);
+      // No employeeType passed here — KFT_Employment_History has no such field (its
+      // "classification" is a payroll-source distinction, not Permanent/Contract/etc), so
+      // these rows contribute to the BU's count/gender but not its byType breakdown.
+      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, null);
     });
-    return { label: m.label, count, male, female, eth, hub, byBU };
+    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {} };
   });
 
   // ── Turnover rate (last 12 months) ──────────────────────────────────────────

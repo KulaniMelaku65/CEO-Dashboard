@@ -1,6 +1,5 @@
 import { useState, useMemo, Fragment } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell, LineChart, Line, ReferenceLine } from 'recharts'
-import KpiCard from '../components/KpiCard.jsx'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
@@ -42,10 +41,14 @@ function GenderTooltip({ active, payload, label }) {
 export default function EmployeeCostDetail({ data }) {
   const ec   = data.employeeCost || {}
   const hr   = data.hr || {}
-  const { filterBU, filterType, filterVC, filterSource, filterMonth } = usePeopleOpsFilters()
+  const { filterBU, filterType, filterVC, filterSource, filterMonth, filterYear } = usePeopleOpsFilters()
 
-  const vcData    = ec.byVirtualCompany || []
-  const months    = ec.payrollMonths    || []
+  // Year picked without a specific month ("show me all of 2025") — scope the visible
+  // month columns to just that year instead of every month ever recorded.
+  const yearOnly  = filterYear !== 'All' && filterMonth === 'All'
+  const months    = yearOnly
+    ? (ec.payrollMonths || []).filter(m => m.endsWith(' ' + filterYear))
+    : (ec.payrollMonths || [])
 
   // 3-level (BU→section→employee) structure; fall back to wrapped drillDown before first refresh
   const rawBU = ec.buDrillDown || []
@@ -108,28 +111,34 @@ export default function EmployeeCostDetail({ data }) {
   // ── State ────────────────────────────────────────────────────────────────
   const [selectedBU,  setSelectedBU]  = useState(null)   // buCode or null
   const [expandedSec, setExpandedSec] = useState({})
-  const [entityFilter, setEntityFilter] = useState(null)  // 'ETH|KIFIYA' etc
   const [selectedEmp, setSelectedEmp] = useState(null)
 
-  const entitySrcData = ec.byEntitySource || []
-
   // Pension-inclusive helpers
-  // When filterMonth is active, empFullTotal returns just that month's cost (for KPIs/table totals)
-  const empFullTotal = (e) => filterMonth === 'All'
-    ? (e.total || 0) + (e.pension || 0)
-    : (e.monthly?.[filterMonth] || 0) + (e.pensionMonthly?.[filterMonth] || 0)
+  // When filterMonth is active, empFullTotal returns just that month's cost; when only a
+  // year is picked (no specific month), it sums just that year's months — otherwise the
+  // all-time total (for KPIs/table totals).
+  const empFullTotal = (e) => {
+    if (filterMonth !== 'All') return (e.monthly?.[filterMonth] || 0) + (e.pensionMonthly?.[filterMonth] || 0)
+    if (yearOnly) return months.reduce((s, m) => s + (e.monthly?.[m] || 0) + (e.pensionMonthly?.[m] || 0), 0)
+    return (e.total || 0) + (e.pension || 0)
+  }
   const empFullMonth = (e, m) => (e.monthly?.[m] || 0) + (e.pensionMonthly?.[m] || 0)
 
-  // Month-aware Kifiya / Safee: when a month is selected, prorate by YTD ratio
+  // Month/year-aware Kifiya / Safee: when a specific month (or just a year) is selected,
+  // prorate that period's cost by the employee's overall Kifiya/Safee funding ratio.
   const empKifiyaDisplay = (e) => {
-    if (filterMonth === 'All') return e.kifiya || 0
     const gross = (e.kifiya || 0) + (e.safee || 0)
-    return gross > 0 ? (e.monthly?.[filterMonth] || 0) * (e.kifiya || 0) / gross : 0
+    if (gross <= 0) return 0
+    if (filterMonth !== 'All') return (e.monthly?.[filterMonth] || 0) * (e.kifiya || 0) / gross
+    if (yearOnly) return months.reduce((s, m) => s + (e.monthly?.[m] || 0), 0) * (e.kifiya || 0) / gross
+    return e.kifiya || 0
   }
   const empSafeeDisplay = (e) => {
-    if (filterMonth === 'All') return e.safee || 0
     const gross = (e.kifiya || 0) + (e.safee || 0)
-    return gross > 0 ? (e.monthly?.[filterMonth] || 0) * (e.safee || 0) / gross : 0
+    if (gross <= 0) return 0
+    if (filterMonth !== 'All') return (e.monthly?.[filterMonth] || 0) * (e.safee || 0) / gross
+    if (yearOnly) return months.reduce((s, m) => s + (e.monthly?.[m] || 0), 0) * (e.safee || 0) / gross
+    return e.safee || 0
   }
 
   const toggleSec = (buCode, secCode) => {
@@ -166,29 +175,10 @@ export default function EmployeeCostDetail({ data }) {
       })).filter(bu => bu.sections.length > 0)
   }, [normalizedDrillDown, filterBU, filterType, filterVC, filterSource, sectionToDept])
 
-  // 2. Entity × source filter (tile clicks) — applied on top of context filters
-  const entityFiltered = useMemo(() => {
-    if (!entityFilter) return contextFiltered
-    const [fe, fs] = entityFilter.split('|')
-    return contextFiltered.map(bu => ({
-      ...bu,
-      sections: bu.sections.map(sec => ({
-        ...sec,
-        employees: sec.employees.filter(emp => {
-          const matchE = emp.vc === fe
-          const matchS = fs === 'KIFIYA' ? (emp.kifiya || 0) > 0
-                       : fs === 'SAFEE'  ? (emp.safee  || 0) > 0
-                       : true
-          return matchE && matchS
-        })
-      })).filter(s => s.employees.length > 0)
-    })).filter(bu => bu.sections.length > 0)
-  }, [contextFiltered, entityFilter])
-
-  // 3. BU selection filter
+  // 2. BU selection filter
   const visibleDrillDown = selectedBU
-    ? entityFiltered.filter(bu => bu.buCode === selectedBU)
-    : entityFiltered
+    ? contextFiltered.filter(bu => bu.buCode === selectedBU)
+    : contextFiltered
 
   // ── Cost per BU column chart data ────────────────────────────────────────
   // Prefer parent BU name from HR hierarchy; fall back to buName from drill-down
@@ -260,8 +250,6 @@ export default function EmployeeCostDetail({ data }) {
     : []
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  const eth   = vcData.find(d => d.virtualCompany === 'ETH')?.total || 0
-  const hub   = vcData.find(d => d.virtualCompany === 'HUB')?.total || 0
   const grand = visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empFullTotal(e), 0), 0), 0)
 
   // ── Helper ────────────────────────────────────────────────────────────────
@@ -279,81 +267,6 @@ export default function EmployeeCostDetail({ data }) {
       </div>
 
       <PeopleOpsFilterBar data={data} />
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <KpiCard label="Ethiopia" value={fmt(eth)}   sub="Virtual Company: ETH" />
-        <KpiCard label="HUB"      value={fmt(hub)}   sub="Virtual Company: HUB" />
-        <KpiCard label="Total"    value={fmt(grand)}  sub={selectedBU ? selectedBUHR?.name || selectedBU : 'Kifiya + MSP / Programme'} />
-      </div>
-
-      {/* Entity × Payroll Source tiles */}
-      {entitySrcData.length > 0 && (
-        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-navy">By Company & Payroll Source</h3>
-              <p className="text-[10px] text-muted mt-0.5">
-                {entityFilter
-                  ? `Filtered: ${entityFilter.replace('|', ' · ')} — click again to clear`
-                  : 'Click a tile to filter employees below by company & source'}
-              </p>
-            </div>
-            {entityFilter && (
-              <button onClick={() => setEntityFilter(null)}
-                className="text-[10px] font-bold px-3 py-1 rounded-full border transition-colors"
-                style={{ color: '#02404F', borderColor: '#02404F' }}>
-                Clear ✕
-              </button>
-            )}
-          </div>
-
-          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(entitySrcData.length * 2, 8)}, minmax(0,1fr))` }}>
-            {entitySrcData.map(row => {
-              const kifKey = `${row.entity}|KIFIYA`
-              const safKey = `${row.entity}|SAFEE`
-              return (
-                <Fragment key={row.entity}>
-                  <button onClick={() => setEntityFilter(f => f === kifKey ? null : kifKey)}
-                    className="rounded-xl border-2 p-4 text-left transition-all hover:shadow-md"
-                    style={{ borderColor: entityFilter === kifKey ? KIF_COLOR : '#E3E9F2', background: entityFilter === kifKey ? '#EBF8F6' : '#F9FBFD' }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full" style={{ background: KIF_COLOR }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: KIF_COLOR }}>{row.entity} · Kifiya</span>
-                    </div>
-                    <p className="text-lg font-extrabold text-navy tabular-nums">{fmt(row.kifiyaTotal)}</p>
-                    <p className="text-[10px] text-muted mt-0.5">{row.kifiyaCount} employee{row.kifiyaCount !== 1 ? 's' : ''}</p>
-                  </button>
-
-                  <button onClick={() => setEntityFilter(f => f === safKey ? null : safKey)}
-                    className="rounded-xl border-2 p-4 text-left transition-all hover:shadow-md"
-                    style={{ borderColor: entityFilter === safKey ? SAF_COLOR : '#E3E9F2', background: entityFilter === safKey ? '#FEF3EA' : '#F9FBFD' }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full" style={{ background: SAF_COLOR }} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>{row.entity} · MSP / Programme</span>
-                    </div>
-                    <p className="text-lg font-extrabold text-navy tabular-nums">{fmt(row.safeeTotal)}</p>
-                    <p className="text-[10px] text-muted mt-0.5">{row.safeeCount} employee{row.safeeCount !== 1 ? 's' : ''}</p>
-                  </button>
-                </Fragment>
-              )
-            })}
-          </div>
-
-          <div className="mt-4">
-            <ResponsiveContainer width="100%" height={entitySrcData.length * 34 + 10}>
-              <BarChart data={entitySrcData.map(r => ({ name: r.entity, Kifiya: r.kifiyaTotal, 'MSP / Programme': r.safeeTotal }))}
-                layout="vertical" margin={{ top: 0, right: 10, left: 40, bottom: 0 }}>
-                <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fontWeight: 700, fill: '#02404F' }} axisLine={false} tickLine={false} width={36} />
-                <Tooltip formatter={(v, name) => [fmt(v) + ' ETB', name]} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                <Bar dataKey="Kifiya" stackId="s" fill={KIF_COLOR} maxBarSize={16} />
-                <Bar dataKey="MSP / Programme" stackId="s" fill={SAF_COLOR} maxBarSize={16} radius={[0, 3, 3, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       {/* ── Company Cost per Business Unit column chart ── */}
       {buCostData.length > 0 && (
@@ -579,8 +492,8 @@ export default function EmployeeCostDetail({ data }) {
               {(() => {
                 const buData = visibleDrillDown[0]
                 if (!buData) return null
-                const kifTotal = buData.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.kifiya || 0), 0), 0)
-                const safTotal = buData.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.safee  || 0), 0), 0)
+                const kifTotal = buData.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empKifiyaDisplay(e), 0), 0)
+                const safTotal = buData.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empSafeeDisplay(e), 0), 0)
                 const buTotal  = kifTotal + safTotal
                 if (buTotal === 0) return null
                 return (
@@ -637,8 +550,8 @@ export default function EmployeeCostDetail({ data }) {
                     // When a BU is selected from the chart we always show its sections; otherwise always expand (no collapse at BU level since we already filter by selectedBU)
                     const isChosen = selectedBU === bu.buCode
                     const buBg     = isChosen ? '#EBF8F6' : bi % 2 === 0 ? '#F9FBFD' : '#fff'
-                    const buKifiya = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.kifiya || 0), 0), 0)
-                    const buSafee  = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.safee  || 0), 0), 0)
+                    const buKifiya = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empKifiyaDisplay(e), 0), 0)
+                    const buSafee  = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empSafeeDisplay(e), 0), 0)
                     const buTotal  = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empFullTotal(e), 0), 0)
 
                     return (
@@ -674,8 +587,8 @@ export default function EmployeeCostDetail({ data }) {
                           const secKey    = `${bu.buCode}|${sec.sectionCode}`
                           const secOpen   = !!expandedSec[secKey]
                           const secBg     = secOpen ? '#F0FAF8' : '#F4F6FA'
-                          const secKifiya = sec.employees.reduce((s, e) => s + (e.kifiya || 0), 0)
-                          const secSafee  = sec.employees.reduce((s, e) => s + (e.safee  || 0), 0)
+                          const secKifiya = sec.employees.reduce((s, e) => s + empKifiyaDisplay(e), 0)
+                          const secSafee  = sec.employees.reduce((s, e) => s + empSafeeDisplay(e), 0)
                           const secTotal  = sec.employees.reduce((s, e) => s + empFullTotal(e), 0)
 
                           return (
@@ -715,8 +628,10 @@ export default function EmployeeCostDetail({ data }) {
 
                               {/* Level 3: Employees */}
                               {secOpen && sec.employees.map(emp => {
-                                const hasBoth = (emp.kifiya || 0) > 0 && (emp.safee || 0) > 0
-                                const source  = hasBoth ? 'Both' : (emp.safee || 0) > 0 ? 'MSP / Programme' : 'Kifiya'
+                                const empKif  = empKifiyaDisplay(emp)
+                                const empSaf  = empSafeeDisplay(emp)
+                                const hasBoth = empKif > 0 && empSaf > 0
+                                const source  = hasBoth ? 'Both' : empSaf > 0 ? 'MSP / Programme' : 'Kifiya'
                                 const srcClr  = source === 'MSP / Programme' ? SAF_COLOR : source === 'Both' ? '#2EBD85' : KIF_COLOR
                                 return (
                                   <tr key={emp.employeeNo} className="border-t border-border/20 group" style={{ background: '#FAFFFE' }}>
@@ -740,10 +655,10 @@ export default function EmployeeCostDetail({ data }) {
                                       )
                                     })}
                                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>
-                                      {(emp.kifiya || 0) > 0 ? fmtFull(emp.kifiya) : <span className="opacity-20">—</span>}
+                                      {empKif > 0 ? fmtFull(empKif) : <span className="opacity-20">—</span>}
                                     </td>
                                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>
-                                      {(emp.safee || 0) > 0 ? fmtFull(emp.safee) : <span className="opacity-20">—</span>}
+                                      {empSaf > 0 ? fmtFull(empSaf) : <span className="opacity-20">—</span>}
                                     </td>
                                     <td className="px-4 py-1.5 text-right font-bold text-navy sticky right-0 z-10 tabular-nums" style={{ background: '#FAFFFE' }}>
                                       {fmtFull(empFullTotal(emp))}
@@ -770,10 +685,10 @@ export default function EmployeeCostDetail({ data }) {
                       )
                     })}
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#86EFCF' }}>
-                      {fmt(visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + (e.kifiya || 0), 0), 0), 0))}
+                      {fmt(visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empKifiyaDisplay(e), 0), 0), 0))}
                     </td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#FBB97B' }}>
-                      {fmt(visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + (e.safee || 0), 0), 0), 0))}
+                      {fmt(visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empSafeeDisplay(e), 0), 0), 0))}
                     </td>
                     <td className="px-4 py-3 text-right font-extrabold text-white sticky right-0 z-20 tabular-nums" style={{ background: '#02404F' }}>
                       {fmt(grand)}

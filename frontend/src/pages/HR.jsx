@@ -336,7 +336,16 @@ export default function HR({ data }) {
     if (!_tC[t]) _tC[t] = { type: t, male: 0, female: 0 }
     if (e.gender === 'Male') _tC[t].male++; else if (e.gender === 'Female') _tC[t].female++
   })
-  const filteredTypeData = Object.values(_tC).filter(t => t.male + t.female > 0).sort((a, b) => (b.male + b.female) - (a.male + a.female))
+  // Best-effort when a month/year is selected: only counts people traceable via
+  // GetEmployee (still or previously Active) — KFT_Employment_History has no employment-
+  // type field at all, so anyone who dropped out of GetEmployee entirely can't be typed.
+  // Totals here can undercount hr.headcountEvolution's overall count for that reason.
+  const filteredTypeData = monthEvo
+    ? Object.entries(monthEvo.byType || {})
+        .map(([type, v]) => ({ type, male: v.male, female: v.female }))
+        .filter(t => t.male + t.female > 0)
+        .sort((a, b) => (b.male + b.female) - (a.male + a.female))
+    : Object.values(_tC).filter(t => t.male + t.female > 0).sort((a, b) => (b.male + b.female) - (a.male + a.female))
 
   const _jtC = {}
   filteredHCEmployees.forEach(e => {
@@ -344,7 +353,13 @@ export default function HR({ data }) {
     if (!_jtC[t]) _jtC[t] = { jobTitle: t, male: 0, female: 0 }
     if (e.gender === 'Male') _jtC[t].male++; else if (e.gender === 'Female') _jtC[t].female++
   })
-  const filteredJobTitleData = Object.values(_jtC).sort((a, b) => (b.male + b.female) - (a.male + a.female))
+  // Job title has no historical source anywhere (not even GetEmployee carries it) — past
+  // months genuinely have nothing to show here, not just a best-effort partial count.
+  const filteredJobTitleData = monthEvo
+    ? Object.entries(monthEvo.byJobTitle || {})
+        .map(([jobTitle, v]) => ({ jobTitle, male: v.male, female: v.female }))
+        .sort((a, b) => (b.male + b.female) - (a.male + a.female))
+    : Object.values(_jtC).sort((a, b) => (b.male + b.female) - (a.male + a.female))
 
   const _dC = {}
   filteredHCEmployees.forEach(e => {
@@ -352,7 +367,12 @@ export default function HR({ data }) {
     if (!_dC[e.buCode]) _dC[e.buCode] = { dept: e.buCode, name: e.buName, male: 0, female: 0 }
     if (e.gender === 'Male') _dC[e.buCode].male++; else if (e.gender === 'Female') _dC[e.buCode].female++
   })
-  const filteredDeptChartData = Object.values(_dC).sort((a, b) => (b.male + b.female) - (a.male + a.female))
+  const filteredDeptChartData = monthEvo
+    ? Object.entries(monthEvo.byBU || {})
+        .map(([dept, v]) => ({ dept, name: deptDisplayNames[dept] || dept, male: v.male, female: v.female }))
+        .filter(d => d.male + d.female > 0)
+        .sort((a, b) => (b.male + b.female) - (a.male + a.female))
+    : Object.values(_dC).sort((a, b) => (b.male + b.female) - (a.male + a.female))
 
   const filteredJobEmpMap = {}
   filteredHCEmployees.forEach(emp => {
@@ -371,12 +391,23 @@ export default function HR({ data }) {
     const t = emp.employeeType === 'Unknown' ? 'Unknown' : emp.employeeType
     _dtM[emp.buCode].types[t] = (_dtM[emp.buCode].types[t] || 0) + 1
   })
-  const filteredByDeptByType = Object.values(_dtM).sort((a, b) =>
-    Object.values(b.types).reduce((s, v) => s + v, 0) - Object.values(a.types).reduce((s, v) => s + v, 0)
-  )
-  const filteredAllContractTypes = [...new Set(
-    filteredHCEmployees.map(e => e.employeeType).filter(t => t && t !== 'Unknown')
-  )].sort()
+  // Best-effort when a month/year is selected — same employeeType-availability limitation
+  // as the flat Gender per Contract Type chart (departed employees can't be typed at all).
+  const filteredByDeptByType = monthEvo
+    ? Object.entries(monthEvo.byBU || {})
+        .map(([deptCode, v]) => ({
+          deptCode,
+          deptName: deptDisplayNames[deptCode] || deptCode,
+          types: Object.fromEntries(Object.entries(v.byType || {}).map(([t, g]) => [t, g.male + g.female]))
+        }))
+        .filter(d => Object.keys(d.types).length > 0)
+        .sort((a, b) => Object.values(b.types).reduce((s, v) => s + v, 0) - Object.values(a.types).reduce((s, v) => s + v, 0))
+    : Object.values(_dtM).sort((a, b) =>
+        Object.values(b.types).reduce((s, v) => s + v, 0) - Object.values(a.types).reduce((s, v) => s + v, 0)
+      )
+  const filteredAllContractTypes = monthEvo
+    ? [...new Set(Object.values(monthEvo.byBU || {}).flatMap(v => Object.keys(v.byType || {})))].sort()
+    : [...new Set(filteredHCEmployees.map(e => e.employeeType).filter(t => t && t !== 'Unknown'))].sort()
 
   const filteredBuEmpList = {}
   filteredHCEmployees.forEach(emp => {

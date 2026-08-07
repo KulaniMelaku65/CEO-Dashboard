@@ -252,8 +252,8 @@ export default function HRPageReview({ data }) {
 
       {/* ── KPI row 2 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiBlock label="Kifiya-Funded (Monthly)"        value={fmtN(Math.round(kifiyaMonthly))} sub={effectiveMonth} accent={TEAL} />
-        <KpiBlock label="MSP / Programme-Funded (Monthly)" value={fmtN(Math.round(safeeMonthly))} sub={effectiveMonth} accent="#1A7A72" small />
+        <KpiBlock label="Kifiya (Monthly)"        value={fmtN(Math.round(kifiyaMonthly))} sub={effectiveMonth} accent={TEAL} />
+        <KpiBlock label="MSP/Program (Monthly)" value={fmtN(Math.round(safeeMonthly))} sub={effectiveMonth} accent="#1A7A72" small />
         <KpiBlock label="Kifiya Share of Payroll"         value={fmtPct(kifiyaSharePct)}
           sub={`${fmtN(Math.round(kifiyaMonthly))} of ${fmtN(Math.round(totalMonthly))}`} accent={ORANGE} />
       </div>
@@ -261,7 +261,7 @@ export default function HRPageReview({ data }) {
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3">
-          <h3 className="text-sm font-bold text-navy">Monthly Cost by Business Unit &amp; Hub / Country</h3>
+          <h3 className="text-sm font-bold text-navy">Monthly Cost by Business Unit &amp; Virtual Company</h3>
           <p className="text-[10px] text-muted mt-0.5">
             {effectiveMonth} · {tableRows.length} rows · click a row to expand employees
           </p>
@@ -271,12 +271,12 @@ export default function HRPageReview({ data }) {
             <thead className="sticky top-0 z-10">
               <tr style={{ background: NAVY }}>
                 <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[200px]" style={{ background: NAVY }}>Business Unit</th>
-                <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[80px]">Hub / Country</th>
+                <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px]">Head Count</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Kifiya Funded</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#EB7D23' }}>MSP / Programme</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Kifiya</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#EB7D23' }}>MSP/Program</th>
               </tr>
             </thead>
             <tbody>
