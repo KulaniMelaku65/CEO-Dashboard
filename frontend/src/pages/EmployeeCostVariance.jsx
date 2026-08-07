@@ -3,6 +3,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   ResponsiveContainer, Tooltip, Cell
 } from 'recharts'
+import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
+import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
 // Full-precision formatter for the table (matches Power BI style)
 const fmtFull = (n) => {
@@ -32,6 +34,11 @@ export default function EmployeeCostVariance({ data }) {
   const hr        = data.hr           || {}
   const months    = ec.payrollMonths  || []
   const drillDown = ec.drillDown      || []
+
+  const { filterBU, filterType, filterVC, filterSource } = usePeopleOpsFilters()
+
+  // employeeNo → employeeType enrichment (headcount fallback, already computed by backend)
+  const empNoToTypeMap = hr.empNoToType || {}
 
   // sectionToDept from backend — covers ALL dimension values including payroll-only sections
   const sectionToDept    = hr.sectionToDept    || {}
@@ -77,20 +84,48 @@ export default function EmployeeCostVariance({ data }) {
   const buVarMap   = {}
 
   if (buDrillDown.length > 0) {
-    // 3-level source: BU → sections → employees
+    // 3-level source: BU → sections → employees. An employee can appear more
+    // than once — multiple sections within one BU, or even different BUs
+    // entirely (e.g. a regular payroll record in their home department plus a
+    // separate Consultant payroll record elsewhere). buVarMap stays per-BU
+    // (each BU's own variance rollup should include everyone who cost that BU
+    // money), but empRows is a single flat table across all BUs, so it needs a
+    // BU-independent merge or the same employeeNo collides on key there.
+    const byEmpGlobal = {}
     buDrillDown.forEach(bu => {
+      const parentBU = sectionToDept[bu.buCode] || bu.buCode
+      if (filterBU !== 'All' && parentBU !== filterBU) return
+      const byEmp = {}
       bu.sections.forEach(sec => {
         sec.employees.forEach(emp => {
-          const prevCost = monthA ? (emp.monthly[monthA] || 0) : 0
-          const currCost = emp.monthly[monthB] || 0
+          const effectiveType = emp.employeeType || empNoToTypeMap[emp.employeeNo] || ''
+          if (filterType   !== 'All' && effectiveType !== filterType) return
+          if (filterVC     !== 'All' && emp.vc        !== filterVC)   return
+          if (filterSource === 'KIFIYA' && !(emp.kifiya  > 0))           return
+          if (filterSource === 'SAFEE'  && !(emp.safee   > 0))           return
+          const prevCost = (monthA ? (emp.monthly[monthA] || 0) : 0) + (monthA ? (emp.pensionMonthly?.[monthA] || 0) : 0)
+          const currCost = (emp.monthly[monthB] || 0) + (emp.pensionMonthly?.[monthB] || 0)
           if (prevCost === 0 && currCost === 0) return
-          const variance = currCost - prevCost
-          const pct = prevCost !== 0 ? (variance / prevCost) * 100 : (currCost !== 0 ? 100 : 0)
-          empRows.push({ key: emp.employeeNo, label: `${emp.employeeNo} ${emp.name}`.trim(), prevCost, currCost, variance, pct })
-          if (!buVarMap[bu.buCode]) buVarMap[bu.buCode] = { name: bu.buName, variance: 0 }
-          buVarMap[bu.buCode].variance += variance
+          const key = emp.employeeNo || emp.name
+          if (!byEmp[key]) byEmp[key] = { key, label: `${emp.employeeNo} ${emp.name}`.trim(), prevCost: 0, currCost: 0 }
+          byEmp[key].prevCost += prevCost
+          byEmp[key].currCost += currCost
         })
       })
+      Object.values(byEmp).forEach(row => {
+        const variance = row.currCost - row.prevCost
+        if (!buVarMap[bu.buCode]) buVarMap[bu.buCode] = { name: bu.buName, variance: 0 }
+        buVarMap[bu.buCode].variance += variance
+
+        if (!byEmpGlobal[row.key]) byEmpGlobal[row.key] = { key: row.key, label: row.label, prevCost: 0, currCost: 0 }
+        byEmpGlobal[row.key].prevCost += row.prevCost
+        byEmpGlobal[row.key].currCost += row.currCost
+      })
+    })
+    Object.values(byEmpGlobal).forEach(row => {
+      const variance = row.currCost - row.prevCost
+      const pct      = row.prevCost !== 0 ? (variance / row.prevCost) * 100 : (row.currCost !== 0 ? 100 : 0)
+      empRows.push({ ...row, variance, pct })
     })
   } else {
     // Fallback to 2-level drillDown (section → employees)
@@ -131,6 +166,8 @@ export default function EmployeeCostVariance({ data }) {
           : <p className="text-xs text-muted font-medium">Select two months below to compare payroll costs</p>
         }
       </div>
+
+      <PeopleOpsFilterBar data={data} />
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
 

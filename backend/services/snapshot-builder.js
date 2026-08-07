@@ -849,21 +849,50 @@ async function buildSnapshot(targetDate) {
   let employeeCost = { byVirtualCompany: [], byDeptAndSource: [], monthly: [] };
   let hrReview     = { headcountMatrix: [], costMatrix: [], allEmployeeTypes: [], allVirtualCompanies: [], payrollMonths: [] };
   try {
-    const [stdPay, progPay] = await Promise.all([
-      bcAvail ? bc('KFT_Payroll_Cost').catch(() => []) : Promise.resolve([]),
-      bcAvail ? bc('KFT_Prog_Payroll_Cost').catch(() => []) : Promise.resolve([])
+    const [stdPay, progPay, consPay, stdPension, progPension] = await Promise.all([
+      bcAvail ? bc('KFT_Payroll_Cost').catch(() => [])                  : Promise.resolve([]),
+      bcAvail ? bc('KFT_Prog_Payroll_Cost').catch(() => [])             : Promise.resolve([]),
+      bcAvail ? bc('KFT_Consultant_Payroll_Cost').catch(() => [])       : Promise.resolve([]),
+      bcAvail ? bc('KFT_Payroll_Pension').catch(() => [])               : Promise.resolve([]),
+      bcAvail ? bc('KFT_Prog_Payroll_Pension').catch(() => [])          : Promise.resolve([])
     ]);
 
     const payrollStart = new Date(CONFIG.PAYROLL_START);
     const targetEnd    = new Date(targetDate + 'T23:59:59');
 
-    console.log(`  Payroll raw: KFT_Payroll_Cost=${stdPay.length} rows, KFT_Prog_Payroll_Cost=${progPay.length} rows`);
-    if (stdPay.length === 0 && progPay.length === 0)
-      console.warn('  WARNING: both payroll queries returned 0 rows — check BC web services are published');
+    console.log(`  Payroll raw: KFT_Payroll_Cost=${stdPay.length} rows, KFT_Prog_Payroll_Cost=${progPay.length} rows, KFT_Consultant_Payroll_Cost=${consPay.length} rows`);
+    if (stdPay.length === 0 && progPay.length === 0 && consPay.length === 0)
+      console.warn('  WARNING: all payroll queries returned 0 rows — check BC web services are published');
 
     const allPay = [
-      ...stdPay.map(r  => ({ ...r,  payrollSource: 'KIFIYA' })),
-      ...progPay.map(r => ({ ...r,  payrollSource: 'SAFEE'  }))
+      ...stdPay.map(r  => ({ ...r, payrollSource: 'KIFIYA' })),
+      ...progPay.map(r => ({ ...r, payrollSource: 'SAFEE'  })),
+      ...consPay.map(r => {
+        // BC returns PascalCase field names matching the AL column definitions.
+        // PayPeriod is "M-YYYY" (e.g. "9-2025") — convert to ISO "YYYY-MM-01" for date parsing.
+        const rawPeriod   = String(r.PayPeriod || '');
+        const periodMatch = rawPeriod.match(/^(\d{1,2})-(\d{4})$/);
+        const payrollPeriod = periodMatch
+          ? `${periodMatch[2]}-${String(periodMatch[1]).padStart(2, '0')}-01`
+          : r.PayPeriod || null;
+
+        const currency = (r.CurrencyCode || '').trim().toUpperCase();
+        const rate     = Number(r.ExchangeRate) || 1;
+        const toETB    = v => (currency === 'ETB' || currency === '') ? Number(v) : Number(v) * rate;
+        return {
+          ...r,
+          employeeNo:       r.ConsultantID,
+          firstName:        r.ConsultantName || '',
+          lastName:         '',
+          employeeType:     'Individual Consultant',
+          virtualCompany:   r.VirtualCompanyCode || 'Unknown',
+          businessUnitDept: r.BusinessUnitCode   || 'Unknown',
+          jobTitle:         '',
+          totalEarning:     toETB(r.Amount || 0),
+          payrollPeriod,
+          payrollSource:    'SAFEE'
+        };
+      })
     ].filter(r => {
       const st = (r.payrollStatus || '').toLowerCase();
       if (st === 'open' || st === 'pending approval') return false;
@@ -871,8 +900,61 @@ async function buildSnapshot(targetDate) {
       const d = new Date(r.payrollPeriod);
       return d >= payrollStart && d <= targetEnd;
     });
-    if (allPay.length === 0 && (stdPay.length + progPay.length) > 0)
+    if (allPay.length === 0 && (stdPay.length + progPay.length + consPay.length) > 0)
       console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
+
+    // Employer pension lookup: employeeNo|monthLabel → pension amount
+    // Sourced from KFT_Payroll_Pension (Period Transactions) and KFT_Prog_Payroll_Pension.
+    // Employer Amount may be stored as negative in BC; we take Math.abs().
+    const pensionByEmpMonth = {};
+    [...stdPension, ...progPension].forEach(r => {
+      if (!r.payrollPeriod || !r.employeeNo || !r.employerPension) return;
+      const d = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const key = `${r.employeeNo}|${mthLbl}`;
+      pensionByEmpMonth[key] = (pensionByEmpMonth[key] || 0) + Math.abs(r.employerPension);
+    });
+
+    // Pension aggregations by dimension — built from raw pension arrays so source attribution
+    // (KIFIYA vs SAFEE) is preserved without relying on the merged allPay loop.
+    const pensionVCMap      = {};
+    const pensionSrcMap     = {};
+    const pensionEntSrcMap  = {};  // "vc|src" → amount
+    const pensionDeptMap    = {};  // parentBU → { kifiya, safee }
+    const pensionMthMap     = {};  // monthLabel → amount
+
+    stdPension.forEach(r => {
+      if (!r.payrollPeriod || !r.employerPension) return;
+      const amt  = Math.abs(r.employerPension);
+      const vc   = r.virtualCompany || 'Unknown';
+      const d    = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const mth  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const dept = sectionToDept[r.businessUnitDept || 'Unknown'] || r.businessUnitDept || 'Unknown';
+      pensionVCMap[vc]                 = (pensionVCMap[vc] || 0) + amt;
+      pensionSrcMap['KIFIYA']          = (pensionSrcMap['KIFIYA'] || 0) + amt;
+      pensionEntSrcMap[`${vc}|KIFIYA`] = (pensionEntSrcMap[`${vc}|KIFIYA`] || 0) + amt;
+      if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
+      pensionDeptMap[dept].kifiya += amt;
+      pensionMthMap[mth] = (pensionMthMap[mth] || 0) + amt;
+    });
+
+    progPension.forEach(r => {
+      if (!r.payrollPeriod || !r.employerPension) return;
+      const amt  = Math.abs(r.employerPension);
+      const vc   = r.virtualCompany || 'Unknown';
+      const d    = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const mth  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const dept = sectionToDept[r.businessUnitDept || 'Unknown'] || r.businessUnitDept || 'Unknown';
+      pensionVCMap[vc]                = (pensionVCMap[vc] || 0) + amt;
+      pensionSrcMap['SAFEE']          = (pensionSrcMap['SAFEE'] || 0) + amt;
+      pensionEntSrcMap[`${vc}|SAFEE`] = (pensionEntSrcMap[`${vc}|SAFEE`] || 0) + amt;
+      if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
+      pensionDeptMap[dept].safee += amt;
+      pensionMthMap[mth] = (pensionMthMap[mth] || 0) + amt;
+    });
 
     // Build headcount name → employeeType and name → jobTitle maps
     // Both use a shortKey (first + last) to handle 3-part Ethiopian names where
@@ -907,6 +989,15 @@ async function buildSnapshot(targetDate) {
       }
     });
     hr.empNoToType = empNoToType;
+
+    // Individual Consultants are MSP/programme costs — reclassify any that ended up
+    // in the KIFIYA source (e.g. appearing in standard payroll) to SAFEE so they show
+    // in the correct column across all charts and filters.
+    allPay.forEach(r => {
+      if (r.payrollSource !== 'KIFIYA') return;
+      const type = r.employeeType || empNoToType[r.employeeNo] || '';
+      if (type === 'Individual Consultant') r.payrollSource = 'SAFEE';
+    });
 
     // employeeNo → jobTitle ("Job Description") via headcount name bridge
     const empNoToJobTitle = {};
@@ -959,10 +1050,6 @@ async function buildSnapshot(targetDate) {
       if (v.source === 'KIFIYA') { g.kifiyaTotal += v.total; g.kifiyaCount = v.employees.size; }
       else                       { g.safeeTotal  += v.total; g.safeeCount  = v.employees.size; }
     });
-    const byEntitySource = Object.values(entitySrcGrouped)
-      .map(g => ({ entity: g.entity, kifiyaTotal: Math.round(g.kifiyaTotal), safeeTotal: Math.round(g.safeeTotal), kifiyaCount: g.kifiyaCount, safeeCount: g.safeeCount }))
-      .sort((a, b) => (b.kifiyaTotal + b.safeeTotal) - (a.kifiyaTotal + a.safeeTotal));
-
     // KIFIYA vs SAFEE clustered bar — grouped by PARENT business unit (not section)
     const deptMap = {};
     allPay.forEach(r => {
@@ -985,6 +1072,37 @@ async function buildSnapshot(targetDate) {
       mthMap[key].total += num(r.totalEarning);
     });
 
+    // Inject employer pension into all snapshot-level cost aggregations
+    Object.entries(pensionVCMap).forEach(([vc, amt]) => {
+      vcMap[vc] = (vcMap[vc] || 0) + amt;
+    });
+    Object.entries(pensionSrcMap).forEach(([src, amt]) => {
+      srcMap[src] = (srcMap[src] || 0) + amt;
+    });
+    Object.entries(pensionEntSrcMap).forEach(([key, amt]) => {
+      const sep = key.lastIndexOf('|');
+      const vc  = key.slice(0, sep);
+      const src = key.slice(sep + 1);
+      if (entitySrcGrouped[vc]) {
+        if (src === 'KIFIYA') entitySrcGrouped[vc].kifiyaTotal += amt;
+        else                  entitySrcGrouped[vc].safeeTotal  += amt;
+      }
+    });
+    Object.entries(pensionDeptMap).forEach(([dept, p]) => {
+      if (deptMap[dept]) {
+        deptMap[dept].kifiya += p.kifiya;
+        deptMap[dept].safee  += p.safee;
+      }
+    });
+    Object.values(mthMap).forEach(m => {
+      m.total += pensionMthMap[m.label] || 0;
+    });
+
+    // byEntitySource computed after pension injection so totals are pension-inclusive
+    const byEntitySource = Object.values(entitySrcGrouped)
+      .map(g => ({ entity: g.entity, kifiyaTotal: Math.round(g.kifiyaTotal), safeeTotal: Math.round(g.safeeTotal), kifiyaCount: g.kifiyaCount, safeeCount: g.safeeCount }))
+      .sort((a, b) => (b.kifiyaTotal + b.safeeTotal) - (a.kifiyaTotal + a.safeeTotal));
+
     // Drill-down: dept → employee → per-month earnings (for the expandable cost table)
     const drillMap = {};
     allPay.forEach(r => {
@@ -1005,11 +1123,16 @@ async function buildSnapshot(targetDate) {
       if (!de.employees[empKey]) de.employees[empKey] = { employeeNo: empKey, name, monthly: {}, mthKeys: {}, total: 0 };
       const ee = de.employees[empKey];
 
-      ee.monthly[mthLbl]    = (ee.monthly[mthLbl]    || 0) + earning;
+      // Pension: include once per employee per month. When an employee has rows from
+      // multiple payroll sources (KIFIYA + SAFEE), both rows land on the same ee entry;
+      // adding pension for each row would double-count it.
+      const isFirstMonth = !Object.prototype.hasOwnProperty.call(ee.monthly, mthLbl);
+      const pensionAmt   = isFirstMonth ? (pensionByEmpMonth[`${empKey}|${mthLbl}`] || 0) : 0;
+      ee.monthly[mthLbl]    = (ee.monthly[mthLbl]    || 0) + earning + pensionAmt;
       ee.mthKeys[mthKey]    = mthLbl;
-      ee.total             += earning;
-      de.monthTotals[mthLbl] = (de.monthTotals[mthLbl] || 0) + earning;
-      de.total             += earning;
+      ee.total             += earning + pensionAmt;
+      de.monthTotals[mthLbl] = (de.monthTotals[mthLbl] || 0) + earning + pensionAmt;
+      de.total             += earning + pensionAmt;
     });
 
     // Sorted unique month labels across all payroll data
@@ -1024,6 +1147,24 @@ async function buildSnapshot(targetDate) {
       .sort(([a], [b]) => Number(a) - Number(b))
       .map(([, lbl]) => lbl);
 
+    // Standard-only months (stdPay + progPay, excluding consPay).
+    // Consultant payroll may have a more recent period than regular payroll;
+    // using allPay months as the default would make all staff show zero cost
+    // on HRPageReview when the consultant period is most recent.
+    const stdMthKeyLblMap = {};
+    [...stdPay, ...progPay].forEach(r => {
+      if (!r.payrollPeriod) return;
+      const st = (r.payrollStatus || '').toLowerCase();
+      if (st === 'open' || st === 'pending approval') return;
+      const d = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
+      stdMthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    });
+    const stdPayrollMonths = Object.entries(stdMthKeyLblMap)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([, lbl]) => lbl);
+
     const drillDown = Object.values(drillMap)
       .sort((a, b) => b.total - a.total)
       .map(d => ({
@@ -1032,7 +1173,7 @@ async function buildSnapshot(targetDate) {
         total:       Math.round(d.total),
         monthTotals: d.monthTotals,
         employees:   Object.values(d.employees)
-          .sort((a, b) => b.total - a.total)
+          .sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
           .map(e => ({ employeeNo: e.employeeNo, name: e.name, monthly: e.monthly, total: Math.round(e.total) }))
       }));
 
@@ -1061,12 +1202,17 @@ async function buildSnapshot(targetDate) {
       sec.monthTotals[mthLbl] = (sec.monthTotals[mthLbl] || 0) + earning;
       sec.total += earning;
 
-      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', employeeType: r.employeeType || '', monthly: {}, total: 0, kifiya: 0, safee: 0 };
+      if (!sec.employees[empKey]) sec.employees[empKey] = { employeeNo: empKey, name, vc: r.virtualCompany || 'Unknown', employeeType: empNoToType[empKey] || r.employeeType || '', monthly: {}, pensionMonthly: {}, total: 0, pension: 0, kifiya: 0, safee: 0 };
       const ee = sec.employees[empKey];
       ee.monthly[mthLbl] = (ee.monthly[mthLbl] || 0) + earning;
       ee.total += earning;
       if (r.payrollSource === 'KIFIYA') ee.kifiya += earning;
       else                              ee.safee  += earning;
+      if (!Object.prototype.hasOwnProperty.call(ee.pensionMonthly, mthLbl)) {
+        const pensionAmt = pensionByEmpMonth[`${empKey}|${mthLbl}`] || 0;
+        ee.pensionMonthly[mthLbl] = pensionAmt;
+        ee.pension += pensionAmt;
+      }
     });
 
     const buDrillDown = Object.values(buDrillMap)
@@ -1084,16 +1230,18 @@ async function buildSnapshot(targetDate) {
             total:        Math.round(sec.total),
             monthTotals:  sec.monthTotals,
             employees:    Object.values(sec.employees)
-              .sort((a, b) => b.total - a.total)
+              .sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
               .map(e => ({
-                employeeNo:   e.employeeNo,
-                name:         e.name,
-                vc:           e.vc,
-                employeeType: e.employeeType || '',
-                monthly:      e.monthly,
-                total:        Math.round(e.total),
-                kifiya:       Math.round(e.kifiya || 0),
-                safee:        Math.round(e.safee  || 0)
+                employeeNo:    e.employeeNo,
+                name:          e.name,
+                vc:            e.vc,
+                employeeType:  e.employeeType || '',
+                monthly:       e.monthly,
+                pensionMonthly: Object.fromEntries(Object.entries(e.pensionMonthly || {}).map(([k, v]) => [k, Math.round(v)])),
+                pension:       Math.round(e.pension || 0),
+                total:         Math.round(e.total),
+                kifiya:        Math.round(e.kifiya || 0),
+                safee:         Math.round(e.safee  || 0)
               }))
           }))
       }));
@@ -1172,10 +1320,20 @@ async function buildSnapshot(targetDate) {
     // Best-effort: try firstName+lastName match against headcount full names.
     // Unmatched rows still included (employeeType = 'Unknown') so cost data is never lost.
     const empPayMap = {};
+    // Global set: tracks `${empKey}|${mthLbl}` to ensure employer pension is counted once per
+    // employee per month even when the employee appears in multiple payroll sources (KIFIYA + SAFEE).
+    // Since allPay = [...stdPay, ...progPay, ...consPay], KIFIYA rows process first,
+    // so pension is attributed to the KIFIYA entry for cross-funded employees.
+    const _pensionAccounted = new Set();
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim();
-      const et      = hcByName[name.toLowerCase()] || 'Unknown';
+      // Honour the employeeType already set on normalised rows (e.g. 'Individual Consultant'
+      // on consPay rows). Only fall back to the headcount name-lookup for standard employees
+      // whose type was not pre-populated.
+      const et      = (r.employeeType && r.employeeType !== 'Unknown')
+        ? r.employeeType
+        : hcByName[name.toLowerCase()] || 'Unknown';
       const sc      = r.businessUnitDept || 'Unknown';
       const buCode  = sectionToDept[sc] || sc;
       const buName  = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
@@ -1189,16 +1347,25 @@ async function buildSnapshot(targetDate) {
       if (!empPayMap[key]) empPayMap[key] = {
         employeeNo: empKey, name, buCode, buName,
         payrollSource: src, virtualCompany: vc, employeeType: et,
-        monthTotals: {}, total: 0
+        monthTotals: {}, pensionMonthTotals: {}, total: 0, pensionTotal: 0
       };
       const e = empPayMap[key];
       e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + earning;
       e.total += earning;
+      const pensionKey = `${empKey}|${mthLbl}`;
+      if (!_pensionAccounted.has(pensionKey)) {
+        _pensionAccounted.add(pensionKey);
+        const pensionAmt = pensionByEmpMonth[pensionKey] || 0;
+        e.pensionMonthTotals[mthLbl] = pensionAmt;
+        e.pensionTotal += pensionAmt;
+      }
     });
     const employeePayroll = Object.values(empPayMap).map(e => ({
       ...e,
-      total:       Math.round(e.total),
-      monthTotals: Object.fromEntries(Object.entries(e.monthTotals).map(([k, v]) => [k, Math.round(v)]))
+      total:             Math.round(e.total),
+      monthTotals:       Object.fromEntries(Object.entries(e.monthTotals).map(([k, v]) => [k, Math.round(v)])),
+      pensionTotal:      Math.round(e.pensionTotal || 0),
+      pensionMonthTotals: Object.fromEntries(Object.entries(e.pensionMonthTotals || {}).map(([k, v]) => [k, Math.round(v)]))
     }));
 
     // Step 3: headcountMatrix — buCode × employeeType × virtualCompany → count
@@ -1224,7 +1391,8 @@ async function buildSnapshot(targetDate) {
       employeePayroll,
       allEmployeeTypes,
       allVirtualCompanies: [...new Set(headcountRows.map(r => (r.virtualCompany || '').trim()).filter(Boolean))].sort(),
-      payrollMonths
+      payrollMonths,
+      stdPayrollMonths
     };
 
     console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);

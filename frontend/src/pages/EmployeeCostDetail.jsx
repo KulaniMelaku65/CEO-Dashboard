@@ -1,6 +1,8 @@
-import { useState, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell, LineChart, Line, ReferenceLine } from 'recharts'
 import KpiCard from '../components/KpiCard.jsx'
+import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
+import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
 const MALE_COLOR   = '#02404F'
 const FEMALE_COLOR = '#1FB6A6'
@@ -40,6 +42,7 @@ function GenderTooltip({ active, payload, label }) {
 export default function EmployeeCostDetail({ data }) {
   const ec   = data.employeeCost || {}
   const hr   = data.hr || {}
+  const { filterBU, filterType, filterVC, filterSource, filterMonth } = usePeopleOpsFilters()
 
   const vcData    = ec.byVirtualCompany || []
   const months    = ec.payrollMonths    || []
@@ -62,8 +65,8 @@ export default function EmployeeCostDetail({ data }) {
         }]
       }))
 
-  // Bar chart data — parent BU level with gender breakdown
-  const deptChartData = (hr.byDeptHierarchy || []).slice(0, 16).map(d => ({
+  // Unfiltered bar chart data — parent BU level with gender breakdown from headcount query
+  const rawDeptChartData = (hr.byDeptHierarchy || []).slice(0, 16).map(d => ({
     dept:        d.deptCode,
     name:        d.deptName,
     displayName: d.deptName.length > 24 ? d.deptName.slice(0, 23) + '…' : d.deptName,
@@ -71,6 +74,9 @@ export default function EmployeeCostDetail({ data }) {
     female:      d.female || 0,
     count:       d.count  || 0
   }))
+
+  // employeeNo → employeeType enrichment (headcount fallback, already computed by backend)
+  const empNoToTypeMap = hr.empNoToType || {}
 
   // Use backend's full sectionToDept map (covers all dimension values including payroll-only sections)
   const sectionToDept    = hr.sectionToDept    || {}
@@ -103,8 +109,28 @@ export default function EmployeeCostDetail({ data }) {
   const [selectedBU,  setSelectedBU]  = useState(null)   // buCode or null
   const [expandedSec, setExpandedSec] = useState({})
   const [entityFilter, setEntityFilter] = useState(null)  // 'ETH|KIFIYA' etc
+  const [selectedEmp, setSelectedEmp] = useState(null)
 
   const entitySrcData = ec.byEntitySource || []
+
+  // Pension-inclusive helpers
+  // When filterMonth is active, empFullTotal returns just that month's cost (for KPIs/table totals)
+  const empFullTotal = (e) => filterMonth === 'All'
+    ? (e.total || 0) + (e.pension || 0)
+    : (e.monthly?.[filterMonth] || 0) + (e.pensionMonthly?.[filterMonth] || 0)
+  const empFullMonth = (e, m) => (e.monthly?.[m] || 0) + (e.pensionMonthly?.[m] || 0)
+
+  // Month-aware Kifiya / Safee: when a month is selected, prorate by YTD ratio
+  const empKifiyaDisplay = (e) => {
+    if (filterMonth === 'All') return e.kifiya || 0
+    const gross = (e.kifiya || 0) + (e.safee || 0)
+    return gross > 0 ? (e.monthly?.[filterMonth] || 0) * (e.kifiya || 0) / gross : 0
+  }
+  const empSafeeDisplay = (e) => {
+    if (filterMonth === 'All') return e.safee || 0
+    const gross = (e.kifiya || 0) + (e.safee || 0)
+    return gross > 0 ? (e.monthly?.[filterMonth] || 0) * (e.safee || 0) / gross : 0
+  }
 
   const toggleSec = (buCode, secCode) => {
     const key = `${buCode}|${secCode}`
@@ -116,68 +142,127 @@ export default function EmployeeCostDetail({ data }) {
     setExpandedSec({})
   }
 
-  // ── Selected BU details (for gender panel) ───────────────────────────────
-  const selectedBUHR = selectedBU ? deptChartData.find(d => d.dept === selectedBU) : null
+  // ── Filter pipeline ───────────────────────────────────────────────────────
+  // 1. Shared context filters (BU, Employment Type, Hub/Country, Budget Source)
+  const contextFiltered = useMemo(() => {
+    if (filterBU === 'All' && filterType === 'All' && filterVC === 'All' && filterSource === 'All') {
+      return normalizedDrillDown
+    }
+    return normalizedDrillDown
+      .filter(bu => filterBU === 'All' || (sectionToDept[bu.buCode] || bu.buCode) === filterBU)
+      .map(bu => ({
+        ...bu,
+        sections: bu.sections.map(sec => ({
+          ...sec,
+          employees: sec.employees.filter(emp => {
+            const effectiveType = emp.employeeType || empNoToTypeMap[emp.employeeNo] || ''
+            if (filterType   !== 'All' && effectiveType !== filterType)    return false
+            if (filterVC     !== 'All' && emp.vc        !== filterVC)      return false
+            if (filterSource === 'KIFIYA' && !(emp.kifiya > 0))            return false
+            if (filterSource === 'SAFEE'  && !(emp.safee  > 0))            return false
+            return true
+          })
+        })).filter(s => s.employees.length > 0)
+      })).filter(bu => bu.sections.length > 0)
+  }, [normalizedDrillDown, filterBU, filterType, filterVC, filterSource, sectionToDept])
+
+  // 2. Entity × source filter (tile clicks) — applied on top of context filters
+  const entityFiltered = useMemo(() => {
+    if (!entityFilter) return contextFiltered
+    const [fe, fs] = entityFilter.split('|')
+    return contextFiltered.map(bu => ({
+      ...bu,
+      sections: bu.sections.map(sec => ({
+        ...sec,
+        employees: sec.employees.filter(emp => {
+          const matchE = emp.vc === fe
+          const matchS = fs === 'KIFIYA' ? (emp.kifiya || 0) > 0
+                       : fs === 'SAFEE'  ? (emp.safee  || 0) > 0
+                       : true
+          return matchE && matchS
+        })
+      })).filter(s => s.employees.length > 0)
+    })).filter(bu => bu.sections.length > 0)
+  }, [contextFiltered, entityFilter])
+
+  // 3. BU selection filter
+  const visibleDrillDown = selectedBU
+    ? entityFiltered.filter(bu => bu.buCode === selectedBU)
+    : entityFiltered
 
   // ── Cost per BU column chart data ────────────────────────────────────────
   // Prefer parent BU name from HR hierarchy; fall back to buName from drill-down
   const buNameLookup = {}
   ;(hr.byDeptHierarchy || []).forEach(d => { buNameLookup[d.deptCode] = d.deptName })
 
-  const buCostData = normalizedDrillDown.map(bu => {
-    const total = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + e.total, 0), 0)
+  // Filter-aware employee count per BU for the "Employees Per BU" chart.
+  // When any context filter is active, derive unique employee count from payroll (no gender).
+  // When no filters, use the full headcount from hr.byDeptHierarchy (with gender).
+  const deptChartData = (() => {
+    const anyFilter = filterBU !== 'All' || filterType !== 'All' || filterVC !== 'All' || filterSource !== 'All'
+    if (!anyFilter) return rawDeptChartData
+    const buMap = {}
+    contextFiltered.forEach(bu => {
+      const seen = new Set()
+      bu.sections.forEach(sec => sec.employees.forEach(e => seen.add(e.employeeNo || e.name)))
+      const count = seen.size
+      const name = buNameLookup[bu.buCode] || bu.buName
+      if (!buMap[bu.buCode]) buMap[bu.buCode] = { dept: bu.buCode, name, displayName: name.length > 24 ? name.slice(0, 23) + '…' : name, male: count, female: 0, count, fromPayroll: true }
+      else { buMap[bu.buCode].male += count; buMap[bu.buCode].count += count }
+    })
+    return Object.values(buMap).sort((a, b) => b.count - a.count)
+  })()
+  const selectedBUHR = selectedBU ? deptChartData.find(d => d.dept === selectedBU) : null
+
+  const buCostData = contextFiltered.map(bu => {
+    const total = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empFullTotal(e), 0), 0)
     const name  = buNameLookup[bu.buCode] || bu.buName
     return { code: bu.buCode, name, displayName: name.length > 22 ? name.slice(0, 21) + '…' : name, total }
   }).sort((a, b) => b.total - a.total)
   const buCostGrand = buCostData.reduce((s, d) => s + d.total, 0)
 
   // ── Cost per Employee (all employees) ────────────────────────────────────
-  const [selectedEmp, setSelectedEmp] = useState(null)
-  const allEmployees = normalizedDrillDown.flatMap(bu =>
-    bu.sections.flatMap(sec =>
-      sec.employees.map(e => ({
-        ...e,
-        buName:      bu.buName,
-        sectionName: sec.sectionName,
-        displayName: [e.employeeNo, e.name].filter(Boolean).join(' ').slice(0, 26)
-      }))
-    )
-  ).sort((a, b) => b.total - a.total)
+  // An employee can appear in more than one section within the same BU (e.g. a
+  // regular payroll record plus a separate Consultant payroll record) — merge
+  // those into a single combined row keyed by employeeNo rather than listing
+  // duplicates, which would collide on React key and undercount/overcount cost.
+  const allEmployees = (() => {
+    const merged = {}
+    contextFiltered.forEach(bu => {
+      bu.sections.forEach(sec => {
+        sec.employees.forEach(e => {
+          const key = e.employeeNo || e.name
+          if (!merged[key]) {
+            merged[key] = {
+              ...e,
+              buName:      bu.buName,
+              sectionName: sec.sectionName,
+              displayName: [e.employeeNo, e.name].filter(Boolean).join(' ').slice(0, 26),
+              monthly:     { ...e.monthly }
+            }
+            return
+          }
+          const m = merged[key]
+          m.total  = (m.total  || 0) + (e.total  || 0)
+          m.kifiya = (m.kifiya || 0) + (e.kifiya || 0)
+          m.safee  = (m.safee  || 0) + (e.safee  || 0)
+          Object.entries(e.monthly || {}).forEach(([mth, v]) => {
+            m.monthly[mth] = (m.monthly[mth] || 0) + v
+          })
+        })
+      })
+    })
+    return Object.values(merged).sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
+  })()
   const selectedEmpData = selectedEmp ? allEmployees.find(e => e.employeeNo === selectedEmp) : null
   const empTrendData = selectedEmpData
-    ? months.map(m => ({ month: m, cost: selectedEmpData.monthly[m] || 0 }))
+    ? months.map(m => ({ month: m, cost: empFullMonth(selectedEmpData, m) }))
     : []
-
-  // ── Filter pipeline ───────────────────────────────────────────────────────
-  // 1. Entity × source filter
-  const entityFiltered = entityFilter
-    ? (() => {
-        const [fe, fs] = entityFilter.split('|')
-        return normalizedDrillDown.map(bu => ({
-          ...bu,
-          sections: bu.sections.map(sec => ({
-            ...sec,
-            employees: sec.employees.filter(emp => {
-              const matchE = emp.vc === fe
-              const matchS = fs === 'KIFIYA' ? (emp.kifiya || 0) > 0
-                           : fs === 'SAFEE'  ? (emp.safee  || 0) > 0
-                           : true
-              return matchE && matchS
-            })
-          })).filter(s => s.employees.length > 0)
-        })).filter(bu => bu.sections.length > 0)
-      })()
-    : normalizedDrillDown
-
-  // 2. BU selection filter
-  const visibleDrillDown = selectedBU
-    ? entityFiltered.filter(bu => bu.buCode === selectedBU)
-    : entityFiltered
 
   // ── Totals ────────────────────────────────────────────────────────────────
   const eth   = vcData.find(d => d.virtualCompany === 'ETH')?.total || 0
   const hub   = vcData.find(d => d.virtualCompany === 'HUB')?.total || 0
-  const grand = visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + e.total, 0), 0), 0)
+  const grand = visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empFullTotal(e), 0), 0), 0)
 
   // ── Helper ────────────────────────────────────────────────────────────────
   const pct = (part, total) => total > 0 ? ((part / total) * 100).toFixed(0) + '%' : '—'
@@ -192,6 +277,8 @@ export default function EmployeeCostDetail({ data }) {
             : 'Click a business unit bar to drill in; click a section to see employees'}
         </p>
       </div>
+
+      <PeopleOpsFilterBar data={data} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -310,7 +397,6 @@ export default function EmployeeCostDetail({ data }) {
               <table className="text-[11px] border-collapse w-full" style={{ minWidth: 700 }}>
                 <thead className="sticky top-0 z-10">
                   <tr style={{ background: '#02404F' }}>
-                    <th className="px-3 py-3 font-bold text-white text-left w-8">#</th>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[180px]">Employee</th>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Business Unit</th>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Section</th>
@@ -323,7 +409,8 @@ export default function EmployeeCostDetail({ data }) {
                 <tbody>
                   {allEmployees.map((emp, i) => {
                     const isSelected  = selectedEmp === emp.employeeNo
-                    const pctOfGrand  = buCostGrand > 0 ? (emp.total / buCostGrand) * 100 : 0
+                    const empGrand    = empFullTotal(emp)
+                    const pctOfGrand  = buCostGrand > 0 ? (empGrand / buCostGrand) * 100 : 0
                     const rowBg       = isSelected ? '#EBF8F6' : i % 2 === 0 ? '#fff' : '#F9FBFD'
                     return (
                       <tr
@@ -332,15 +419,14 @@ export default function EmployeeCostDetail({ data }) {
                         style={{ background: rowBg }}
                         onClick={() => setSelectedEmp(prev => prev === emp.employeeNo ? null : emp.employeeNo)}
                       >
-                        <td className="px-3 py-2 text-muted font-mono">{i + 1}</td>
                         <td className="px-3 py-2 font-semibold text-navy">
                           {[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}
                         </td>
                         <td className="px-3 py-2 text-muted">{emp.buName}</td>
                         <td className="px-3 py-2 text-muted">{emp.sectionName}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>{fmtFull(emp.kifiya || null)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>{fmtFull(emp.safee  || null)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-bold text-navy">{fmtFull(emp.total)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>{fmtFull(empKifiyaDisplay(emp) || null)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>{fmtFull(empSafeeDisplay(emp)  || null)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-bold text-navy">{fmtFull(empGrand)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-muted">{pctOfGrand.toFixed(1)}%</td>
                       </tr>
                     )
@@ -348,15 +434,15 @@ export default function EmployeeCostDetail({ data }) {
                 </tbody>
                 <tfoot className="sticky bottom-0 z-10">
                   <tr style={{ background: '#02404F' }}>
-                    <td className="px-3 py-3 font-extrabold text-white" colSpan={4}>Total</td>
+                    <td className="px-3 py-3 font-extrabold text-white" colSpan={3}>Total</td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#90D4CE' }}>
-                      {fmtFull(allEmployees.reduce((s, e) => s + (e.kifiya || 0), 0))}
+                      {fmtFull(allEmployees.reduce((s, e) => s + empKifiyaDisplay(e), 0))}
                     </td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#EB7D23' }}>
-                      {fmtFull(allEmployees.reduce((s, e) => s + (e.safee || 0), 0))}
+                      {fmtFull(allEmployees.reduce((s, e) => s + empSafeeDisplay(e), 0))}
                     </td>
                     <td className="px-3 py-3 text-right font-bold text-white tabular-nums">
-                      {fmtFull(allEmployees.reduce((s, e) => s + e.total, 0))}
+                      {fmtFull(allEmployees.reduce((s, e) => s + empFullTotal(e), 0))}
                     </td>
                     <td className="px-3 py-3 text-right font-bold text-white">100%</td>
                   </tr>
@@ -378,7 +464,7 @@ export default function EmployeeCostDetail({ data }) {
                     MSP / Programme: <strong>{fmt(selectedEmpData.safee || 0)}</strong>
                   </span>
                   <span className="text-[10px] font-semibold text-muted">
-                    Total: <strong className="text-navy">{fmt(selectedEmpData.total)}</strong>
+                    Total: <strong className="text-navy">{fmt(empFullTotal(selectedEmpData))}</strong>
                   </span>
                 </div>
               </div>
@@ -460,27 +546,34 @@ export default function EmployeeCostDetail({ data }) {
               <h4 className="text-[11px] font-extrabold text-navy uppercase tracking-wider mb-3">
                 {selectedBUHR.name}
               </h4>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-[10px] font-semibold mb-1">
-                    <span style={{ color: MALE_COLOR }}>Male</span>
-                    <span style={{ color: MALE_COLOR }}>{selectedBUHR.male} · {pct(selectedBUHR.male, selectedBUHR.count)}</span>
+              {selectedBUHR.fromPayroll ? (
+                <p className="text-[10px] text-muted">
+                  Filtered employees: <strong className="text-navy">{selectedBUHR.count}</strong>
+                  <span className="block mt-1 opacity-70">Gender breakdown not available with active filters</span>
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold mb-1">
+                      <span style={{ color: MALE_COLOR }}>Male</span>
+                      <span style={{ color: MALE_COLOR }}>{selectedBUHR.male} · {pct(selectedBUHR.male, selectedBUHR.count)}</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.male, selectedBUHR.count), background: MALE_COLOR }} />
+                    </div>
                   </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.male, selectedBUHR.count), background: MALE_COLOR }} />
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold mb-1">
+                      <span style={{ color: FEMALE_COLOR }}>Female</span>
+                      <span style={{ color: FEMALE_COLOR }}>{selectedBUHR.female} · {pct(selectedBUHR.female, selectedBUHR.count)}</span>
+                    </div>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.female, selectedBUHR.count), background: FEMALE_COLOR }} />
+                    </div>
                   </div>
+                  <p className="text-[10px] text-muted pt-1 border-t border-border">Total headcount: <strong className="text-navy">{selectedBUHR.count}</strong></p>
                 </div>
-                <div>
-                  <div className="flex justify-between text-[10px] font-semibold mb-1">
-                    <span style={{ color: FEMALE_COLOR }}>Female</span>
-                    <span style={{ color: FEMALE_COLOR }}>{selectedBUHR.female} · {pct(selectedBUHR.female, selectedBUHR.count)}</span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.female, selectedBUHR.count), background: FEMALE_COLOR }} />
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted pt-1 border-t border-border">Total headcount: <strong className="text-navy">{selectedBUHR.count}</strong></p>
-              </div>
+              )}
 
               {/* Payroll source split for selected BU */}
               {(() => {
@@ -546,6 +639,7 @@ export default function EmployeeCostDetail({ data }) {
                     const buBg     = isChosen ? '#EBF8F6' : bi % 2 === 0 ? '#F9FBFD' : '#fff'
                     const buKifiya = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.kifiya || 0), 0), 0)
                     const buSafee  = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + (e.safee  || 0), 0), 0)
+                    const buTotal  = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empFullTotal(e), 0), 0)
 
                     return (
                       <Fragment key={bu.buCode}>
@@ -556,11 +650,14 @@ export default function EmployeeCostDetail({ data }) {
                             {bu.buName}
                             <span className="ml-2 text-[9px] font-normal text-muted">({bu.sections.length} section{bu.sections.length !== 1 ? 's' : ''})</span>
                           </td>
-                          {months.map(m => (
-                            <td key={m} className="px-3 py-2.5 text-right font-semibold text-navy tabular-nums">
-                              {bu.monthTotals[m] ? fmt(bu.monthTotals[m]) : <span className="opacity-30">—</span>}
-                            </td>
-                          ))}
+                          {months.map(m => {
+                            const mv = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empFullMonth(e, m), 0), 0)
+                            return (
+                              <td key={m} className="px-3 py-2.5 text-right font-semibold text-navy tabular-nums">
+                                {mv ? fmt(mv) : <span className="opacity-30">—</span>}
+                              </td>
+                            )
+                          })}
                           <td className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>
                             {buKifiya > 0 ? fmt(buKifiya) : <span className="opacity-20">—</span>}
                           </td>
@@ -568,7 +665,7 @@ export default function EmployeeCostDetail({ data }) {
                             {buSafee > 0 ? fmt(buSafee) : <span className="opacity-20">—</span>}
                           </td>
                           <td className="px-4 py-2.5 text-right font-bold text-navy sticky right-0 z-10 tabular-nums" style={{ background: buBg }}>
-                            {fmt(bu.total)}
+                            {fmt(buTotal)}
                           </td>
                         </tr>
 
@@ -579,6 +676,7 @@ export default function EmployeeCostDetail({ data }) {
                           const secBg     = secOpen ? '#F0FAF8' : '#F4F6FA'
                           const secKifiya = sec.employees.reduce((s, e) => s + (e.kifiya || 0), 0)
                           const secSafee  = sec.employees.reduce((s, e) => s + (e.safee  || 0), 0)
+                          const secTotal  = sec.employees.reduce((s, e) => s + empFullTotal(e), 0)
 
                           return (
                             <Fragment key={sec.sectionCode}>
@@ -596,11 +694,14 @@ export default function EmployeeCostDetail({ data }) {
                                   <span className="font-semibold text-navy">{sec.sectionName}</span>
                                   <span className="ml-1.5 text-[9px] text-muted">({sec.employees.length})</span>
                                 </td>
-                                {months.map(m => (
-                                  <td key={m} className="px-3 py-2 text-right text-muted tabular-nums">
-                                    {sec.monthTotals[m] ? fmt(sec.monthTotals[m]) : <span className="opacity-30">—</span>}
-                                  </td>
-                                ))}
+                                {months.map(m => {
+                                  const mv = sec.employees.reduce((s, e) => s + empFullMonth(e, m), 0)
+                                  return (
+                                    <td key={m} className="px-3 py-2 text-right text-muted tabular-nums">
+                                      {mv ? fmt(mv) : <span className="opacity-30">—</span>}
+                                    </td>
+                                  )
+                                })}
                                 <td className="px-3 py-2 text-right tabular-nums" style={{ color: KIF_COLOR }}>
                                   {secKifiya > 0 ? fmt(secKifiya) : <span className="opacity-20">—</span>}
                                 </td>
@@ -608,7 +709,7 @@ export default function EmployeeCostDetail({ data }) {
                                   {secSafee > 0 ? fmt(secSafee) : <span className="opacity-20">—</span>}
                                 </td>
                                 <td className="px-4 py-2 text-right font-semibold text-navy sticky right-0 z-10 tabular-nums" style={{ background: secBg }}>
-                                  {fmt(sec.total)}
+                                  {fmt(secTotal)}
                                 </td>
                               </tr>
 
@@ -630,11 +731,14 @@ export default function EmployeeCostDetail({ data }) {
                                         </span>
                                       </div>
                                     </td>
-                                    {months.map(m => (
-                                      <td key={m} className="px-3 py-1.5 text-right text-muted tabular-nums">
-                                        {emp.monthly[m] ? fmt(emp.monthly[m]) : <span className="opacity-30">—</span>}
-                                      </td>
-                                    ))}
+                                    {months.map(m => {
+                                      const mv = empFullMonth(emp, m)
+                                      return (
+                                        <td key={m} className="px-3 py-1.5 text-right text-muted tabular-nums">
+                                          {mv ? fmt(mv) : <span className="opacity-30">—</span>}
+                                        </td>
+                                      )
+                                    })}
                                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>
                                       {(emp.kifiya || 0) > 0 ? fmtFull(emp.kifiya) : <span className="opacity-20">—</span>}
                                     </td>
@@ -642,7 +746,7 @@ export default function EmployeeCostDetail({ data }) {
                                       {(emp.safee || 0) > 0 ? fmtFull(emp.safee) : <span className="opacity-20">—</span>}
                                     </td>
                                     <td className="px-4 py-1.5 text-right font-bold text-navy sticky right-0 z-10 tabular-nums" style={{ background: '#FAFFFE' }}>
-                                      {fmtFull(emp.total)}
+                                      {fmtFull(empFullTotal(emp))}
                                     </td>
                                   </tr>
                                 )
@@ -660,7 +764,7 @@ export default function EmployeeCostDetail({ data }) {
                       {selectedBU ? selectedBUHR?.name || selectedBU : 'Total'}
                     </td>
                     {months.map(m => {
-                      const mTotal = visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + (e.monthly[m] || 0), 0), 0), 0)
+                      const mTotal = visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empFullMonth(e, m), 0), 0), 0)
                       return (
                         <td key={m} className="px-3 py-3 text-right font-bold text-white tabular-nums">{fmt(mTotal)}</td>
                       )

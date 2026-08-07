@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { auth, snapshots } from './lib/api.js'
+import { PeopleOpsFiltersProvider } from './context/PeopleOpsFilters.jsx'
 import LoginOverlay from './components/LoginOverlay.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Topbar from './components/Topbar.jsx'
@@ -180,18 +181,22 @@ export default function App() {
             </div>
           )}
 
-          {data && SLIDES.map(({ id, Page }, i) => (
-            <div
-              key={id}
-              className={`absolute inset-0 overflow-y-auto transition-opacity duration-500 ${
-                i === slide ? 'opacity-100 z-10 slide-active' : 'opacity-0 z-0 pointer-events-none'
-              }`}
-            >
-              <div className="p-4 md:p-6 pb-10">
-                <Page data={data} />
-              </div>
-            </div>
-          ))}
+          {data && (
+            <PeopleOpsFiltersProvider>
+              {SLIDES.map(({ id, Page }, i) => (
+                <div
+                  key={id}
+                  className={`absolute inset-0 overflow-y-auto transition-opacity duration-500 ${
+                    i === slide ? 'opacity-100 z-10 slide-active' : 'opacity-0 z-0 pointer-events-none'
+                  }`}
+                >
+                  <div className="p-4 md:p-6 pb-10">
+                    <Page data={data} />
+                  </div>
+                </div>
+              ))}
+            </PeopleOpsFiltersProvider>
+          )}
         </main>
 
         <SlideProgress
