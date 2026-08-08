@@ -68,15 +68,26 @@ export default function HRPageReview({ data }) {
   }, [hr.byDept])
 
   // ── Filter state — shared across all People & Operations pages via context ──
-  const { filterBU, filterType, filterVC, filterSource, filterMonth } = usePeopleOpsFilters()
+  const { filterBU, filterType, filterVC, filterSource, filterMonth, filterYear } = usePeopleOpsFilters()
   const [expandedRows, setExpandedRows] = useState({})
 
-  // Use global filterMonth when set; otherwise default to most recent standard payroll month.
-  // stdPayrollMonths excludes consultant-only months, preventing a scenario where IC payroll
-  // has a newer period than staff payroll and staff all show zero cost by default.
+  // Year selected without a specific month ("show me 2026") — resolve to the most
+  // recent payroll month within that year so point-in-time KPIs (headcount, monthly
+  // cost) land on the latest data we actually have for the chosen year.
+  const yearOnly = filterMonth === 'All' && filterYear !== 'All'
+  const latestMonthInYear = yearOnly
+    ? [...stdPayrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
+      || [...payrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
+    : null
+
+  // Use global filterMonth when set; otherwise resolve from filterYear if set; otherwise
+  // default to most recent standard payroll month. stdPayrollMonths excludes
+  // consultant-only months, preventing a scenario where IC payroll has a newer period
+  // than staff payroll and staff all show zero cost by default.
   const effectiveMonth = (filterMonth !== 'All' && payrollMonths.includes(filterMonth))
     ? filterMonth
-    : stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
+    : latestMonthInYear
+    || stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
 
   const toggleRow = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -110,8 +121,8 @@ export default function HRPageReview({ data }) {
   // month/year selection needs hr.headcountEvolution's separate reconstruction instead,
   // which also carries a byBU breakdown (used below for the per-row table headcount) —
   // same source and same behaviour as the People & HR page.
-  const monthEvo = filterMonth !== 'All'
-    ? (hr.headcountEvolution || []).find(m => m.label === filterMonth)
+  const monthEvo = (filterMonth !== 'All' || yearOnly)
+    ? (hr.headcountEvolution || []).find(m => m.label === effectiveMonth)
     : null
   // byBU has no further type/VC split, so only trust it for the overall KPI when those
   // filters aren't also narrowing things (BU filter alone is fine — byBU is per-BU already).
@@ -142,8 +153,33 @@ export default function HRPageReview({ data }) {
     return { totalMonthly: total, kifiyaMonthly: kifiya, safeeMonthly: safee }
   }, [filteredPay, effectiveMonth])
 
-  const annualised     = totalMonthly * 12
   const kifiyaSharePct = totalMonthly > 0 ? (kifiyaMonthly / totalMonthly) * 100 : 0
+
+  // ── Annualised Cost → actual YTD sum, not a Monthly × 12 projection ──
+  // Uses the same year as effectiveMonth and sums every payroll month on record
+  // for that year up to (and including) effectiveMonth — e.g. if data only goes
+  // through July, this sums January through July, not a full-year estimate.
+  const { annualisedYTD, ytdLabel } = useMemo(() => {
+    const [effMonthName, effYearStr] = effectiveMonth.split(' ')
+    const effYear = Number(effYearStr)
+    const effDate = effMonthName ? new Date(`${effMonthName} 1, ${effYear}`) : null
+
+    const ytdMonths = (effDate && !isNaN(effDate.getTime()))
+      ? payrollMonths.filter(m => {
+          const d = new Date(m)
+          return !isNaN(d.getTime()) && d.getFullYear() === effYear && d <= effDate
+        })
+      : []
+
+    const sum = filteredPay.reduce((s, r) =>
+      s + ytdMonths.reduce((ss, m) => ss + (r.monthTotals[m] || 0) + (r.pensionMonthTotals?.[m] || 0), 0), 0)
+
+    const label = ytdMonths.length === 0 ? '—'
+      : ytdMonths.length === 1 ? ytdMonths[0]
+      : `${ytdMonths[0].split(' ')[0]} – ${ytdMonths[ytdMonths.length - 1]}`
+
+    return { annualisedYTD: sum, ytdLabel: label }
+  }, [filteredPay, payrollMonths, effectiveMonth])
 
   // ── Table rows: one row per BU ───────────────────────────────────────────
   const { tableRows, empsByKey } = useMemo(() => {
@@ -247,7 +283,7 @@ export default function HRPageReview({ data }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiBlock label="Headcount"              value={fmtN(totalHeadcount)}            sub={filterType !== 'All' ? `${filterType} employees` : 'Active employees'} accent={NAVY} />
         <KpiBlock label="Monthly Cost to Company" value={fmtN(Math.round(totalMonthly))} sub={effectiveMonth} accent={NAVY} />
-        <KpiBlock label="Annualised Cost"         value={fmtN(Math.round(annualised))}   sub="Monthly × 12"  accent={NAVY} />
+        <KpiBlock label="Annualised Cost YTD"     value={fmtN(Math.round(annualisedYTD))} sub={ytdLabel}      accent={NAVY} />
       </div>
 
       {/* ── KPI row 2 ── */}
