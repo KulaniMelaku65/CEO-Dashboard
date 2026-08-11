@@ -14,7 +14,7 @@ function Sel({ label, value, onChange, options }) {
         style={{ color: '#02404F' }}
       >
         <option value="All">All</option>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
       </select>
     </div>
   )
@@ -70,12 +70,16 @@ export default function PeopleOpsFilterBar({ data }) {
     return [...set].sort().map(v => ({ value: v, label: v }))
   })()
 
-  // Available "Month Year" combos, e.g. "January 2025" — split into separate
-  // month-name and year option lists for the two dropdowns below.
-  const periods = ec.payrollMonths || []
-  const monthNames = MONTH_ORDER.filter(m => periods.some(p => p.startsWith(m + ' ')))
-    .map(m => ({ value: m, label: m }))
-  const years = [...new Set(periods.map(p => p.split(' ')[1]).filter(Boolean))]
+  // Available "Month Year" combos — union of payroll data (cost) and headcount
+  // evolution (live headcount, including the current in-progress month) — a month is
+  // real if EITHER has data for it. Used to disable Month options that don't exist for
+  // the selected year (e.g. December 2026, or any month beyond the current live one)
+  // instead of letting the two dropdowns freely combine into a period with no data at all.
+  const periods    = ec.payrollMonths || []
+  const evoLabels  = (hr.headcountEvolution || []).map(m => m.label)
+  const validCombos = new Set([...periods, ...evoLabels])
+
+  const years = [...new Set([...periods, ...evoLabels].map(p => p.split(' ')[1]).filter(Boolean))]
     .sort((a, b) => b - a)
     .map(y => ({ value: y, label: y }))
 
@@ -88,6 +92,15 @@ export default function PeopleOpsFilterBar({ data }) {
   const [selMonth, setSelMonth] = useState('All')
   const [selYear,  setSelYear]  = useState('All')
 
+  // Month options for the currently-selected year, disabled (not hidden) when that
+  // "Month Year" combo has no data at all — e.g. a future month within the current
+  // year. With no year picked yet, nothing is disabled since validity can't be judged.
+  const monthNames = MONTH_ORDER.map(m => ({
+    value: m,
+    label: m,
+    disabled: selYear !== 'All' && !validCombos.has(`${m} ${selYear}`)
+  }))
+
   useEffect(() => {
     if (filterMonth === 'All') { setSelMonth('All'); return }
     const m = filterMonth.split(' ').slice(0, -1).join(' ')
@@ -97,10 +110,17 @@ export default function PeopleOpsFilterBar({ data }) {
   useEffect(() => { setSelYear(filterYear) }, [filterYear])
 
   const applyPeriod = (month, year) => {
-    setSelMonth(month)
+    // Don't let a year change strand an already-picked month on an invalid combo
+    // (e.g. Month=December selected, then Year changed to one where December hasn't
+    // happened yet) — drop the month back to 'All' rather than committing a period
+    // with no data.
+    const resolvedMonth = (month !== 'All' && year !== 'All' && !validCombos.has(`${month} ${year}`))
+      ? 'All'
+      : month
+    setSelMonth(resolvedMonth)
     setSelYear(year)
     setFilterYear(year)
-    setFilterMonth(month !== 'All' && year !== 'All' ? `${month} ${year}` : 'All')
+    setFilterMonth(resolvedMonth !== 'All' && year !== 'All' ? `${resolvedMonth} ${year}` : 'All')
   }
 
   return (

@@ -72,22 +72,39 @@ export default function HRPageReview({ data }) {
   const [expandedRows, setExpandedRows] = useState({})
 
   // Year selected without a specific month ("show me 2026") — resolve to the most
-  // recent payroll month within that year so point-in-time KPIs (headcount, monthly
-  // cost) land on the latest data we actually have for the chosen year.
+  // recent payroll month within that year so point-in-time COST KPIs land on the
+  // latest data we actually have for the chosen year.
   const yearOnly = filterMonth === 'All' && filterYear !== 'All'
   const latestMonthInYear = yearOnly
     ? [...stdPayrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
       || [...payrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
     : null
 
-  // Use global filterMonth when set; otherwise resolve from filterYear if set; otherwise
-  // default to most recent standard payroll month. stdPayrollMonths excludes
+  // Use global filterMonth when explicitly set — respected exactly, even if that month
+  // has no payroll data yet (e.g. the current in-progress month), so cost figures
+  // correctly compute to zero/"—" instead of silently substituting a different month's
+  // numbers under a label the user didn't pick. Only when nothing is explicitly chosen
+  // do we fall back to the most recent standard payroll month. stdPayrollMonths excludes
   // consultant-only months, preventing a scenario where IC payroll has a newer period
   // than staff payroll and staff all show zero cost by default.
-  const effectiveMonth = (filterMonth !== 'All' && payrollMonths.includes(filterMonth))
+  const effectiveMonth = filterMonth !== 'All'
     ? filterMonth
     : latestMonthInYear
     || stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
+
+  // Whether effectiveMonth actually has payroll data — drives "—" display for cost
+  // KPIs/columns instead of a misleading 0 when the selected month hasn't been paid yet.
+  const hasCostData = payrollMonths.includes(effectiveMonth)
+
+  // Headcount is live/current, unlike cost — it isn't gated by payroll having run yet,
+  // so it's resolved straight against hr.headcountEvolution's own labels (which include
+  // a live "current month" bucket even with zero payroll data), the same way the
+  // People & HR page does it. Using effectiveMonth here would wrongly pin headcount to
+  // the latest payroll month instead of showing today's real headcount.
+  const hcEvoLabels = hr.headcountEvolution || []
+  const headcountMonthLabel = filterMonth !== 'All'
+    ? filterMonth
+    : (yearOnly ? [...hcEvoLabels].reverse().find(m => m.label.endsWith(' ' + filterYear))?.label || null : null)
 
   const toggleRow = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -116,13 +133,25 @@ export default function HRPageReview({ data }) {
            (filterSource === 'All' || r.payrollSource  === filterSource)
   }), [employeePayroll, filterBU, filterType, filterVC, filterSource, sectionToDept])
 
+  // ── Filter active roster (live, from KFT_Employee_Headcount) ───────────────
+  // Backstops the payroll-derived employee drill-down: some currently-active employees
+  // have no payroll history at all yet (new hires) and would otherwise be missing.
+  const activeRoster = hr.activeRoster || []
+  const filteredRoster = useMemo(() => activeRoster.filter(r => {
+    const parentBU = resolveParent(r.buCode)
+    return (filterBU   === 'All' || r.buCode === filterBU || parentBU === filterBU) &&
+           (filterType === 'All' || r.type   === filterType) &&
+           (filterVC   === 'All' || r.vc     === filterVC)
+  }), [activeRoster, filterBU, filterType, filterVC, sectionToDept])
+
   // ── KPIs ──────────────────────────────────────────────────────────────────
   // Headcount is a point-in-time figure — headcountMatrix only reflects "now", so a
   // month/year selection needs hr.headcountEvolution's separate reconstruction instead,
   // which also carries a byBU breakdown (used below for the per-row table headcount) —
-  // same source and same behaviour as the People & HR page.
-  const monthEvo = (filterMonth !== 'All' || yearOnly)
-    ? (hr.headcountEvolution || []).find(m => m.label === effectiveMonth)
+  // same source and same behaviour as the People & HR page. Looked up by
+  // headcountMonthLabel (live), not effectiveMonth (payroll-gated) — see above.
+  const monthEvo = headcountMonthLabel
+    ? hcEvoLabels.find(m => m.label === headcountMonthLabel)
     : null
   // byBU has no further type/VC split, so only trust it for the overall KPI when those
   // filters aren't also narrowing things (BU filter alone is fine — byBU is per-BU already).
@@ -136,9 +165,11 @@ export default function HRPageReview({ data }) {
       ? validHC.reduce((s, r) => s + r.count, 0)
       : filteredHC.reduce((s, r) => s + r.count, 0)
     // When the BC headcount query has no records for this filter (e.g. Individual Consultants
-    // are not in the employee headcount table), fall back to unique employees from payroll.
+    // are not in the employee headcount table), fall back to unique employees from payroll —
+    // restricted to employeeStatus === 'Active' so people who merely had a payroll transaction
+    // at some point (but have since left) aren't counted as current headcount.
     if (hcCount === 0 && filteredPay.length > 0)
-      return new Set(filteredPay.map(r => r.employeeNo)).size
+      return new Set(filteredPay.filter(r => r.employeeStatus === 'Active').map(r => r.employeeNo)).size
     return hcCount
   }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, monthHeadcount])
 
@@ -204,6 +235,12 @@ export default function HRPageReview({ data }) {
     // Headcount is already accumulated from filteredHC above — no hr.byDept override
     // so ghost employees (unknown type + unknown VC) are correctly excluded.
 
+    // Active-only unique employee count per BU, derived from payroll — used as the
+    // headcount fallback for BUs with no headcountMatrix data (e.g. Individual
+    // Consultants), kept separate from empMap so the expandable employee list below
+    // can still show everyone with cost, active or not.
+    const activeEmpByBU = {}
+
     // Cost + employees from filteredPay — grouped by BU only
     filteredPay.forEach(r => {
       const parent = resolveParent(r.buCode)
@@ -214,6 +251,11 @@ export default function HRPageReview({ data }) {
       if (r.payrollSource === 'KIFIYA') map[parent].kifiya += vp
       else                              map[parent].safee  += vp
       map[parent].vcs.add(r.virtualCompany)
+
+      if (r.employeeStatus === 'Active') {
+        if (!activeEmpByBU[parent]) activeEmpByBU[parent] = new Set()
+        activeEmpByBU[parent].add(r.employeeNo)
+      }
 
       // Employee drill-down — track Kifiya, MSP, and pension separately
       if (!empMap[parent]) empMap[parent] = new Map()
@@ -235,6 +277,31 @@ export default function HRPageReview({ data }) {
       }
     })
 
+    // Backstop with the live active roster — covers active employees with no payroll
+    // history at all (e.g. very recent hires, or a month before any payroll has run
+    // for them yet) who would otherwise be entirely missing from the drill-down.
+    // Cost stays 0 for these (→ "—"), since there's nothing to show for effectiveMonth.
+    filteredRoster.forEach(r => {
+      const parent = resolveParent(r.buCode)
+      if (!map[parent]) map[parent] = { buCode: parent, buName: resolveBUName(parent, r.buCode), headcount: 0, monthly: 0, kifiya: 0, safee: 0, vcs: new Set() }
+      map[parent].vcs.add(r.vc)
+
+      if (!activeEmpByBU[parent]) activeEmpByBU[parent] = new Set()
+      activeEmpByBU[parent].add(r.employeeNo)
+
+      if (!empMap[parent]) empMap[parent] = new Map()
+      if (!empMap[parent].has(r.employeeNo)) {
+        empMap[parent].set(r.employeeNo, {
+          employeeNo:     r.employeeNo,
+          name:           r.name,
+          virtualCompany: r.vc,
+          payrollSource:  null,
+          kifiya:         0,
+          safee:          0,
+        })
+      }
+    })
+
     const rows = Object.values(map)
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
       .map(r => {
@@ -243,9 +310,9 @@ export default function HRPageReview({ data }) {
         const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[r.buCode] : null
         return {
           ...r,
-          // Use payroll-derived unique count when headcountMatrix has no data for this BU
-          // (e.g. Individual Consultants absent from the BC employee headcount query)
-          headcount: buMonthEvo ? buMonthEvo.count : (r.headcount || (empMap[r.buCode] ? empMap[r.buCode].size : 0)),
+          // Use payroll-derived unique ACTIVE count when headcountMatrix has no data for
+          // this BU (e.g. Individual Consultants absent from the BC employee headcount query)
+          headcount: buMonthEvo ? buMonthEvo.count : (r.headcount || (activeEmpByBU[r.buCode] ? activeEmpByBU[r.buCode].size : 0)),
           monthly:  Math.round(r.monthly),
           kifiya:   Math.round(r.kifiya),
           safee:    Math.round(r.safee),
@@ -259,7 +326,7 @@ export default function HRPageReview({ data }) {
     })
 
     return { tableRows: rows, empsByKey }
-  }, [filteredHC, filteredPay, effectiveMonth, hcByBU, allBUs, filterType, filterVC, filterBU, validHC, monthEvo])
+  }, [filteredHC, filteredPay, filteredRoster, effectiveMonth, hcByBU, allBUs, filterType, filterVC, filterBU, validHC, monthEvo])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
@@ -282,16 +349,16 @@ export default function HRPageReview({ data }) {
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiBlock label="Headcount"              value={fmtN(totalHeadcount)}            sub={filterType !== 'All' ? `${filterType} employees` : 'Active employees'} accent={NAVY} />
-        <KpiBlock label="Monthly Cost to Company" value={fmtN(Math.round(totalMonthly))} sub={effectiveMonth} accent={NAVY} />
+        <KpiBlock label="Monthly Cost to Company" value={hasCostData ? fmtN(Math.round(totalMonthly)) : '—'} sub={effectiveMonth + (hasCostData ? '' : ' · no payroll yet')} accent={NAVY} />
         <KpiBlock label="Annualised Cost YTD"     value={fmtN(Math.round(annualisedYTD))} sub={ytdLabel}      accent={NAVY} />
       </div>
 
       {/* ── KPI row 2 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiBlock label="Kifiya (Monthly)"        value={fmtN(Math.round(kifiyaMonthly))} sub={effectiveMonth} accent={TEAL} />
-        <KpiBlock label="MSP/Program (Monthly)" value={fmtN(Math.round(safeeMonthly))} sub={effectiveMonth} accent="#1A7A72" small />
-        <KpiBlock label="Kifiya Share of Payroll"         value={fmtPct(kifiyaSharePct)}
-          sub={`${fmtN(Math.round(kifiyaMonthly))} of ${fmtN(Math.round(totalMonthly))}`} accent={ORANGE} />
+        <KpiBlock label="Kifiya (Monthly)"        value={hasCostData ? fmtN(Math.round(kifiyaMonthly)) : '—'} sub={effectiveMonth} accent={TEAL} />
+        <KpiBlock label="MSP/Program (Monthly)" value={hasCostData ? fmtN(Math.round(safeeMonthly)) : '—'} sub={effectiveMonth} accent="#1A7A72" small />
+        <KpiBlock label="Kifiya Share of Payroll"         value={hasCostData ? fmtPct(kifiyaSharePct) : '—'}
+          sub={hasCostData ? `${fmtN(Math.round(kifiyaMonthly))} of ${fmtN(Math.round(totalMonthly))}` : 'No payroll data yet'} accent={ORANGE} />
       </div>
 
       {/* ── Table ── */}

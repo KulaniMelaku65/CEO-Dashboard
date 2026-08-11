@@ -781,6 +781,14 @@ async function buildSnapshot(targetDate) {
     employees.filter(e => e.employeeStatus === 'Active').map(e => e.no).filter(Boolean)
   );
 
+  // employeeNo → employeeStatus (Active/Inactive/Terminated/New), sourced from GetEmployee
+  // (the only entity that carries status — KFT_Employee_Headcount has no status field at all).
+  // Used to keep payroll-derived headcount counts (e.g. Individual Consultants, who aren't
+  // in KFT_Employee_Headcount) limited to currently-active people instead of "anyone who
+  // ever had a payroll transaction."
+  const empStatusByNo = {};
+  employees.forEach(e => { if (e.no) empStatusByNo[e.no] = e.employeeStatus || 'Unknown'; });
+
   // virtualCompany / parent-BU for currently active employees, sourced from the employee
   // table (KFT_Employee_Headcount, keyed by AuxiliaryIndex1). Used only for the `employees`
   // loop below (which is already active-only) — KFT_Employment_History carries its own
@@ -924,7 +932,23 @@ async function buildSnapshot(targetDate) {
     allContractTypes,
     byDeptByStatus,
     headcountEvolution,
-    turnover
+    turnover,
+    // Live per-employee active roster (from KFT_Employee_Headcount) — used by HR Page
+    // Review to populate the employee drill-down for a month with headcount data but
+    // no payroll data yet (e.g. the current in-progress month), including active
+    // employees who have no payroll history at all yet and would otherwise be missing.
+    activeRoster: headcountRows
+      .map(r => {
+        const sc = r.businessUnitDept || 'Unknown';
+        return {
+          employeeNo: r.AuxiliaryIndex1 || '',
+          name:       r.fullName || '',
+          buCode:     sectionToDept[sc] || sc,
+          vc:         r.virtualCompany || 'Unknown',
+          type:       r.employeeType || 'Unknown'
+        };
+      })
+      .filter(r => r.employeeNo)
   };
 
   // Payroll cost — standard (KIFIYA) + programme (SAFEE)
@@ -1465,9 +1489,10 @@ async function buildSnapshot(targetDate) {
       const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const earning = num(r.totalEarning);
       const key     = `${empKey}||${src}`;   // one record per employee per payroll source
+      const status  = empStatusByNo[empKey] || 'Unknown';
       if (!empPayMap[key]) empPayMap[key] = {
         employeeNo: empKey, name, buCode, buName,
-        payrollSource: src, virtualCompany: vc, employeeType: et,
+        payrollSource: src, virtualCompany: vc, employeeType: et, employeeStatus: status,
         monthTotals: {}, pensionMonthTotals: {}, total: 0, pensionTotal: 0
       };
       const e = empPayMap[key];
