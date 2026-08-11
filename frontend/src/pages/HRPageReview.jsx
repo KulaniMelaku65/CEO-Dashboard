@@ -106,7 +106,12 @@ export default function HRPageReview({ data }) {
     ? filterMonth
     : (yearOnly ? [...hcEvoLabels].reverse().find(m => m.label.endsWith(' ' + filterYear))?.label || null : null)
 
-  const toggleRow = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }))
+  const [expandedSections,  setExpandedSections]  = useState({})
+  const [expandedJobTitles, setExpandedJobTitles] = useState({})
+
+  const toggleRow     = (key) => setExpandedRows(prev => ({ ...prev, [key]: !prev[key] }))
+  const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
+  const toggleJobTitle = (key) => setExpandedJobTitles(prev => ({ ...prev, [key]: !prev[key] }))
 
   // ── Filter headcountMatrix ────────────────────────────────────────────────
   // Exclude rows where BOTH employeeType AND virtualCompany are unknown — these
@@ -212,67 +217,64 @@ export default function HRPageReview({ data }) {
     return { annualisedYTD: sum, ytdLabel: label }
   }, [filteredPay, payrollMonths, effectiveMonth])
 
-  // ── Table rows: one row per BU ───────────────────────────────────────────
-  const { tableRows, empsByKey } = useMemo(() => {
-    const map    = {}   // buCode → row
-    const empMap = {}   // buCode → Map<employeeNo, emp>
+  // ── Table rows: BU → Section → Job Title → Employee ─────────────────────
+  const { tableRows } = useMemo(() => {
+    const buMap = {}   // buCode → { ...totals, vcs, activeEmpSet, sections: { sectionCode → {...} } }
     // Build name lookup from hierarchy; only used for display — not as a whitelist
     const buNameFromHierarchy = {}
     allBUs.forEach(b => { buNameFromHierarchy[b.value] = b.label })
-
     const resolveBUName = (parent, fallbackName) =>
       buNameFromHierarchy[parent] || fallbackName || parent
 
-    // Headcount from headcountMatrix — sum all VCs per BU
-    filteredHC.forEach(r => {
-      const parent = resolveParent(r.buCode)
-      const buName = resolveBUName(parent, r.buName)
-      if (!map[parent]) map[parent] = { buCode: parent, buName, headcount: 0, monthly: 0, kifiya: 0, safee: 0, vcs: new Set() }
-      map[parent].headcount += r.count
-      map[parent].vcs.add(r.virtualCompany)
-    })
+    const getBU = (buCode, fallbackName) => {
+      if (!buMap[buCode]) buMap[buCode] = {
+        buCode, buName: resolveBUName(buCode, fallbackName),
+        monthly: 0, kifiya: 0, safee: 0, vcs: new Set(), activeEmpSet: new Set(), sections: {}
+      }
+      return buMap[buCode]
+    }
+    const getSection = (bu, sectionCode, sectionName) => {
+      const code = sectionCode || bu.buCode
+      if (!bu.sections[code]) bu.sections[code] = {
+        sectionCode: code, sectionName: sectionName || code,
+        monthly: 0, kifiya: 0, safee: 0, activeEmpSet: new Set(), jobTitles: {}
+      }
+      return bu.sections[code]
+    }
+    const getJobTitle = (sec, jobTitle) => {
+      const jt = jobTitle && jobTitle !== 'Unknown' ? jobTitle : 'Unspecified'
+      if (!sec.jobTitles[jt]) sec.jobTitles[jt] = {
+        jobTitle: jt, monthly: 0, kifiya: 0, safee: 0, activeEmpSet: new Set(), employees: new Map()
+      }
+      return sec.jobTitles[jt]
+    }
 
-    // Headcount is already accumulated from filteredHC above — no hr.byDept override
-    // so ghost employees (unknown type + unknown VC) are correctly excluded.
-
-    // Active-only unique employee count per BU, derived from payroll — used as the
-    // headcount fallback for BUs with no headcountMatrix data (e.g. Individual
-    // Consultants), kept separate from empMap so the expandable employee list below
-    // can still show everyone with cost, active or not.
-    const activeEmpByBU = {}
-
-    // Cost + employees from filteredPay — grouped by BU only
+    // Cost + employees from filteredPay — grouped BU → Section → Job Title → Employee
     filteredPay.forEach(r => {
       const parent = resolveParent(r.buCode)
-      const buName = resolveBUName(parent, r.buName)
-      if (!map[parent]) map[parent] = { buCode: parent, buName, headcount: 0, monthly: 0, kifiya: 0, safee: 0, vcs: new Set() }
+      const bu  = getBU(parent, r.buName)
+      const sec = getSection(bu, r.sectionCode, r.sectionName)
+      const jt  = getJobTitle(sec, r.jobTitle)
+
       const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
-      map[parent].monthly += vp
-      if (r.payrollSource === 'KIFIYA') map[parent].kifiya += vp
-      else                              map[parent].safee  += vp
-      map[parent].vcs.add(r.virtualCompany)
+      bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
+      if (r.payrollSource === 'KIFIYA') { bu.kifiya += vp; sec.kifiya += vp; jt.kifiya += vp }
+      else                              { bu.safee  += vp; sec.safee  += vp; jt.safee  += vp }
+      bu.vcs.add(r.virtualCompany)
 
       if (r.employeeStatus === 'Active') {
-        if (!activeEmpByBU[parent]) activeEmpByBU[parent] = new Set()
-        activeEmpByBU[parent].add(r.employeeNo)
+        bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
       }
 
-      // Employee drill-down — track Kifiya, MSP, and pension separately
-      if (!empMap[parent]) empMap[parent] = new Map()
-      const v2p = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
-      if (!empMap[parent].has(r.employeeNo)) {
-        empMap[parent].set(r.employeeNo, {
-          employeeNo:     r.employeeNo,
-          name:           r.name,
-          virtualCompany: r.virtualCompany,
-          payrollSource:  r.payrollSource,
-          kifiya:         r.payrollSource === 'KIFIYA' ? v2p : 0,
-          safee:          r.payrollSource === 'SAFEE'  ? v2p : 0,
+      if (!jt.employees.has(r.employeeNo)) {
+        jt.employees.set(r.employeeNo, {
+          employeeNo: r.employeeNo, name: r.name, virtualCompany: r.virtualCompany, payrollSource: r.payrollSource,
+          kifiya: r.payrollSource === 'KIFIYA' ? vp : 0, safee: r.payrollSource === 'SAFEE' ? vp : 0
         })
       } else {
-        const ex = empMap[parent].get(r.employeeNo)
-        if (r.payrollSource === 'KIFIYA') ex.kifiya += v2p
-        else                              ex.safee  += v2p
+        const ex = jt.employees.get(r.employeeNo)
+        if (r.payrollSource === 'KIFIYA') ex.kifiya += vp
+        else                              ex.safee  += vp
         if (ex.payrollSource !== r.payrollSource) ex.payrollSource = 'Both'
       }
     })
@@ -283,50 +285,63 @@ export default function HRPageReview({ data }) {
     // Cost stays 0 for these (→ "—"), since there's nothing to show for effectiveMonth.
     filteredRoster.forEach(r => {
       const parent = resolveParent(r.buCode)
-      if (!map[parent]) map[parent] = { buCode: parent, buName: resolveBUName(parent, r.buCode), headcount: 0, monthly: 0, kifiya: 0, safee: 0, vcs: new Set() }
-      map[parent].vcs.add(r.vc)
+      const bu  = getBU(parent, r.buCode)
+      const sec = getSection(bu, r.sectionCode, r.sectionName)
+      const jt  = getJobTitle(sec, r.jobTitle)
+      bu.vcs.add(r.vc)
+      bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
 
-      if (!activeEmpByBU[parent]) activeEmpByBU[parent] = new Set()
-      activeEmpByBU[parent].add(r.employeeNo)
-
-      if (!empMap[parent]) empMap[parent] = new Map()
-      if (!empMap[parent].has(r.employeeNo)) {
-        empMap[parent].set(r.employeeNo, {
-          employeeNo:     r.employeeNo,
-          name:           r.name,
-          virtualCompany: r.vc,
-          payrollSource:  null,
-          kifiya:         0,
-          safee:          0,
+      if (!jt.employees.has(r.employeeNo)) {
+        jt.employees.set(r.employeeNo, {
+          employeeNo: r.employeeNo, name: r.name, virtualCompany: r.vc, payrollSource: null, kifiya: 0, safee: 0
         })
       }
     })
 
-    const rows = Object.values(map)
-      .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
-      .map(r => {
+    const rows = Object.values(buMap)
+      .map(bu => {
         // Month/year selected: use the point-in-time reconstruction for that BU instead
         // of "now" — same headcount source as the People & HR page for that month.
-        const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[r.buCode] : null
+        const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
+        const headcount = buMonthEvo ? buMonthEvo.count : bu.activeEmpSet.size
+
+        const sections = Object.values(bu.sections)
+          .map(sec => {
+            const jobTitles = Object.values(sec.jobTitles)
+              .map(jt => ({
+                jobTitle:  jt.jobTitle,
+                headcount: jt.activeEmpSet.size,
+                monthly:   Math.round(jt.monthly),
+                kifiya:    Math.round(jt.kifiya),
+                safee:     Math.round(jt.safee),
+                employees: [...jt.employees.values()].sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
+              }))
+              .sort((a, b) => b.monthly - a.monthly || a.jobTitle.localeCompare(b.jobTitle))
+            return {
+              sectionCode: sec.sectionCode,
+              sectionName: sec.sectionName,
+              headcount:   sec.activeEmpSet.size,
+              monthly:     Math.round(sec.monthly),
+              kifiya:      Math.round(sec.kifiya),
+              safee:       Math.round(sec.safee),
+              jobTitles
+            }
+          })
+          .sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
+
         return {
-          ...r,
-          // Use payroll-derived unique ACTIVE count when headcountMatrix has no data for
-          // this BU (e.g. Individual Consultants absent from the BC employee headcount query)
-          headcount: buMonthEvo ? buMonthEvo.count : (r.headcount || (activeEmpByBU[r.buCode] ? activeEmpByBU[r.buCode].size : 0)),
-          monthly:  Math.round(r.monthly),
-          kifiya:   Math.round(r.kifiya),
-          safee:    Math.round(r.safee),
-          vcLabel:  [...r.vcs].filter(v => v && v !== 'Unknown').sort().join(' + ') || '—'
+          buCode: bu.buCode, buName: bu.buName, headcount,
+          monthly: Math.round(bu.monthly),
+          kifiya:  Math.round(bu.kifiya),
+          safee:   Math.round(bu.safee),
+          vcLabel: [...bu.vcs].filter(v => v && v !== 'Unknown').sort().join(' + ') || '—',
+          sections
         }
       })
+      .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
-    const empsByKey = {}
-    Object.entries(empMap).forEach(([k, empSet]) => {
-      empsByKey[k] = [...empSet.values()].sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
-    })
-
-    return { tableRows: rows, empsByKey }
-  }, [filteredHC, filteredPay, filteredRoster, effectiveMonth, hcByBU, allBUs, filterType, filterVC, filterBU, validHC, monthEvo])
+    return { tableRows: rows }
+  }, [filteredPay, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, monthEvo])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
@@ -366,14 +381,14 @@ export default function HRPageReview({ data }) {
         <div className="px-5 pt-5 pb-3">
           <h3 className="text-sm font-bold text-navy">Monthly Cost by Business Unit &amp; Virtual Company</h3>
           <p className="text-[10px] text-muted mt-0.5">
-            {effectiveMonth} · {tableRows.length} rows · click a row to expand employees
+            {effectiveMonth} · {tableRows.length} business units · click to drill into section → job title → employee
           </p>
         </div>
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 620 }}>
-          <table className="text-[11px] border-collapse w-full" style={{ minWidth: 760 }}>
+          <table className="text-[11px] border-collapse w-full" style={{ minWidth: 820 }}>
             <thead className="sticky top-0 z-10">
               <tr style={{ background: NAVY }}>
-                <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[200px]" style={{ background: NAVY }}>Business Unit</th>
+                <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[240px]" style={{ background: NAVY }}>Business Unit / Section / Job Title / Employee</th>
                 <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px]">Head Count</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
@@ -387,93 +402,117 @@ export default function HRPageReview({ data }) {
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-muted">No data for the selected filters.</td>
                 </tr>
-              ) : tableRows.map((row, i) => {
-                const rowKey  = row.buCode
-                const isOpen  = !!expandedRows[rowKey]
-                const empList = empsByKey[rowKey] || []
-                const pct     = grandMonthly > 0 ? (row.monthly / grandMonthly) * 100 : 0
-                const rowBg   = i % 2 === 0 ? '#fff' : '#F9FBFD'
+              ) : tableRows.map((row, bi) => {
+                const buKey  = row.buCode
+                const buOpen = !!expandedRows[buKey]
+                const buPct  = grandMonthly > 0 ? (row.monthly / grandMonthly) * 100 : 0
+                const buBg   = bi % 2 === 0 ? '#fff' : '#F9FBFD'
                 return (
-                  <Fragment key={rowKey}>
+                  <Fragment key={buKey}>
+                    {/* Level 1: Business Unit */}
                     <tr
                       className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
-                      style={{ background: rowBg }}
-                      onClick={() => toggleRow(rowKey)}
+                      style={{ background: buBg }}
+                      onClick={() => toggleRow(buKey)}
                     >
-                      <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: rowBg }}>
+                      <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: buBg }}>
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="text-[10px] text-muted w-3">{isOpen ? '▾' : '▸'}</span>
+                          <span className="text-[10px] text-muted w-3">{buOpen ? '▾' : '▸'}</span>
                           {row.buName || row.buCode}
+                          <span className="text-[9px] font-normal text-muted">({row.sections.length} section{row.sections.length !== 1 ? 's' : ''})</span>
                         </span>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span className="text-[10px] font-semibold text-muted">{row.vcLabel}</span>
-                      </td>
+                      <td className="px-4 py-2.5"><span className="text-[10px] font-semibold text-muted">{row.vcLabel}</span></td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{row.headcount || '—'}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{fmtC(row.monthly || null)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-muted">{fmtPct(pct)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted">{fmtPct(buPct)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: TEAL }}>{fmtC(row.kifiya || null)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: ORANGE }}>{fmtC(row.safee || null)}</td>
                     </tr>
 
-                    {/* ── Employee drill-down rows ── */}
-                    {isOpen && empList.length === 0 && (
-                      <tr key={`${rowKey}-empty`} className="border-t border-border/30" style={{ background: '#F8FFFE' }}>
-                        <td colSpan={7} className="pl-10 pr-4 py-2 text-muted italic text-[10px]">
-                          No payroll records for this group in {effectiveMonth}
-                        </td>
-                      </tr>
-                    )}
-                    {isOpen && empList.map(emp => {
-                      const vc    = emp.virtualCompany && emp.virtualCompany !== 'Unknown' ? emp.virtualCompany : ''
-                      const total = emp.kifiya + emp.safee
-                      const pctEmp = row.monthly > 0 ? (total / row.monthly) * 100 : 0
+                    {/* Level 2: Sections */}
+                    {buOpen && row.sections.map(sec => {
+                      const secKey  = `${buKey}|${sec.sectionCode}`
+                      const secOpen = !!expandedSections[secKey]
+                      const secBg   = secOpen ? '#F0FAF8' : '#F4F6FA'
+                      const secPct  = row.monthly > 0 ? (sec.monthly / row.monthly) * 100 : 0
                       return (
-                        <tr key={`${rowKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: '#F0FAF9' }}>
-                          <td className="pl-10 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: '#F0FAF9' }}>
-                            {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
-                          </td>
-                          <td className="px-4 py-1.5 text-[10px] text-muted">{vc}</td>
-                          <td className="px-4 py-1.5" />
-                          <td className="px-4 py-1.5 text-right tabular-nums text-muted text-[10px]">
-                            {fmtC(total || null)}
-                          </td>
-                          <td className="px-4 py-1.5 text-right tabular-nums text-[10px] text-muted">
-                            {fmtPct(pctEmp)}
-                          </td>
-                          <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: TEAL }}>
-                            {emp.kifiya ? fmtC(emp.kifiya) : '—'}
-                          </td>
-                          <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: ORANGE }}>
-                            {emp.safee ? fmtC(emp.safee) : '—'}
-                          </td>
-                        </tr>
+                        <Fragment key={secKey}>
+                          <tr
+                            className="cursor-pointer border-t border-border/40 transition-colors"
+                            style={{ background: secBg }}
+                            onClick={() => toggleSection(secKey)}
+                            onMouseEnter={e => { if (!secOpen) e.currentTarget.style.background = '#E8F5F3' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = secBg }}
+                          >
+                            <td className="pl-8 pr-4 py-2 sticky left-0 z-10" style={{ background: secBg }}>
+                              <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: '#1FB6A6' }}>{secOpen ? '▾' : '▸'}</span>
+                              <span className="font-semibold text-navy">{sec.sectionName}</span>
+                              <span className="ml-1.5 text-[9px] text-muted">({sec.jobTitles.length} title{sec.jobTitles.length !== 1 ? 's' : ''})</span>
+                            </td>
+                            <td className="px-4 py-2" />
+                            <td className="px-4 py-2 text-right tabular-nums text-navy">{sec.headcount || '—'}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-navy">{fmtC(sec.monthly || null)}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtPct(secPct)}</td>
+                            <td className="px-4 py-2 text-right tabular-nums" style={{ color: TEAL }}>{fmtC(sec.kifiya || null)}</td>
+                            <td className="px-4 py-2 text-right tabular-nums" style={{ color: ORANGE }}>{fmtC(sec.safee || null)}</td>
+                          </tr>
+
+                          {/* Level 3: Job Titles */}
+                          {secOpen && sec.jobTitles.map(jt => {
+                            const jtKey  = `${secKey}|${jt.jobTitle}`
+                            const jtOpen = !!expandedJobTitles[jtKey]
+                            const jtBg   = jtOpen ? '#EBF8F6' : '#FAFBFD'
+                            const jtPct  = sec.monthly > 0 ? (jt.monthly / sec.monthly) * 100 : 0
+                            return (
+                              <Fragment key={jtKey}>
+                                <tr
+                                  className="cursor-pointer border-t border-border/30 transition-colors"
+                                  style={{ background: jtBg }}
+                                  onClick={() => toggleJobTitle(jtKey)}
+                                >
+                                  <td className="pl-14 pr-4 py-1.5 sticky left-0 z-10" style={{ background: jtBg }}>
+                                    <span className="inline-block w-4 text-[8px] font-extrabold text-muted">{jtOpen ? '▾' : '▸'}</span>
+                                    <span className="font-medium text-navy text-[10.5px]">{jt.jobTitle}</span>
+                                    <span className="ml-1.5 text-[9px] text-muted">({jt.employees.length})</span>
+                                  </td>
+                                  <td className="px-4 py-1.5" />
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{jt.headcount || '—'}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{fmtC(jt.monthly || null)}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-muted">{fmtPct(jtPct)}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: TEAL }}>{fmtC(jt.kifiya || null)}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: ORANGE }}>{fmtC(jt.safee || null)}</td>
+                                </tr>
+
+                                {/* Level 4: Employees */}
+                                {jtOpen && jt.employees.map(emp => {
+                                  const vc    = emp.virtualCompany && emp.virtualCompany !== 'Unknown' ? emp.virtualCompany : ''
+                                  const total = emp.kifiya + emp.safee
+                                  const pctEmp = jt.monthly > 0 ? (total / jt.monthly) * 100 : 0
+                                  return (
+                                    <tr key={`${jtKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: '#F0FAF9' }}>
+                                      <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: '#F0FAF9' }}>
+                                        {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
+                                      </td>
+                                      <td className="px-4 py-1.5 text-[10px] text-muted">{vc}</td>
+                                      <td className="px-4 py-1.5" />
+                                      <td className="px-4 py-1.5 text-right tabular-nums text-muted text-[10px]">{fmtC(total || null)}</td>
+                                      <td className="px-4 py-1.5 text-right tabular-nums text-[10px] text-muted">{fmtPct(pctEmp)}</td>
+                                      <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: TEAL }}>
+                                        {emp.kifiya ? fmtC(emp.kifiya) : '—'}
+                                      </td>
+                                      <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: ORANGE }}>
+                                        {emp.safee ? fmtC(emp.safee) : '—'}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </Fragment>
+                            )
+                          })}
+                        </Fragment>
                       )
                     })}
-                    {isOpen && empList.length > 0 && (() => {
-                      const subKifiya = empList.reduce((s, e) => s + e.kifiya, 0)
-                      const subSafee  = empList.reduce((s, e) => s + e.safee,  0)
-                      const subTotal  = subKifiya + subSafee
-                      return (
-                        <tr key={`${rowKey}-subtotal`} className="border-t border-border/40" style={{ background: '#D9F2EF' }}>
-                          <td className="pl-10 pr-4 py-2 font-bold text-navy sticky left-0 z-10 text-[11px]" style={{ background: '#D9F2EF' }}>
-                            {row.buName} — Total ({empList.length} employees)
-                          </td>
-                          <td className="px-4 py-2" />
-                          <td className="px-4 py-2" />
-                          <td className="px-4 py-2 text-right tabular-nums font-bold text-navy text-[11px]">
-                            {fmtC(subTotal || null)}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums font-bold text-muted text-[11px]">100%</td>
-                          <td className="px-4 py-2 text-right tabular-nums font-bold text-[11px]" style={{ color: TEAL }}>
-                            {subKifiya ? fmtC(subKifiya) : '—'}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums font-bold text-[11px]" style={{ color: ORANGE }}>
-                            {subSafee ? fmtC(subSafee) : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })()}
                   </Fragment>
                 )
               })}

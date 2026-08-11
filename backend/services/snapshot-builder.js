@@ -941,11 +941,14 @@ async function buildSnapshot(targetDate) {
       .map(r => {
         const sc = r.businessUnitDept || 'Unknown';
         return {
-          employeeNo: r.AuxiliaryIndex1 || '',
-          name:       r.fullName || '',
-          buCode:     sectionToDept[sc] || sc,
-          vc:         r.virtualCompany || 'Unknown',
-          type:       r.employeeType || 'Unknown'
+          employeeNo:  r.AuxiliaryIndex1 || '',
+          name:        r.fullName || '',
+          buCode:      sectionToDept[sc] || sc,
+          sectionCode: sc,
+          sectionName: dimensionNames[sc] || sc,
+          jobTitle:    r.jobTitle || 'Unknown',
+          vc:          r.virtualCompany || 'Unknown',
+          type:        r.employeeType || 'Unknown'
         };
       })
       .filter(r => r.employeeNo)
@@ -1095,9 +1098,10 @@ async function buildSnapshot(targetDate) {
       const no = r.AuxiliaryIndex1;
       if (!no || empNoToHC[no]) return;
       empNoToHC[no] = {
-        vc:   r.virtualCompany   || 'Unknown',
-        type: r.employeeType     || 'Unknown',
-        bu:   r.businessUnitDept || 'Unknown'
+        vc:       r.virtualCompany   || 'Unknown',
+        type:     r.employeeType     || 'Unknown',
+        bu:       r.businessUnitDept || 'Unknown',
+        jobTitle: r.jobTitle         || 'Unknown'
       };
     });
 
@@ -1480,9 +1484,12 @@ async function buildSnapshot(targetDate) {
         : hcByName[name.toLowerCase()] || 'Unknown';
       // Group by the employee's home department from the employee table when known,
       // rather than whichever department the payroll transaction happened to post to.
-      const sc      = (hc && hc.bu !== 'Unknown') ? hc.bu : (r.businessUnitDept || 'Unknown');
-      const buCode  = sectionToDept[sc] || sc;
-      const buName  = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
+      // sc is the raw section (e.g. "TEC-004"); buCode is its resolved parent BU.
+      const sc          = (hc && hc.bu !== 'Unknown') ? hc.bu : (r.businessUnitDept || 'Unknown');
+      const buCode      = sectionToDept[sc] || sc;
+      const buName      = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
+      const sectionName = dimensionNames[sc] || sc;
+      const jobTitle    = (hc && hc.jobTitle !== 'Unknown') ? hc.jobTitle : (empNoToJobTitle[empKey] || 'Unknown');
       const src     = r.payrollSource || 'KIFIYA';
       const vc      = ((hc && hc.vc !== 'Unknown') ? hc.vc : (r.virtualCompany || 'Unknown')).trim();
       const d       = new Date(r.payrollPeriod);
@@ -1491,7 +1498,7 @@ async function buildSnapshot(targetDate) {
       const key     = `${empKey}||${src}`;   // one record per employee per payroll source
       const status  = empStatusByNo[empKey] || 'Unknown';
       if (!empPayMap[key]) empPayMap[key] = {
-        employeeNo: empKey, name, buCode, buName,
+        employeeNo: empKey, name, buCode, buName, sectionCode: sc, sectionName, jobTitle,
         payrollSource: src, virtualCompany: vc, employeeType: et, employeeStatus: status,
         monthTotals: {}, pensionMonthTotals: {}, total: 0, pensionTotal: 0
       };
