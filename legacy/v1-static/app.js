@@ -267,11 +267,11 @@ function renderHR(d){
   document.getElementById('kpiHR').innerHTML =
     kpiCard({label:'Total Employees',val:fmt(h.total),sub:'headcount',barColor:C.navy}) +
     kpiCard({label:'Active',val:fmt(active),sub:(active/h.total*100).toFixed(0)+'% of total',barPct:active/h.total*100,barColor:C.green,good:true}) +
-    kpiCard({label:'Inactive / Terminated',val:fmt(inactive),sub:(inactive/h.total*100).toFixed(0)+'% of total',barPct:inactive/h.total*100,barColor:C.red}) +
+    kpiCard({label:'Inactive / Inactive',val:fmt(inactive),sub:(inactive/h.total*100).toFixed(0)+'% of total',barPct:inactive/h.total*100,barColor:C.red}) +
     kpiCard({label:'Contract Types',val:h.byType.length,sub:'categories',barColor:C.gold});
 
   destroy('hrStatusDonut');
-  const statusColor = s => s==='Active'?C.green : s==='Terminated'?C.red : s==='New'?C.teal : C.muted;
+  const statusColor = s => s==='Active'?C.green : s==='Inactive'?C.red : s==='New'?C.teal : C.muted;
   CHARTS.hrStatusDonut=new Chart(document.getElementById('hrStatusDonut'),{
     type:'doughnut',
     data:{labels:h.byStatus.map(x=>x.status+' ('+x.count+')'),datasets:[{

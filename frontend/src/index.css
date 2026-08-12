@@ -27,3 +27,30 @@
   background: #EB7D23;
   animation: progressFill var(--dur, 10s) linear forwards;
 }
+
+/* ── App-wide dark theme ──────────────────────────────────────────────────────
+   Scoped to .dark-app (wraps the authenticated app shell in App.jsx) so the
+   pre-login screen is unaffected. Every page/component still uses the same
+   semantic Tailwind classes (bg-white for cards, text-navy for headings,
+   text-muted for labels, border-border for dividers) — this just repoints what
+   those classes render as inside the dark shell, instead of touching every
+   file. Chart internals (Recharts axis/grid/tooltip colors, which are always
+   set via inline JS props, never CSS classes) are handled per-page separately
+   since CSS can't reach into SVG props. */
+.dark-app {
+  background: #052C36;
+  color-scheme: dark;
+}
+.dark-app .bg-bg { background-color: #052C36 !important; }
+.dark-app .bg-white { background-color: #0A3A46 !important; }
+.dark-app .text-navy { color: #FFFFFF !important; }
+.dark-app .text-muted { color: rgba(255, 255, 255, 0.55) !important; }
+.dark-app .border-border,
+.dark-app .divide-border > * + * {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+.dark-app .shadow-card { box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25); }
+.dark-app .hover\:bg-\[\#F0F7F6\]:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
+.dark-app .hover\:text-navy:hover { color: #FFFFFF !important; }
+.dark-app .hover\:border-navy:hover { border-color: rgba(255, 255, 255, 0.4) !important; }
+.dark-app ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }

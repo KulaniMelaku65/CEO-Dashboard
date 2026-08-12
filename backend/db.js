@@ -32,6 +32,17 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_snapshots_date ON snapshots(snapshot_date DESC);
+
+  -- Last-known job title per employee, updated from the live headcount table on every
+  -- sync while the employee is active. Job title is never carried on payroll rows
+  -- themselves and disappears once someone leaves (KFT_Employee_Headcount is
+  -- active-only), so this is the only way to still show a real title for an
+  -- employee's payroll history after they've gone inactive.
+  CREATE TABLE IF NOT EXISTS employee_job_titles (
+    employee_no TEXT PRIMARY KEY,
+    job_title   TEXT NOT NULL,
+    updated_at  TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;

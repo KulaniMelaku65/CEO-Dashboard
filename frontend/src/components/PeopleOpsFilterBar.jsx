@@ -6,15 +6,15 @@ const MONTH_ORDER = ['January','February','March','April','May','June','July','A
 function Sel({ label, value, onChange, options }) {
   return (
     <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
-      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#6B7C93' }}>{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-semibold focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-        style={{ color: '#02404F' }}
+        className="rounded-lg px-3 py-2 text-[12px] font-semibold focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+        style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderStyle: 'solid' }}
       >
-        <option value="All">All</option>
-        {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
+        <option value="All" style={{ color: '#fff', background: '#0A3A46' }}>All</option>
+        {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled} style={{ color: '#fff', background: '#0A3A46' }}>{o.label}</option>)}
       </select>
     </div>
   )

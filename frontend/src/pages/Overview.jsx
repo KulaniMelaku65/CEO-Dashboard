@@ -5,7 +5,10 @@ import {
 import KpiCard from '../components/KpiCard.jsx'
 import { fmtETB, fmtPct, fmtNum } from '../lib/fmt.js'
 
-const BANK_COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#F5A870', '#6B7C93']
+const BANK_COLORS = ['#1FB6A6', '#EB7D23', '#2EBD85', '#F5A870', '#90D4CE', '#E5544B', '#9BAAB8']
+const AXIS_COLOR = 'rgba(255,255,255,0.55)'
+const GRID_COLOR = 'rgba(255,255,255,0.12)'
+const TOOLTIP_STYLE = { fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: '#0A3A46', color: '#fff' }
 
 export default function Overview({ data }) {
   const monthly    = data.budgetOverview?.monthly
@@ -96,11 +99,11 @@ export default function Overview({ data }) {
           <h3 className="text-sm font-bold text-navy mb-4">Monthly Revenue — Budget vs Actual (ETB)</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthlyData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
-              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-              <Bar dataKey="Budget" fill="#E3E9F2" radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={46} />
+              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={TOOLTIP_STYLE} />
+              <Bar dataKey="Budget" fill="rgba(255,255,255,0.30)" radius={[3, 3, 0, 0]} maxBarSize={24} />
               <Bar dataKey="Actual" fill="#EB7D23" radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
@@ -111,10 +114,10 @@ export default function Overview({ data }) {
           {disbByBank.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={disbByBank} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-                <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={64} />
-                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Disbursements']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
+                <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={64} />
+                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Disbursements']} contentStyle={TOOLTIP_STYLE} />
                 <Bar dataKey="Amount" radius={[0, 4, 4, 0]} maxBarSize={20}>
                   {disbByBank.map((_, i) => <Cell key={i} fill={BANK_COLORS[i % BANK_COLORS.length]} />)}
                 </Bar>

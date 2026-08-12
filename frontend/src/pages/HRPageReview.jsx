@@ -5,6 +5,13 @@ import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
+// Zebra-stripe / hover-state row backgrounds for the dark theme — swapped in place of
+// the near-white pastels this table used to use (those relied on white being the page
+// background; on the dark shell they'd leave white text on a near-white row = invisible).
+const ROW_BG        = { even: '#0A3A46', odd: '#0E434D' }
+const SEC_BG         = { open: '#123C46', closed: '#0C3841' }
+const JT_BG           = { open: '#123C46', closed: '#0A3540' }
+const EMP_ROW_BG    = '#0F3D46'
 
 const fmtN = (n) => {
   if (n == null || isNaN(n)) return '—'
@@ -130,13 +137,22 @@ export default function HRPageReview({ data }) {
   }), [validHC, filterBU, filterType, filterVC, sectionToDept])
 
   // ── Filter employeePayroll ────────────────────────────────────────────────
-  const filteredPay = useMemo(() => employeePayroll.filter(r => {
+  // Two variants: cost KPIs use ALL employees who were actually paid that month —
+  // the company genuinely incurred that cost regardless of their status today —
+  // while the BU/Section/Job Title/Employee table stays active-only, since job
+  // title/description is only reliably known for active people (sourced from the
+  // live headcount table), so inactive rows there fall back to "Unknown".
+  const filteredPayAll = useMemo(() => employeePayroll.filter(r => {
     const parentBU = resolveParent(r.buCode)
     return (filterBU     === 'All' || r.buCode === filterBU || parentBU === filterBU) &&
            (filterType   === 'All' || r.employeeType   === filterType) &&
            (filterVC     === 'All' || r.virtualCompany === filterVC) &&
            (filterSource === 'All' || r.payrollSource  === filterSource)
   }), [employeePayroll, filterBU, filterType, filterVC, filterSource, sectionToDept])
+
+  const filteredPay = useMemo(() =>
+    filteredPayAll.filter(r => r.employeeStatus === 'Active'),
+    [filteredPayAll])
 
   // ── Filter active roster (live, from KFT_Employee_Headcount) ───────────────
   // Backstops the payroll-derived employee drill-down: some currently-active employees
@@ -180,14 +196,14 @@ export default function HRPageReview({ data }) {
 
   const { totalMonthly, kifiyaMonthly, safeeMonthly } = useMemo(() => {
     let total = 0, kifiya = 0, safee = 0
-    filteredPay.forEach(r => {
+    filteredPayAll.forEach(r => {
       const v = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
       total += v
       if (r.payrollSource === 'KIFIYA') kifiya += v
       else                              safee  += v
     })
     return { totalMonthly: total, kifiyaMonthly: kifiya, safeeMonthly: safee }
-  }, [filteredPay, effectiveMonth])
+  }, [filteredPayAll, effectiveMonth])
 
   const kifiyaSharePct = totalMonthly > 0 ? (kifiyaMonthly / totalMonthly) * 100 : 0
 
@@ -207,7 +223,7 @@ export default function HRPageReview({ data }) {
         })
       : []
 
-    const sum = filteredPay.reduce((s, r) =>
+    const sum = filteredPayAll.reduce((s, r) =>
       s + ytdMonths.reduce((ss, m) => ss + (r.monthTotals[m] || 0) + (r.pensionMonthTotals?.[m] || 0), 0), 0)
 
     const label = ytdMonths.length === 0 ? '—'
@@ -215,7 +231,7 @@ export default function HRPageReview({ data }) {
       : `${ytdMonths[0].split(' ')[0]} – ${ytdMonths[ytdMonths.length - 1]}`
 
     return { annualisedYTD: sum, ytdLabel: label }
-  }, [filteredPay, payrollMonths, effectiveMonth])
+  }, [filteredPayAll, payrollMonths, effectiveMonth])
 
   // ── Table rows: BU → Section → Job Title → Employee ─────────────────────
   const { tableRows } = useMemo(() => {
@@ -249,19 +265,28 @@ export default function HRPageReview({ data }) {
       return sec.jobTitles[jt]
     }
 
-    // Cost + employees from filteredPay — grouped BU → Section → Job Title → Employee
-    filteredPay.forEach(r => {
+    // Cost + employees from filteredPayAll (active + inactive who were paid that
+    // month) — grouped BU → Section → Job Title → Employee. A row only lands in the
+    // drill-down when it actually has cost for effectiveMonth — this keeps the list
+    // dynamic per month: someone who left three months ago simply stops appearing
+    // once their last paid month is behind effectiveMonth, instead of lingering
+    // forever with a phantom $0 row. Head Count itself only ever counts Active
+    // employees (activeEmpSet) — matching headcount semantics everywhere else in the
+    // app — so an inactive person who got a final paycheck this month still shows up
+    // as a cost row (tagged "Inactive" for clarity) without inflating Head Count.
+    filteredPayAll.forEach(r => {
+      const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
+      if (vp === 0) return
+
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buName)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
-      const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
       bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
       if (r.payrollSource === 'KIFIYA') { bu.kifiya += vp; sec.kifiya += vp; jt.kifiya += vp }
       else                              { bu.safee  += vp; sec.safee  += vp; jt.safee  += vp }
       bu.vcs.add(r.virtualCompany)
-
       if (r.employeeStatus === 'Active') {
         bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
       }
@@ -269,6 +294,7 @@ export default function HRPageReview({ data }) {
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
           employeeNo: r.employeeNo, name: r.name, virtualCompany: r.virtualCompany, payrollSource: r.payrollSource,
+          employeeStatus: r.employeeStatus,
           kifiya: r.payrollSource === 'KIFIYA' ? vp : 0, safee: r.payrollSource === 'SAFEE' ? vp : 0
         })
       } else {
@@ -293,7 +319,8 @@ export default function HRPageReview({ data }) {
 
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
-          employeeNo: r.employeeNo, name: r.name, virtualCompany: r.vc, payrollSource: null, kifiya: 0, safee: 0
+          employeeNo: r.employeeNo, name: r.name, virtualCompany: r.vc, payrollSource: null,
+          employeeStatus: 'Active', kifiya: 0, safee: 0
         })
       }
     })
@@ -341,7 +368,7 @@ export default function HRPageReview({ data }) {
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPay, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, monthEvo])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, monthEvo])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
@@ -352,7 +379,7 @@ export default function HRPageReview({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Page Review</h2>
+        <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Analysis</h2>
         <p className="text-xs text-muted font-medium">
           Active employees · headcount and payroll cost · all filters update instantly
         </p>
@@ -406,12 +433,12 @@ export default function HRPageReview({ data }) {
                 const buKey  = row.buCode
                 const buOpen = !!expandedRows[buKey]
                 const buPct  = grandMonthly > 0 ? (row.monthly / grandMonthly) * 100 : 0
-                const buBg   = bi % 2 === 0 ? '#fff' : '#F9FBFD'
+                const buBg   = bi % 2 === 0 ? ROW_BG.even : ROW_BG.odd
                 return (
                   <Fragment key={buKey}>
                     {/* Level 1: Business Unit */}
                     <tr
-                      className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
+                      className="border-t border-border cursor-pointer hover:bg-white/5 transition-colors"
                       style={{ background: buBg }}
                       onClick={() => toggleRow(buKey)}
                     >
@@ -434,7 +461,7 @@ export default function HRPageReview({ data }) {
                     {buOpen && row.sections.map(sec => {
                       const secKey  = `${buKey}|${sec.sectionCode}`
                       const secOpen = !!expandedSections[secKey]
-                      const secBg   = secOpen ? '#F0FAF8' : '#F4F6FA'
+                      const secBg   = secOpen ? SEC_BG.open : SEC_BG.closed
                       const secPct  = row.monthly > 0 ? (sec.monthly / row.monthly) * 100 : 0
                       return (
                         <Fragment key={secKey}>
@@ -442,7 +469,7 @@ export default function HRPageReview({ data }) {
                             className="cursor-pointer border-t border-border/40 transition-colors"
                             style={{ background: secBg }}
                             onClick={() => toggleSection(secKey)}
-                            onMouseEnter={e => { if (!secOpen) e.currentTarget.style.background = '#E8F5F3' }}
+                            onMouseEnter={e => { if (!secOpen) e.currentTarget.style.background = '#164752' }}
                             onMouseLeave={e => { e.currentTarget.style.background = secBg }}
                           >
                             <td className="pl-8 pr-4 py-2 sticky left-0 z-10" style={{ background: secBg }}>
@@ -462,7 +489,7 @@ export default function HRPageReview({ data }) {
                           {secOpen && sec.jobTitles.map(jt => {
                             const jtKey  = `${secKey}|${jt.jobTitle}`
                             const jtOpen = !!expandedJobTitles[jtKey]
-                            const jtBg   = jtOpen ? '#EBF8F6' : '#FAFBFD'
+                            const jtBg   = jtOpen ? JT_BG.open : JT_BG.closed
                             const jtPct  = sec.monthly > 0 ? (jt.monthly / sec.monthly) * 100 : 0
                             return (
                               <Fragment key={jtKey}>
@@ -490,9 +517,14 @@ export default function HRPageReview({ data }) {
                                   const total = emp.kifiya + emp.safee
                                   const pctEmp = jt.monthly > 0 ? (total / jt.monthly) * 100 : 0
                                   return (
-                                    <tr key={`${jtKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: '#F0FAF9' }}>
-                                      <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: '#F0FAF9' }}>
+                                    <tr key={`${jtKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: EMP_ROW_BG }}>
+                                      <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
                                         {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
+                                        {emp.employeeStatus && emp.employeeStatus !== 'Active' && (
+                                          <span className="ml-1.5 text-[8px] font-bold px-1 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                                            {emp.employeeStatus}
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="px-4 py-1.5 text-[10px] text-muted">{vc}</td>
                                       <td className="px-4 py-1.5" />

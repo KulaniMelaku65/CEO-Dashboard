@@ -1,4 +1,14 @@
 const { bc, isBcConfigured } = require('./bc-client');
+const db = require('../db');
+
+const _jobTitleUpsert = db.prepare(
+  `INSERT INTO employee_job_titles (employee_no, job_title, updated_at)
+   VALUES (?, ?, datetime('now'))
+   ON CONFLICT(employee_no) DO UPDATE SET job_title = excluded.job_title, updated_at = excluded.updated_at`
+);
+const _jobTitleUpsertMany = db.transaction((rows) => {
+  rows.forEach(([no, title]) => _jobTitleUpsert.run(no, title));
+});
 
 const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 
@@ -548,6 +558,22 @@ async function buildSnapshot(targetDate) {
     bcAvail ? bc('KFT_Employment_History').catch(() => [])                                : Promise.resolve([])
   ]);
 
+  // Persist every employee's job title (KFT_Employee_Headcount now covers Active and
+  // Inactive/Terminated/New — its BC-side active-only filter was removed). A minority of
+  // inactive rows still have a blank jobTitle in BC itself; this cache preserves whatever
+  // title we've ever seen for someone so it survives even if BC's own field later goes
+  // blank, via historicalJobTitleByNo built from this table further below.
+  if (headcountRows.length > 0) {
+    _jobTitleUpsertMany(
+      headcountRows
+        .filter(r => r.AuxiliaryIndex1 && r.jobTitle && r.jobTitle.trim())
+        .map(r => [r.AuxiliaryIndex1, r.jobTitle.trim()])
+    );
+  }
+  const historicalJobTitleByNo = {};
+  db.prepare('SELECT employee_no, job_title FROM employee_job_titles').all()
+    .forEach(r => { historicalJobTitleByNo[r.employee_no] = r.job_title; });
+
   // Dimension names flat map — include blocked values so employees assigned to
   // blocked sections still get a human-readable name
   let dimensionNames = {};
@@ -617,6 +643,30 @@ async function buildSnapshot(targetDate) {
     if (g === 'Male') map[key].male++; else map[key].female++;
   };
 
+  // BC's Employee_Location field is free-text (office/branch names like "ADDIS
+  // ABABA-FIELD-AU", "BAHIR DAR, AMHARA") — normalize down to the broad region an
+  // HR summary cares about. Falls back to null (excluded from hr.byLocation)
+  // rather than guessing when nothing matches.
+  const REGION_KEYWORDS = [
+    ['Addis Ababa',  /ADDIS ABABA/],
+    ['Amhara',       /AMHARA|BAHIR ?DAR|GONDER|GOJJAM|GOJAM|WOLLO|SHOWA|MENZ|DAWENT/],
+    ['Tigray',       /TIGRAY|MEKELE|SHIRE|AXUM|ADIGRAT|ADWA|HINTALO|RAYA/],
+    ['Oromia',       /OROMIA|ADAMA|JIMMA|HARAR|BALE|NEKEMET|AMBO|WOLISSO|GELEMSO|SEBETA|ELUBABUR|GINCHISE/],
+    ['SNNP',         /SNNP|WOLAITA|ARBA ?MINCH|HOSAANA|BONGA|GAMBELA/],
+    ['Sidama',       /SIDAMA|HAWASSA|ALETAWONDO|DILLA/],
+    ['Somali',       /SOMALI|JIGJIGA/],
+    ['Diredawa',     /DIRE ?DAWA|CHIRO/],
+    ['South Africa', /SOUTH AFRICA/],
+    ['Kenya',        /KENYA/],
+    ['Pakistan',     /PAKISTAN/],
+  ];
+  const normalizeRegion = (raw) => {
+    const t = (raw || '').trim().toUpperCase();
+    if (!t) return null;
+    const hit = REGION_KEYWORDS.find(([, re]) => re.test(t));
+    return hit ? hit[0] : 'Other';
+  };
+
   const hrByStatus = {}, hrByType = {}, hrByGender = {};
 
   if (IS_HISTORICAL) {
@@ -659,6 +709,7 @@ async function buildSnapshot(targetDate) {
   const deptHierMap = {};
 
   headcountRows.forEach(r => {
+    if (r.employeeStatus && r.employeeStatus !== 'Active') return;
     const sectionCode = r.businessUnitDept || 'Unknown';
     const deptCode    = sectionToDept[sectionCode] || sectionCode;
     const deptName    = deptDisplayNames[deptCode] || dimensionNames[deptCode] || deptCode;
@@ -680,7 +731,9 @@ async function buildSnapshot(targetDate) {
       gender:         ['Male', 'Female'].includes((r.gender || '').trim()) ? r.gender.trim() : '',
       jobTitle:       r.jobTitle      || '',
       employeeType:   r.employeeType  || '',
-      virtualCompany: r.virtualCompany || ''
+      virtualCompany: r.virtualCompany || '',
+      region:         normalizeRegion(r.Employee_Location),
+      isHQ:           (r.Employee_Location || '').trim().toUpperCase().includes('HQ')
     });
 
     const vc = r.virtualCompany || 'Unknown';
@@ -705,9 +758,28 @@ async function buildSnapshot(targetDate) {
     dept: d.deptCode, male: d.male, female: d.female, count: d.count
   }));
 
+  // Headcount by region (from BC's Employee_Location field, active only) — rows with
+  // no location set or that don't match a known region are excluded rather than
+  // dumped into a misleading "Unknown" bucket.
+  const hrByLocation = {};
+  let hqCount = 0, fieldCount = 0;
+  headcountRows.forEach(r => {
+    if (r.employeeStatus && r.employeeStatus !== 'Active') return;
+    const rawLoc = (r.Employee_Location || '').trim();
+    const region = normalizeRegion(rawLoc);
+    if (!region) return;
+    hrByLocation[region] = (hrByLocation[region] || 0) + 1;
+    if (rawLoc.toUpperCase().includes('HQ')) hqCount++; else fieldCount++;
+  });
+  const byLocation = Object.entries(hrByLocation)
+    .map(([region, count]) => ({ region, count }))
+    .sort((a, b) => b.count - a.count);
+  const hqFieldSplit = { hq: hqCount, field: fieldCount };
+
   // Gender breakdown by job title — all titles, no cap
   const hrByJobTitle = {};
   headcountRows.forEach(r => {
+    if (r.employeeStatus && r.employeeStatus !== 'Active') return;
     const job = (r.jobTitle || '').trim() || 'Unknown';
     addGender(hrByJobTitle, job, r.gender === 'Male' ? 'Male' : 'Female');
   });
@@ -718,7 +790,7 @@ async function buildSnapshot(targetDate) {
   // Employee seniority list (active, oldest hire date first)
   const NULL_DATE_STR = '0001-01-01';
   const seniorityList = headcountRows
-    .filter(r => r.employmentDate && String(r.employmentDate).slice(0, 10) > NULL_DATE_STR)
+    .filter(r => (!r.employeeStatus || r.employeeStatus === 'Active') && r.employmentDate && String(r.employmentDate).slice(0, 10) > NULL_DATE_STR)
     .map(r => ({
       employeeNo: r.AuxiliaryIndex1 || '',
       name:   r.fullName || '',
@@ -733,6 +805,7 @@ async function buildSnapshot(targetDate) {
   // ── Active Contract Type per BU matrix ──────────────────────────────────────
   const deptByTypeMap = {};
   headcountRows.forEach(r => {
+    if (r.employeeStatus && r.employeeStatus !== 'Active') return;
     const sc      = r.businessUnitDept || 'Unknown';
     const dc      = sectionToDept[sc] || sc;
     const dn      = deptDisplayNames[dc] || dimensionNames[dc] || dc;
@@ -750,6 +823,7 @@ async function buildSnapshot(targetDate) {
     if (!deptByStatusMap[dc]) deptByStatusMap[dc] = { deptCode: dc, deptName: dn, Active: 0, Inactive: 0 };
   };
   headcountRows.forEach(r => {
+    if (r.employeeStatus && r.employeeStatus !== 'Active') return;
     const sc = r.businessUnitDept || 'Unknown';
     const dc = sectionToDept[sc] || sc;
     const dn = deptDisplayNames[dc] || dimensionNames[dc] || dc;
@@ -781,11 +855,11 @@ async function buildSnapshot(targetDate) {
     employees.filter(e => e.employeeStatus === 'Active').map(e => e.no).filter(Boolean)
   );
 
-  // employeeNo → employeeStatus (Active/Inactive/Terminated/New), sourced from GetEmployee
-  // (the only entity that carries status — KFT_Employee_Headcount has no status field at all).
-  // Used to keep payroll-derived headcount counts (e.g. Individual Consultants, who aren't
-  // in KFT_Employee_Headcount) limited to currently-active people instead of "anyone who
-  // ever had a payroll transaction."
+  // employeeNo → employeeStatus (Active/Inactive/Terminated/New), sourced from GetEmployee.
+  // (KFT_Employee_Headcount also carries its own employeeStatus field now, used directly
+  // wherever headcountRows is tallied below.) Used to keep payroll-derived headcount counts
+  // (e.g. Individual Consultants, who aren't in KFT_Employee_Headcount) limited to currently
+  // -active people instead of "anyone who ever had a payroll transaction."
   const empStatusByNo = {};
   employees.forEach(e => { if (e.no) empStatusByNo[e.no] = e.employeeStatus || 'Unknown'; });
 
@@ -793,6 +867,17 @@ async function buildSnapshot(targetDate) {
   // table (KFT_Employee_Headcount, keyed by AuxiliaryIndex1). Used only for the `employees`
   // loop below (which is already active-only) — KFT_Employment_History carries its own
   // dimension1 (VC) / dimension2 (BU) directly, so departed employees don't need this map.
+  // employeeNo → employeeType, from the FULL (unfiltered) headcountRows — covers
+  // Inactive/Terminated people too now that KFT_Employee_Headcount's active-only filter
+  // was removed. Used as a fallback for empHist-sourced historical entries below, which
+  // otherwise have no type at all (KFT_Employment_History's "classification" field is a
+  // payroll-source distinction, not Permanent/Contract/etc) and were undercounting
+  // hr.headcountEvolution[].byType relative to the bucket's real total count.
+  const typeByEmpNo = {};
+  headcountRows.forEach(r => {
+    if (r.AuxiliaryIndex1 && r.employeeType) typeByEmpNo[r.AuxiliaryIndex1] = r.employeeType;
+  });
+
   const vcByEmpNo = {};
   const buByEmpNo = {};
   headcountRows.forEach(r => {
@@ -838,6 +923,7 @@ async function buildSnapshot(targetDate) {
       let male = 0, female = 0, eth = 0, hub = 0;
       const byBU = {}, byType = {}, byJobTitle = {};
       headcountRows.forEach(r => {
+        if (r.employeeStatus && r.employeeStatus !== 'Active') return;
         const g = cleanGender(r.gender);
         if (g === 'Male') male++; else if (g === 'Female') female++;
         if (r.virtualCompany === 'ETH') eth++; else if (r.virtualCompany === 'HUB') hub++;
@@ -863,8 +949,9 @@ async function buildSnapshot(targetDate) {
       if (g === 'Male') male++; else if (g === 'Female') female++;
       const vc = vcByEmpNo[e.no];
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
-      bumpBU(byBU, buByEmpNo[e.no], vc, g, e.employeeType);
-      bumpGenderMap(byType, e.employeeType, g);
+      const type = e.employeeType || typeByEmpNo[e.no];
+      bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
+      bumpGenderMap(byType, type, g);
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return; // already counted above
@@ -881,10 +968,11 @@ async function buildSnapshot(targetDate) {
       const vc = e.dimension1;
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
       const sc = e.dimension2 || 'Unknown';
-      // No employeeType passed here — KFT_Employment_History has no such field (its
-      // "classification" is a payroll-source distinction, not Permanent/Contract/etc), so
-      // these rows contribute to the BU's count/gender but not its byType breakdown.
-      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, null);
+      // KFT_Employment_History itself has no employeeType field (its "classification" is
+      // a payroll-source distinction, not Permanent/Contract/etc) — fall back to the
+      // unfiltered headcountRows lookup, which now covers departed people too.
+      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, typeByEmpNo[e.employeeNo]);
+      bumpGenderMap(byType, typeByEmpNo[e.employeeNo], g);
     });
     return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {} };
   });
@@ -914,6 +1002,119 @@ async function buildSnapshot(targetDate) {
     return { label: m.label, joiners, leavers, rate };
   });
 
+  // Trailing-12-month aggregate turnover rate, plus a variant that excludes Individual
+  // Consultants from the headcount base. empHist (the leavers source above) has no
+  // employeeType field and in practice almost never contains consultants at all — they
+  // exit via payroll simply stopping, not a formal separation record — so the leavers
+  // count is already consultant-free; only the headcount denominator differs here.
+  const totalLeavers12mo = turnover.reduce((s, t) => s + t.leavers, 0);
+  const avgHeadcount12mo = headcountEvolution.length > 0
+    ? headcountEvolution.reduce((s, m) => s + m.count, 0) / headcountEvolution.length
+    : 0;
+  const avgNonAgentHeadcount12mo = headcountEvolution.length > 0
+    ? headcountEvolution.reduce((s, m) => {
+        const agents = m.byType?.['Individual Consultant'];
+        const agentCount = agents ? (agents.male || 0) + (agents.female || 0) : 0;
+        return s + (m.count - agentCount);
+      }, 0) / headcountEvolution.length
+    : 0;
+  const turnoverRate12mo         = avgHeadcount12mo > 0 ? +((totalLeavers12mo / avgHeadcount12mo) * 100).toFixed(1) : 0;
+  const turnoverRateNoAgents12mo = avgNonAgentHeadcount12mo > 0 ? +((totalLeavers12mo / avgNonAgentHeadcount12mo) * 100).toFixed(1) : 0;
+
+  // ── Turnover / Monthly Hires by calendar year ─────────────────────────────────
+  // Same reconstruction as headcountEvolution/turnover above, but aligned to actual
+  // calendar years (Jan–Dec) instead of a rolling 12-month window — lets the frontend
+  // show turnover/hires for "2025" or "2026" specifically instead of only the trailing
+  // 12 months from today. The current month re-uses headcountEvolution's live bucket
+  // (built from headcountRows) rather than recomputing it, so the two stay consistent.
+  const buildYearMonths = (year) => {
+    const lastMonth = year === targetDt.getFullYear() ? targetDt.getMonth() : 11;
+    return Array.from({ length: lastMonth + 1 }, (_, i) => {
+      const d = new Date(year, i, 1);
+      return {
+        label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+        start: new Date(d.getFullYear(), d.getMonth(), 1),
+        end:   new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+      };
+    });
+  };
+  const buildHistoricalBucket = (m) => {
+    let count = 0, male = 0, female = 0, eth = 0, hub = 0;
+    const byBU = {}, byType = {};
+    employees.forEach(e => {
+      if (e.employeeStatus !== 'Active') return;
+      const hired = e.employmentDate ? new Date(e.employmentDate) : null;
+      if (!(hired && hired <= m.end)) return;
+      count++;
+      const g = cleanGender(e.gender);
+      if (g === 'Male') male++; else if (g === 'Female') female++;
+      const vc = vcByEmpNo[e.no];
+      if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
+      const type = e.employeeType || typeByEmpNo[e.no];
+      bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
+      bumpGenderMap(byType, type, g);
+    });
+    empHist.forEach(e => {
+      if (activeNosSet.has(e.employeeNo)) return;
+      const hired     = e.dateHired     ? new Date(e.dateHired)     : null;
+      const separated = e.dateSeparated ? new Date(e.dateSeparated) : null;
+      if (!hired || hired > m.end) return;
+      if (separated && separated.getTime() > NULL_EPOCH && separated < m.start) return;
+      count++;
+      const g = cleanGender(genderByEmpNo[e.employeeNo]);
+      if (g === 'Male') male++; else if (g === 'Female') female++;
+      const vc = e.dimension1;
+      if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
+      const sc = e.dimension2 || 'Unknown';
+      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, typeByEmpNo[e.employeeNo]);
+      bumpGenderMap(byType, typeByEmpNo[e.employeeNo], g);
+    });
+    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {} };
+  };
+
+  const currentBucketLabel = months12[months12.length - 1].label;
+  const currentBucketData  = headcountEvolution[headcountEvolution.length - 1];
+
+  const yearsWithData = [];
+  for (let y = new Date(CONFIG.PAYROLL_START).getFullYear(); y <= targetDt.getFullYear(); y++) yearsWithData.push(y);
+
+  const turnoverByYear = {};
+  const turnoverSummaryByYear = {};
+  yearsWithData.forEach(year => {
+    const yMonths = buildYearMonths(year);
+    const series  = yMonths.map(m => m.label === currentBucketLabel ? currentBucketData : buildHistoricalBucket(m));
+
+    turnoverByYear[year] = series.map((bucket, i) => {
+      const m = yMonths[i];
+      const prevCount = i > 0 ? series[i - 1].count : series[0].count;
+      const avgCount  = (prevCount + bucket.count) / 2;
+      const joiners = allForJoiners.filter(e => {
+        const d = e.hired ? new Date(e.hired) : null;
+        return d && d >= m.start && d <= m.end;
+      }).length;
+      const leavers = empHist.filter(e => {
+        const d = e.dateSeparated ? new Date(e.dateSeparated) : null;
+        return d && d.getTime() > NULL_EPOCH && d >= m.start && d <= m.end;
+      }).length;
+      const rate = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0;
+      return { label: bucket.label, joiners, leavers, rate };
+    });
+
+    const totalLeavers = turnoverByYear[year].reduce((s, t) => s + t.leavers, 0);
+    const avgHC = series.length > 0 ? series.reduce((s, m) => s + m.count, 0) / series.length : 0;
+    const avgNonAgentHC = series.length > 0
+      ? series.reduce((s, m) => {
+          const agents = m.byType?.['Individual Consultant'];
+          const agentCount = agents ? (agents.male || 0) + (agents.female || 0) : 0;
+          return s + (m.count - agentCount);
+        }, 0) / series.length
+      : 0;
+    turnoverSummaryByYear[year] = {
+      rate:         avgHC > 0 ? +((totalLeavers / avgHC) * 100).toFixed(1) : 0,
+      rateNoAgents: avgNonAgentHC > 0 ? +((totalLeavers / avgNonAgentHC) * 100).toFixed(1) : 0,
+    };
+  });
+
   const hr = {
     sectionToDept,
     deptDisplayNames,
@@ -926,6 +1127,8 @@ async function buildSnapshot(targetDate) {
     byDept,
     byDeptHierarchy,
     byVirtualCompany: Object.entries(hrByVirtualCo).map(([virtualCompany, count]) => ({ virtualCompany, count })).sort((a, b) => b.count - a.count),
+    byLocation,
+    hqFieldSplit,
     byJobTitle,
     seniorityList,
     byDeptByType,
@@ -933,11 +1136,16 @@ async function buildSnapshot(targetDate) {
     byDeptByStatus,
     headcountEvolution,
     turnover,
+    turnoverRate12mo,
+    turnoverRateNoAgents12mo,
+    turnoverByYear,
+    turnoverSummaryByYear,
     // Live per-employee active roster (from KFT_Employee_Headcount) — used by HR Page
     // Review to populate the employee drill-down for a month with headcount data but
     // no payroll data yet (e.g. the current in-progress month), including active
     // employees who have no payroll history at all yet and would otherwise be missing.
     activeRoster: headcountRows
+      .filter(r => !r.employeeStatus || r.employeeStatus === 'Active')
       .map(r => {
         const sc = r.businessUnitDept || 'Unknown';
         return {
@@ -959,13 +1167,25 @@ async function buildSnapshot(targetDate) {
   let employeeCost = { byVirtualCompany: [], byDeptAndSource: [], monthly: [] };
   let hrReview     = { headcountMatrix: [], costMatrix: [], allEmployeeTypes: [], allVirtualCompanies: [], payrollMonths: [] };
   try {
-    const [stdPay, progPay, consPay, stdPension, progPension] = await Promise.all([
-      bcAvail ? bc('KFT_Payroll_Cost').catch(() => [])                  : Promise.resolve([]),
-      bcAvail ? bc('KFT_Prog_Payroll_Cost').catch(() => [])             : Promise.resolve([]),
-      bcAvail ? bc('KFT_Consultant_Payroll_Cost').catch(() => [])       : Promise.resolve([]),
-      bcAvail ? bc('KFT_Payroll_Pension').catch(() => [])               : Promise.resolve([]),
-      bcAvail ? bc('KFT_Prog_Payroll_Pension').catch(() => [])          : Promise.resolve([])
-    ]);
+    const payrollQueryNames = [
+      'KFT_Payroll_Cost',              // 0 stdPay
+      'KFT_Prog_Payroll_Cost',         // 1 progPay
+      'KFT_Consultant_Payroll_Cost',   // 2 consPay
+      'KFT_Payroll_Pension',           // 3 stdPension
+      'KFT_Prog_Payroll_Pension',      // 4 progPension
+      'KFT_Period_Trans_Verify',       // 5 stdPT  — raw component rows (KIFIYA)
+      'KFT_Prog_Period_Trans_Verify'   // 6 progPT — raw component rows (SAFEE)
+    ];
+    const [stdPay, progPay, consPay, stdPension, progPension, stdPT, progPT] = await Promise.all(
+      payrollQueryNames.map(name =>
+        bcAvail
+          ? bc(name).catch(err => {
+              console.error(`  ERROR: BC query '${name}' failed — ${err.message || err}. Payroll data from this source will be MISSING from the snapshot.`);
+              return [];
+            })
+          : Promise.resolve([])
+      )
+    );
 
     const payrollStart = new Date(CONFIG.PAYROLL_START);
     const targetEnd    = new Date(targetDate + 'T23:59:59');
@@ -973,6 +1193,42 @@ async function buildSnapshot(targetDate) {
     console.log(`  Payroll raw: KFT_Payroll_Cost=${stdPay.length} rows, KFT_Prog_Payroll_Cost=${progPay.length} rows, KFT_Consultant_Payroll_Cost=${consPay.length} rows`);
     if (stdPay.length === 0 && progPay.length === 0 && consPay.length === 0)
       console.warn('  WARNING: all payroll queries returned 0 rows — check BC web services are published');
+
+    // ── Consultant payroll currency-gap fallback ──────────────────────────────
+    // Some vouchers have blank CurrencyCode + 0 ExchangeRate (BC data-entry gap).
+    // We infer the currency from the same consultant's nearest dated voucher.
+    // The exchange rate is taken from other consultants in the same BATCH first
+    // (most precise — same processing date), falling back to the same PayPeriod
+    // if no other voucher in that batch has a valid rate.
+    const batchRateFallback  = {}; // PayrollBatchNo → exchange rate
+    const periodRateFallback = {}; // PayPeriod      → exchange rate (broader fallback)
+    consPay.forEach(r => {
+      const cur  = (r.CurrencyCode || '').trim().toUpperCase();
+      const rate = Number(r.ExchangeRate) || 0;
+      if (cur && cur !== 'ETB' && rate > 0) {
+        if (!batchRateFallback[r.PayrollBatchNo])  batchRateFallback[r.PayrollBatchNo]  = rate;
+        if (!periodRateFallback[r.PayPeriod])      periodRateFallback[r.PayPeriod]      = rate;
+      }
+    });
+    const consPayByConsultant = {};
+    consPay.forEach(r => {
+      if (!r.ConsultantID) return;
+      (consPayByConsultant[r.ConsultantID] ||= []).push(r);
+    });
+    const isForeignCurrencyGap = (r) => {
+      const history = (consPayByConsultant[r.ConsultantID] || []).filter(x => (x.CurrencyCode || '').trim());
+      if (history.length > 0) {
+        const target = new Date(r.VoucherDate || 0).getTime();
+        let nearest = history[0], nearestDiff = Infinity;
+        history.forEach(h => {
+          const diff = Math.abs(new Date(h.VoucherDate || 0).getTime() - target);
+          if (diff < nearestDiff) { nearestDiff = diff; nearest = h; }
+        });
+        return (nearest.CurrencyCode || '').trim().toUpperCase() !== 'ETB';
+      }
+      // LineAmount is the MSP Lines amount — present even when FINPaymentHeader has no voucher
+      return Number(r.Amount || r.LineAmount || 0) < 50000;
+    };
 
     const allPay = [
       ...stdPay.map(r  => ({ ...r, payrollSource: 'KIFIYA' })),
@@ -987,8 +1243,20 @@ async function buildSnapshot(targetDate) {
           : r.PayPeriod || null;
 
         const currency = (r.CurrencyCode || '').trim().toUpperCase();
-        const rate     = Number(r.ExchangeRate) || 1;
-        const toETB    = v => (currency === 'ETB' || currency === '') ? Number(v) : Number(v) * rate;
+        let   rate      = Number(r.ExchangeRate) || 0;
+        let   isForeign = currency !== '' && currency !== 'ETB';
+
+        if (currency === '' && rate === 0 && isForeignCurrencyGap(r)) {
+          isForeign = true;
+          rate = batchRateFallback[r.PayrollBatchNo] || periodRateFallback[r.PayPeriod] || 0;
+          if (!rate) console.warn(`  WARNING: consultant ${r.ConsultantID} period ${r.PayPeriod} batch ${r.PayrollBatchNo} — inferred foreign currency but no fallback rate found; amount left unconverted`);
+        }
+
+        const toETB = v => (isForeign && rate > 0) ? Number(v) * rate : Number(v);
+        // Prefer the actual payment voucher amount (FIN-Payments Header, now LeftOuterJoin).
+        // Fall back to the MSP Lines amount when the voucher doesn't exist yet or was issued
+        // in a later month — this ensures the consultant is counted in their MSP pay period.
+        const rawAmount = Number(r.Amount || 0) || Number(r.LineAmount || 0);
         return {
           ...r,
           employeeNo:       r.ConsultantID,
@@ -998,7 +1266,7 @@ async function buildSnapshot(targetDate) {
           virtualCompany:   r.VirtualCompanyCode || 'Unknown',
           businessUnitDept: r.BusinessUnitCode   || 'Unknown',
           jobTitle:         '',
-          totalEarning:     toETB(r.Amount || 0),
+          totalEarning:     toETB(rawAmount),
           payrollPeriod,
           payrollSource:    'SAFEE'
         };
@@ -1025,6 +1293,38 @@ async function buildSnapshot(targetDate) {
       const key = `${r.employeeNo}|${mthLbl}`;
       pensionByEmpMonth[key] = (pensionByEmpMonth[key] || 0) + Math.abs(r.employerPension);
     });
+
+    // ── Period Transactions component lookup ──────────────────────────────────
+    // Q50228/50229 return one row per wage-type component per employee per period
+    // (no aggregation). We build two per-employee-per-month maps:
+    //   ptGrossByEmpMonth   — sum of positive Amount values = gross earnings from PT
+    //   ptEmployerByEmpMonth — sum of abs(Employer Amount) = all employer-side costs
+    //
+    // ptGross is compared against Lines.Total Earning in empPayMap below.
+    // Any gap (ptGross > linesEarning) represents pay components that exist in
+    // Period Transactions but are not captured in the Lines summary fields.
+    // ptEmployer replaces pensionByEmpMonth when PT data is available because it
+    // covers ALL employer-borne costs (pension + gratuity + any other employer items)
+    // and is filtered to committed batches, unlike the unfiltered pension queries.
+    const ptGrossByEmpMonth    = {};
+    const ptEmployerByEmpMonth = {};
+    [...stdPT, ...progPT].forEach(r => {
+      if (!r.payrollPeriod || !r.employeeNo) return;
+      const d = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const key    = `${r.employeeNo}|${mthLbl}`;
+      const amt    = Number(r.amount || 0);
+      const empAmt = Math.abs(Number(r.employerAmount || 0));
+      if (amt > 0) ptGrossByEmpMonth[key]    = (ptGrossByEmpMonth[key]    || 0) + amt;
+      if (empAmt > 0) ptEmployerByEmpMonth[key] = (ptEmployerByEmpMonth[key] || 0) + empAmt;
+    });
+    const ptDataAvailable = (stdPT.length + progPT.length) > 0;
+    if (ptDataAvailable) {
+      console.log(`  Period Transactions: ${stdPT.length + progPT.length} component rows loaded (KIFIYA: ${stdPT.length}, SAFEE: ${progPT.length})`);
+    } else {
+      console.log('  Period Transactions: no rows — publish KFT_Period_Trans_Verify and KFT_Prog_Period_Trans_Verify as BC web services');
+    }
 
     // Pension aggregations by dimension — built from raw pension arrays so source attribution
     // (KIFIYA vs SAFEE) is preserved without relying on the merged allPay loop.
@@ -1489,7 +1789,8 @@ async function buildSnapshot(targetDate) {
       const buCode      = sectionToDept[sc] || sc;
       const buName      = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
       const sectionName = dimensionNames[sc] || sc;
-      const jobTitle    = (hc && hc.jobTitle !== 'Unknown') ? hc.jobTitle : (empNoToJobTitle[empKey] || 'Unknown');
+      const jobTitle    = (hc && hc.jobTitle !== 'Unknown') ? hc.jobTitle
+        : empNoToJobTitle[empKey] || historicalJobTitleByNo[empKey] || 'Unknown';
       const src     = r.payrollSource || 'KIFIYA';
       const vc      = ((hc && hc.vc !== 'Unknown') ? hc.vc : (r.virtualCompany || 'Unknown')).trim();
       const d       = new Date(r.payrollPeriod);
@@ -1502,13 +1803,22 @@ async function buildSnapshot(targetDate) {
         payrollSource: src, virtualCompany: vc, employeeType: et, employeeStatus: status,
         monthTotals: {}, pensionMonthTotals: {}, total: 0, pensionTotal: 0
       };
-      const e = empPayMap[key];
-      e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + earning;
-      e.total += earning;
-      const pensionKey = `${empKey}|${mthLbl}`;
-      if (!_pensionAccounted.has(pensionKey)) {
-        _pensionAccounted.add(pensionKey);
-        const pensionAmt = pensionByEmpMonth[pensionKey] || 0;
+      const e          = empPayMap[key];
+      const ptKey      = `${empKey}|${mthLbl}`;
+      // If Period Transactions data is available, use the gross from PT when it
+      // exceeds Lines.Total Earning — this captures pay components that exist in
+      // Period Transactions but are not reflected in the Lines summary fields.
+      const ptGross    = ptDataAvailable ? (ptGrossByEmpMonth[ptKey] || 0) : 0;
+      const effective  = ptGross > earning ? ptGross : earning;
+      e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + effective;
+      e.total += effective;
+      if (!_pensionAccounted.has(ptKey)) {
+        _pensionAccounted.add(ptKey);
+        // Prefer status-filtered PT employer amounts (covers pension + all other employer costs).
+        // Fall back to the unfiltered pension queries if PT data not yet published.
+        const pensionAmt = ptDataAvailable
+          ? (ptEmployerByEmpMonth[ptKey] || 0)
+          : (pensionByEmpMonth[ptKey] || 0);
         e.pensionMonthTotals[mthLbl] = pensionAmt;
         e.pensionTotal += pensionAmt;
       }
@@ -1524,6 +1834,7 @@ async function buildSnapshot(targetDate) {
     // Step 3: headcountMatrix — buCode × employeeType × virtualCompany → count
     const hcMatrixMap = {};
     headcountRows.forEach(r => {
+      if (r.employeeStatus && r.employeeStatus !== 'Active') return;
       const sc     = r.businessUnitDept || 'Unknown';
       const buCode = sectionToDept[sc] || sc;
       const buName = deptDisplayNames[buCode] || dimensionNames[buCode] || buCode;
@@ -1539,13 +1850,23 @@ async function buildSnapshot(targetDate) {
       ...employeePayroll.map(e => e.employeeType)
     ].filter(t => t && t !== 'Unknown'))].sort();
 
+    // Map GL salary totals (MGT_SAL accounts) to full month labels matching payrollMonths format
+    const fyYear = new Date(CONFIG.FY_START).getFullYear();
+    const fullMonthNames = ['January','February','March','April','May','June',
+                            'July','August','September','October','November','December'];
+    const glSalaryByMonth = {};
+    fullMonthNames.forEach((name, i) => {
+      glSalaryByMonth[`${name} ${fyYear}`] = Math.round(salM[i]);
+    });
+
     hrReview = {
       headcountMatrix: Object.values(hcMatrixMap),
       employeePayroll,
       allEmployeeTypes,
       allVirtualCompanies: [...new Set(headcountRows.map(r => (r.virtualCompany || '').trim()).filter(Boolean))].sort(),
       payrollMonths,
-      stdPayrollMonths
+      stdPayrollMonths,
+      glSalaryByMonth
     };
 
     console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);
@@ -1713,3 +2034,4 @@ async function buildSnapshot(targetDate) {
 }
 
 module.exports = { buildSnapshot };
+

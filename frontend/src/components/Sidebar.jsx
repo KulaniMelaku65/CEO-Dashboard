@@ -5,6 +5,7 @@ const ICONS = {
   lending:        <><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></>,
   collections:    <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
   hr:             <><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+  'hr-summary':   <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 13v4M12 9v8M16 6v11"/></>,
   'employee-cost':        <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></>,
   'employee-cost-detail':   <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></>,
   'employee-cost-variance': <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></>,

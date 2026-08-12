@@ -12,6 +12,7 @@ import BudgetAnalysis from './pages/BudgetAnalysis.jsx'
 import LoanOps from './pages/LoanOps.jsx'
 import Collections from './pages/Collections.jsx'
 import HR from './pages/HR.jsx'
+import PeopleHRSummary from './pages/PeopleHRSummary.jsx'
 import EmployeeCost from './pages/EmployeeCost.jsx'
 import EmployeeCostDetail from './pages/EmployeeCostDetail.jsx'
 import EmployeeCostVariance from './pages/EmployeeCostVariance.jsx'
@@ -19,7 +20,10 @@ import HRPageReview from './pages/HRPageReview.jsx'
 import Risk from './pages/Risk.jsx'
 import Reports from './pages/Reports.jsx'
 
-export const SLIDES = [
+// Full slide list — kept intact so other sections can be restored later by
+// switching SLIDES back to ALL_SLIDES (currently limited to People & Operations only,
+// per request, while the rest of the app isn't being shown in the sidebar).
+export const ALL_SLIDES = [
   { id: 'overview',     label: 'Executive Overview',    Page: Overview },
   { id: 'financial',    label: 'Financial Performance', Page: Financial },
   { id: 'budget',       label: 'Corporate Budget',      Page: BudgetAnalysis },
@@ -27,12 +31,17 @@ export const SLIDES = [
   { id: 'collections',  label: 'Collections & Revenue', Page: Collections },
   { id: 'risk',         label: 'Risk & Portfolio',      Page: Risk },
   { id: 'hr',                    label: 'People & Operations', Page: HR },
+  { id: 'hr-summary',            label: 'HR Summary',          Page: PeopleHRSummary,      parentId: 'hr' },
   { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
   { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
   { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
-  { id: 'hr-page-review',        label: 'HR Page Review',       Page: HRPageReview,         parentId: 'hr' },
+  { id: 'hr-page-review',        label: 'HR Analysis',          Page: HRPageReview,         parentId: 'hr' },
   { id: 'reports',               label: 'Reports & Insights',  Page: Reports },
 ]
+
+// Employee Cost / Cost by BU / MoM Comparison also hidden for now, per request.
+const HIDDEN_IDS = new Set(['employee-cost', 'employee-cost-detail', 'employee-cost-variance'])
+export const SLIDES = ALL_SLIDES.filter(s => (s.id === 'hr' || s.parentId === 'hr') && !HIDDEN_IDS.has(s.id))
 
 const SLIDE_MS = 12000
 
@@ -133,7 +142,7 @@ export default function App() {
   if (!user) return <LoginOverlay onLogin={handleLogin} />
 
   return (
-    <div className="flex h-screen overflow-hidden font-sans bg-bg">
+    <div className="dark-app flex h-screen overflow-hidden font-sans bg-bg">
       <Sidebar
         slides={SLIDES}
         current={slide}
