@@ -177,16 +177,61 @@ export default function PeopleHRSummary({ data }) {
           .sort((a, b) => b.count - a.count)
       })()
 
-  // ── Turnover — year-scoped when a Year filter is selected, otherwise the
-  // rolling trailing-12-months view (same fields, different window) ──────────
+  // ── Turnover — year-scoped when a Year filter is selected, otherwise the rolling
+  // trailing-12-months view (same fields, different window). Each monthly bucket also
+  // carries a tagged roster/joinerRecords/leaverRecords, so BU/Employment Type/Virtual
+  // Company filters narrow turnover too — same as every other figure on this page.
+  // Budget Source is left out here: it's a payroll concept with no historical
+  // reconstruction (someone who left 8 months ago has no "current" payroll row to read
+  // a source from), the same limitation already documented for headcount above.
   const turnoverByYear        = hr.turnoverByYear        || {}
   const turnoverSummaryByYear = hr.turnoverSummaryByYear || {}
   const selectedYearTurnover  = filterYear !== 'All' ? turnoverByYear[filterYear]        : null
   const selectedYearSummary   = filterYear !== 'All' ? turnoverSummaryByYear[filterYear] : null
 
-  const turnoverSeries       = selectedYearTurnover || hr.turnover || []
-  const turnoverRate         = selectedYearSummary ? selectedYearSummary.rate         : (hr.turnoverRate12mo         ?? null)
-  const turnoverRateNoAgents = selectedYearSummary ? selectedYearSummary.rateNoAgents : (hr.turnoverRateNoAgents12mo ?? null)
+  const baseTurnoverSeries  = selectedYearTurnover || hr.turnover || []
+  const turnoverFilterActive = filterBU !== 'All' || filterType !== 'All' || filterVC !== 'All'
+  const matchesTurnoverFilters = (r) =>
+    (filterBU   === 'All' || r.buCode === filterBU) &&
+    (filterType === 'All' || r.type   === filterType) &&
+    (filterVC   === 'All' || r.vc     === filterVC)
+
+  const turnoverSeries = turnoverFilterActive
+    ? baseTurnoverSeries.map((t, i) => {
+        const roster     = (t.roster || []).filter(matchesTurnoverFilters)
+        const prevRoster  = i > 0 ? (baseTurnoverSeries[i - 1].roster || []).filter(matchesTurnoverFilters) : roster
+        const avgCount    = (prevRoster.length + roster.length) / 2
+        const joiners     = (t.joinerRecords || []).filter(matchesTurnoverFilters).length
+        const leavers     = (t.leaverRecords || []).filter(matchesTurnoverFilters).length
+        const rate        = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0
+        return { label: t.label, joiners, leavers, rate }
+      })
+    : baseTurnoverSeries
+
+  const turnoverSummary = turnoverFilterActive
+    ? (() => {
+        const totalLeavers = turnoverSeries.reduce((s, t) => s + t.leavers, 0)
+        const n = baseTurnoverSeries.length
+        const avgHC = n > 0
+          ? baseTurnoverSeries.reduce((s, t) => s + (t.roster || []).filter(matchesTurnoverFilters).length, 0) / n
+          : 0
+        const avgNonAgentHC = n > 0
+          ? baseTurnoverSeries.reduce((s, t) =>
+              s + (t.roster || []).filter(r => matchesTurnoverFilters(r) && r.type !== 'Individual Consultant').length, 0) / n
+          : 0
+        return {
+          rate:         avgHC         > 0 ? +((totalLeavers / avgHC)         * 100).toFixed(1) : 0,
+          rateNoAgents: avgNonAgentHC > 0 ? +((totalLeavers / avgNonAgentHC) * 100).toFixed(1) : 0,
+        }
+      })()
+    : null
+
+  const turnoverRate         = turnoverSummary ? turnoverSummary.rate
+    : selectedYearSummary    ? selectedYearSummary.rate
+    : (hr.turnoverRate12mo ?? null)
+  const turnoverRateNoAgents = turnoverSummary ? turnoverSummary.rateNoAgents
+    : selectedYearSummary    ? selectedYearSummary.rateNoAgents
+    : (hr.turnoverRateNoAgents12mo ?? null)
   const turnoverPeriodLabel  = filterYear !== 'All' ? filterYear : 'Trailing 12 months'
 
   // ── Based In (region) + HQ/Field split — built from activeEmployees so these also

@@ -946,21 +946,28 @@ async function buildSnapshot(targetDate) {
     if (i === months12.length - 1) {
       let male = 0, female = 0, eth = 0, hub = 0;
       const byBU = {}, byType = {}, byJobTitle = {};
+      // roster — one tagged entry per counted employee this month, used by the frontend to
+      // recompute a BU/Type/VC-filtered average headcount for turnover (the byBU/byType maps
+      // above only support one dimension at a time, not an arbitrary AND of several).
+      const roster = [];
       headcountRows.forEach(r => {
         if (r.employeeStatus && !isActiveStatus(r.employeeStatus, r.AuxiliaryIndex1)) return;
         const g = cleanGender(r.gender);
         if (g === 'Male') male++; else if (g === 'Female') female++;
         if (r.virtualCompany === 'ETH') eth++; else if (r.virtualCompany === 'HUB') hub++;
         const sc = r.businessUnitDept || 'Unknown';
-        bumpBU(byBU, sectionToDept[sc] || sc, r.virtualCompany, g, r.employeeType);
+        const buCode = sectionToDept[sc] || sc;
+        bumpBU(byBU, buCode, r.virtualCompany, g, r.employeeType);
         bumpGenderMap(byType, r.employeeType, g);
         bumpGenderMap(byJobTitle, r.jobTitle, g);
+        roster.push({ no: r.AuxiliaryIndex1, buCode, type: r.employeeType || 'Unknown', vc: r.virtualCompany || 'Unknown' });
       });
-      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU, byType, byJobTitle };
+      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU, byType, byJobTitle, roster };
     }
 
     let count = 0, male = 0, female = 0, eth = 0, hub = 0;
     const byBU = {}, byType = {};
+    const roster = [];
     // No byJobTitle for past months — GetEmployee carries no job-title field at all
     // (only headcountRows/KFT_Employee_Headcount does, which is current-only), so there's
     // no historical source to fall back to, not even a partial/best-effort one.
@@ -976,6 +983,7 @@ async function buildSnapshot(targetDate) {
       const type = e.employeeType || typeByEmpNo[e.no];
       bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
       bumpGenderMap(byType, type, g);
+      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown' });
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return; // already counted above
@@ -992,38 +1000,58 @@ async function buildSnapshot(targetDate) {
       const vc = e.dimension1;
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
       const sc = e.dimension2 || 'Unknown';
+      const buCode = sectionToDept[sc] || sc;
       // KFT_Employment_History itself has no employeeType field (its "classification" is
       // a payroll-source distinction, not Permanent/Contract/etc) — fall back to the
       // unfiltered headcountRows lookup, which now covers departed people too.
-      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, typeByEmpNo[e.employeeNo]);
-      bumpGenderMap(byType, typeByEmpNo[e.employeeNo], g);
+      const type = typeByEmpNo[e.employeeNo];
+      bumpBU(byBU, buCode, vc, g, type);
+      bumpGenderMap(byType, type, g);
+      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown' });
     });
-    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {} };
+    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {}, roster };
   });
 
   // ── Turnover rate (last 12 months) ──────────────────────────────────────────
-  // Joiners = hired in that month; Leavers = separated in that month
+  // Joiners = hired in that month; Leavers = separated in that month. Both carry
+  // buCode/type/vc tags (same lookup priority as the roster above) so the frontend can
+  // recompute a BU/Type/Virtual-Company-filtered joiner/leaver count and rate — the
+  // top-level joiners/leavers/rate below stay company-wide for the no-filter default.
   const allForJoiners = [
-    ...employees.map(e => ({ no: e.no, hired: e.employmentDate })),
-    ...empHist.filter(e => !activeNosSet.has(e.employeeNo)).map(e => ({ no: e.employeeNo, hired: e.dateHired }))
+    ...employees.map(e => ({
+      no: e.no, hired: e.employmentDate,
+      buCode: buByEmpNo[e.no] || 'Unknown', type: e.employeeType || typeByEmpNo[e.no] || 'Unknown', vc: vcByEmpNo[e.no] || 'Unknown'
+    })),
+    ...empHist.filter(e => !activeNosSet.has(e.employeeNo)).map(e => ({
+      no: e.employeeNo, hired: e.dateHired,
+      buCode: sectionToDept[e.dimension2] || e.dimension2 || 'Unknown', type: typeByEmpNo[e.employeeNo] || 'Unknown', vc: e.dimension1 || 'Unknown'
+    }))
   ];
+  // Leavers only ever come from empHist — no active employee is a "leaver" by definition.
+  const allLeavers = empHist.map(e => ({
+    no: e.employeeNo, separated: e.dateSeparated,
+    buCode: sectionToDept[e.dimension2] || e.dimension2 || 'Unknown', type: typeByEmpNo[e.employeeNo] || 'Unknown', vc: e.dimension1 || 'Unknown'
+  }));
   const turnover = months12.map((m, i) => {
     const prevCount = i > 0 ? headcountEvolution[i - 1].count : headcountEvolution[0].count;
     const currCount = headcountEvolution[i].count;
     const avgCount  = (prevCount + currCount) / 2;
 
-    const joiners = allForJoiners.filter(e => {
+    const joinerRecords = allForJoiners.filter(e => {
       const d = e.hired ? new Date(e.hired) : null;
       return d && d >= m.start && d <= m.end;
-    }).length;
+    });
 
-    const leavers = empHist.filter(e => {
-      const d = e.dateSeparated ? new Date(e.dateSeparated) : null;
+    const leaverRecords = allLeavers.filter(e => {
+      const d = e.separated ? new Date(e.separated) : null;
       return d && d.getTime() > NULL_EPOCH && d >= m.start && d <= m.end;
-    }).length;
+    });
 
-    const rate = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0;
-    return { label: m.label, joiners, leavers, rate };
+    const rate = avgCount > 0 ? +((leaverRecords.length / avgCount) * 100).toFixed(1) : 0;
+    return {
+      label: m.label, joiners: joinerRecords.length, leavers: leaverRecords.length, rate,
+      roster: headcountEvolution[i].roster, joinerRecords, leaverRecords
+    };
   });
 
   // Trailing-12-month aggregate turnover rate, plus a variant that excludes Individual
@@ -1065,6 +1093,7 @@ async function buildSnapshot(targetDate) {
   const buildHistoricalBucket = (m) => {
     let count = 0, male = 0, female = 0, eth = 0, hub = 0;
     const byBU = {}, byType = {};
+    const roster = [];
     employees.forEach(e => {
       if (!isActiveStatus(e.employeeStatus, e.no)) return;
       const hired = e.employmentDate ? new Date(e.employmentDate) : null;
@@ -1077,6 +1106,7 @@ async function buildSnapshot(targetDate) {
       const type = e.employeeType || typeByEmpNo[e.no];
       bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
       bumpGenderMap(byType, type, g);
+      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown' });
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return;
@@ -1090,10 +1120,13 @@ async function buildSnapshot(targetDate) {
       const vc = e.dimension1;
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
       const sc = e.dimension2 || 'Unknown';
-      bumpBU(byBU, sectionToDept[sc] || sc, vc, g, typeByEmpNo[e.employeeNo]);
-      bumpGenderMap(byType, typeByEmpNo[e.employeeNo], g);
+      const buCode = sectionToDept[sc] || sc;
+      const type = typeByEmpNo[e.employeeNo];
+      bumpBU(byBU, buCode, vc, g, type);
+      bumpGenderMap(byType, type, g);
+      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown' });
     });
-    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {} };
+    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {}, roster };
   };
 
   const currentBucketLabel = months12[months12.length - 1].label;
@@ -1112,16 +1145,19 @@ async function buildSnapshot(targetDate) {
       const m = yMonths[i];
       const prevCount = i > 0 ? series[i - 1].count : series[0].count;
       const avgCount  = (prevCount + bucket.count) / 2;
-      const joiners = allForJoiners.filter(e => {
+      const joinerRecords = allForJoiners.filter(e => {
         const d = e.hired ? new Date(e.hired) : null;
         return d && d >= m.start && d <= m.end;
-      }).length;
-      const leavers = empHist.filter(e => {
-        const d = e.dateSeparated ? new Date(e.dateSeparated) : null;
+      });
+      const leaverRecords = allLeavers.filter(e => {
+        const d = e.separated ? new Date(e.separated) : null;
         return d && d.getTime() > NULL_EPOCH && d >= m.start && d <= m.end;
-      }).length;
-      const rate = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0;
-      return { label: bucket.label, joiners, leavers, rate };
+      });
+      const rate = avgCount > 0 ? +((leaverRecords.length / avgCount) * 100).toFixed(1) : 0;
+      return {
+        label: bucket.label, joiners: joinerRecords.length, leavers: leaverRecords.length, rate,
+        roster: bucket.roster, joinerRecords, leaverRecords
+      };
     });
 
     const totalLeavers = turnoverByYear[year].reduce((s, t) => s + t.leavers, 0);
@@ -1219,9 +1255,18 @@ async function buildSnapshot(targetDate) {
     if (stdPay.length === 0 && progPay.length === 0 && consPay.length === 0)
       console.warn('  WARNING: all payroll queries returned 0 rows — check BC web services are published');
 
-    // Exclude vendor/non-employee IDs that appear in MSP batches but are not headcount
-    const EXCLUDED_CONSULTANT_IDS = new Set(['KFTV729']);
-    consPay = consPay.filter(r => !EXCLUDED_CONSULTANT_IDS.has(r.ConsultantID));
+    // Exclude vendor/non-employee entries that appear in MSP consultant batches but aren't
+    // people on staff — accounting firms, agencies, etc. billed through the same "consultant"
+    // mechanism (e.g. KFTV431 "Cabinet D'Expertise Comptable ET D'Audit", ConsultantType
+    // 'Company'). Only IDs present in the employee table (KFT_Employee_Headcount) are real
+    // headcount; ConsultantType 'Company' is a second, independent signal for the same thing,
+    // kept as a belt-and-suspenders check in case a vendor ever gets a stray headcount row.
+    const hcNoSet = new Set(headcountRows.map(r => r.AuxiliaryIndex1).filter(Boolean));
+    consPay = consPay.filter(r => hcNoSet.has(r.ConsultantID) && r.ConsultantType !== 'Company');
+    // Same rule for standard/program payroll — currently always clean (every row already
+    // matches a headcount record) but kept as a guard in case a vendor ever lands here too.
+    stdPay  = stdPay.filter(r => hcNoSet.has(r.employeeNo));
+    progPay = progPay.filter(r => hcNoSet.has(r.employeeNo));
 
     // ── Consultant payroll currency-gap fallback ──────────────────────────────
     // Two scenarios:
