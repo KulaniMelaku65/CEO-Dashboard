@@ -30,18 +30,25 @@ export const ALL_SLIDES = [
   { id: 'lending',      label: 'Lending Ecosystem',     Page: LoanOps },
   { id: 'collections',  label: 'Collections & Revenue', Page: Collections },
   { id: 'risk',         label: 'Risk & Portfolio',      Page: Risk },
-  { id: 'hr',                    label: 'People & Operations', Page: HR },
-  { id: 'hr-summary',            label: 'HR Summary',          Page: PeopleHRSummary,      parentId: 'hr' },
+  { id: 'hr',                    label: 'People & Operations Old', Page: HR },
+  { id: 'hr-summary',            label: 'People & Culture',    Page: PeopleHRSummary },
   { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
   { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
   { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
-  { id: 'hr-page-review',        label: 'HR Analysis',          Page: HRPageReview,         parentId: 'hr' },
+  { id: 'hr-page-review',        label: 'HR Analysis',          Page: HRPageReview },
   { id: 'reports',               label: 'Reports & Insights',  Page: Reports },
 ]
 
-// Employee Cost / Cost by BU / MoM Comparison also hidden for now, per request.
-const HIDDEN_IDS = new Set(['employee-cost', 'employee-cost-detail', 'employee-cost-variance'])
-export const SLIDES = ALL_SLIDES.filter(s => (s.id === 'hr' || s.parentId === 'hr') && !HIDDEN_IDS.has(s.id))
+// People & Operations Old / Employee Cost / Cost by BU / MoM Comparison hidden for now,
+// per request. People & Culture (formerly HR Summary) and HR Analysis were previously
+// nested under People & Operations Old — promoted to standalone top-level entries (no
+// parentId) since the old parent page is now hidden and can no longer host them in the
+// sidebar's nested-children layout.
+const HIDDEN_IDS = new Set(['hr', 'employee-cost', 'employee-cost-detail', 'employee-cost-variance'])
+export const SLIDES = ALL_SLIDES.filter(s =>
+  (s.id === 'hr' || s.id === 'hr-summary' || s.id === 'hr-page-review' || s.parentId === 'hr') &&
+  !HIDDEN_IDS.has(s.id)
+)
 
 const SLIDE_MS = 12000
 

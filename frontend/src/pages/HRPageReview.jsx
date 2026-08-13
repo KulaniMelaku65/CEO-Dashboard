@@ -151,7 +151,7 @@ export default function HRPageReview({ data }) {
   }), [employeePayroll, filterBU, filterType, filterVC, filterSource, sectionToDept])
 
   const filteredPay = useMemo(() =>
-    filteredPayAll.filter(r => r.employeeStatus === 'Active'),
+    filteredPayAll.filter(r => r.isCountable),
     [filteredPayAll])
 
   // ── Filter active roster (live, from KFT_Employee_Headcount) ───────────────
@@ -187,10 +187,11 @@ export default function HRPageReview({ data }) {
       : filteredHC.reduce((s, r) => s + r.count, 0)
     // When the BC headcount query has no records for this filter (e.g. Individual Consultants
     // are not in the employee headcount table), fall back to unique employees from payroll —
-    // restricted to employeeStatus === 'Active' so people who merely had a payroll transaction
-    // at some point (but have since left) aren't counted as current headcount.
+    // restricted to countable (Active, or New with a complete record) so people who merely
+    // had a payroll transaction at some point (but have since left) aren't counted as
+    // current headcount — filteredPay is already isCountable-filtered, see above.
     if (hcCount === 0 && filteredPay.length > 0)
-      return new Set(filteredPay.filter(r => r.employeeStatus === 'Active').map(r => r.employeeNo)).size
+      return new Set(filteredPay.map(r => r.employeeNo)).size
     return hcCount
   }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, monthHeadcount])
 
@@ -287,14 +288,14 @@ export default function HRPageReview({ data }) {
       if (r.payrollSource === 'KIFIYA') { bu.kifiya += vp; sec.kifiya += vp; jt.kifiya += vp }
       else                              { bu.safee  += vp; sec.safee  += vp; jt.safee  += vp }
       bu.vcs.add(r.virtualCompany)
-      if (r.employeeStatus === 'Active') {
+      if (r.isCountable) {
         bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
       }
 
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
           employeeNo: r.employeeNo, name: r.name, virtualCompany: r.virtualCompany, payrollSource: r.payrollSource,
-          employeeStatus: r.employeeStatus,
+          employeeStatus: r.employeeStatus, isCountable: r.isCountable,
           kifiya: r.payrollSource === 'KIFIYA' ? vp : 0, safee: r.payrollSource === 'SAFEE' ? vp : 0
         })
       } else {
@@ -320,7 +321,7 @@ export default function HRPageReview({ data }) {
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
           employeeNo: r.employeeNo, name: r.name, virtualCompany: r.vc, payrollSource: null,
-          employeeStatus: 'Active', kifiya: 0, safee: 0
+          employeeStatus: r.status || 'Active', isCountable: true, kifiya: 0, safee: 0
         })
       }
     })
@@ -520,7 +521,7 @@ export default function HRPageReview({ data }) {
                                     <tr key={`${jtKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: EMP_ROW_BG }}>
                                       <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
                                         {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
-                                        {emp.employeeStatus && emp.employeeStatus !== 'Active' && (
+                                        {emp.employeeStatus && !emp.isCountable && (
                                           <span className="ml-1.5 text-[8px] font-bold px-1 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
                                             {emp.employeeStatus}
                                           </span>

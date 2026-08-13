@@ -225,7 +225,7 @@ export default function PeopleHRSummary({ data }) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Summary</h2>
+        <h2 className="text-lg font-extrabold text-navy mb-0.5">People & Culture</h2>
         <p className="text-xs text-muted font-medium">Workforce & cost snapshot — headcount, turnover, and CTC by business unit</p>
       </div>
 
