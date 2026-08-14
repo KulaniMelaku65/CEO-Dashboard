@@ -82,6 +82,7 @@ export default function EmployeeCost({ data }) {
   const [expandedJobs,      setExpandedJobs]     = useState({})
   const [expandedStatusBU,  setExpandedStatusBU] = useState({})
   const [expandedGenderJob, setExpandedGenderJob] = useState({})
+  const [payrollType,       setPayrollType]      = useState('All')
 
   // employeeNo → employeeType enrichment (headcount fallback, already computed by backend)
   const empNoToTypeMap = hr.empNoToType || {}
@@ -144,6 +145,18 @@ export default function EmployeeCost({ data }) {
   const vcData  = Object.entries(vcMap).map(([virtualCompany, total]) => ({ virtualCompany, total: Math.round(total) })).sort((a, b) => b.total - a.total)
   const deptData = Object.entries(deptMap).map(([dept, d]) => ({ dept, name: d.name, kifiya: Math.round(d.kifiya), safee: Math.round(d.safee) })).sort((a, b) => (b.kifiya + b.safee) - (a.kifiya + a.safee))
   const monthly  = (ec.payrollMonths || []).map(m => ({ label: m, total: Math.round(mthMap[m] || 0) }))
+
+  const typeByMonth = {}
+  ;(ec.monthlyByType || []).forEach(r => { typeByMonth[r.label] = r })
+  const chartData = payrollType === 'All'
+    ? monthly
+    : (ec.payrollMonths || []).map(m => {
+        const row = typeByMonth[m] || {}
+        const val = payrollType === 'Standard'   ? row.standard   :
+                    payrollType === 'Programme'  ? row.programme  :
+                                                   row.consultant
+        return { label: m, total: val || 0 }
+      })
 
   const totalCost = vcData.reduce((s, d) => s + (d.total || 0), 0)
   const eth = vcData.find(d => d.virtualCompany === 'ETH')?.total || 0
@@ -449,10 +462,27 @@ export default function EmployeeCost({ data }) {
 
         {/* Monthly trend line */}
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Employee Cost Monthly Trend</h3>
-          {monthly.length > 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-navy">Employee Cost Monthly Trend</h3>
+            <div className="flex gap-1">
+              {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setPayrollType(t)}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+                  style={{
+                    background: payrollType === t ? '#0A3A46' : '#f3f4f6',
+                    color:      payrollType === t ? '#fff'    : '#6b7280'
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={monthly} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
                 <XAxis
                   dataKey="label"
@@ -468,13 +498,13 @@ export default function EmployeeCost({ data }) {
                   width={52}
                 />
                 <Tooltip
-                  formatter={(v) => [fmtETBRaw(v) + ' ETB', 'Total Cost']}
+                  formatter={(v) => [fmtETBRaw(v) + ' ETB', payrollType === 'All' ? 'Total Cost' : `${payrollType} Payroll`]}
                   contentStyle={TOOLTIP_STYLE}
                 />
                 <Line
                   type="monotone"
                   dataKey="total"
-                  name="Total Cost"
+                  name={payrollType === 'All' ? 'Total Cost' : `${payrollType} Payroll`}
                   stroke={KIFIYA_COLOR}
                   strokeWidth={2.5}
                   dot={{ r: 3, fill: KIFIYA_COLOR }}

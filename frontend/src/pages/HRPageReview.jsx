@@ -39,6 +39,8 @@ export default function HRPageReview({ data }) {
   const rev = data.hrReview     || {}
   const ec  = data.employeeCost || {}
 
+  const [payrollType, setPayrollType] = useState('All')
+
   const employeePayroll     = rev.employeePayroll     || []
   const headcountMatrix     = rev.headcountMatrix     || []
   const allEmployeeTypes    = rev.allEmployeeTypes    || []
@@ -154,6 +156,17 @@ export default function HRPageReview({ data }) {
     filteredPayAll.filter(r => r.isCountable),
     [filteredPayAll])
 
+  // Payroll-type sub-filter for KPI cards only (doesn't affect the BU table or headcount)
+  const payTypePay = useMemo(() => {
+    if (payrollType === 'All') return filteredPayAll
+    return filteredPayAll.filter(r => {
+      if (payrollType === 'Standard')   return r.payrollSource === 'KIFIYA'
+      if (payrollType === 'Programme')  return r.payrollSource !== 'KIFIYA' && r.employeeType !== 'Individual Consultant'
+      if (payrollType === 'Consultant') return r.employeeType === 'Individual Consultant'
+      return true
+    })
+  }, [filteredPayAll, payrollType])
+
   // ── Filter active roster (live, from KFT_Employee_Headcount) ───────────────
   // Backstops the payroll-derived employee drill-down: some currently-active employees
   // have no payroll history at all yet (new hires) and would otherwise be missing.
@@ -197,14 +210,14 @@ export default function HRPageReview({ data }) {
 
   const { totalMonthly, kifiyaMonthly, safeeMonthly } = useMemo(() => {
     let total = 0, kifiya = 0, safee = 0
-    filteredPayAll.forEach(r => {
+    payTypePay.forEach(r => {
       const v = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
       total += v
       if (r.payrollSource === 'KIFIYA') kifiya += v
       else                              safee  += v
     })
     return { totalMonthly: total, kifiyaMonthly: kifiya, safeeMonthly: safee }
-  }, [filteredPayAll, effectiveMonth])
+  }, [payTypePay, effectiveMonth])
 
   const kifiyaSharePct = totalMonthly > 0 ? (kifiyaMonthly / totalMonthly) * 100 : 0
 
@@ -224,7 +237,7 @@ export default function HRPageReview({ data }) {
         })
       : []
 
-    const sum = filteredPayAll.reduce((s, r) =>
+    const sum = payTypePay.reduce((s, r) =>
       s + ytdMonths.reduce((ss, m) => ss + (r.monthTotals[m] || 0) + (r.pensionMonthTotals?.[m] || 0), 0), 0)
 
     const label = ytdMonths.length === 0 ? '—'
@@ -232,7 +245,7 @@ export default function HRPageReview({ data }) {
       : `${ytdMonths[0].split(' ')[0]} – ${ytdMonths[ytdMonths.length - 1]}`
 
     return { annualisedYTD: sum, ytdLabel: label }
-  }, [filteredPayAll, payrollMonths, effectiveMonth])
+  }, [payTypePay, payrollMonths, effectiveMonth])
 
   // ── Table rows: BU → Section → Job Title → Employee ─────────────────────
   const { tableRows } = useMemo(() => {
@@ -389,10 +402,29 @@ export default function HRPageReview({ data }) {
       {/* ── Filter bar (shared across all People & Operations pages) ── */}
       <PeopleOpsFilterBar data={data} />
 
+      {/* ── Payroll type filter ── */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">Payroll Type:</span>
+        {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
+          <button
+            key={t}
+            onClick={() => setPayrollType(t)}
+            className="px-3 py-1 rounded-full text-[10px] font-bold transition-colors"
+            style={{
+              background: payrollType === t ? NAVY    : 'rgba(2,64,79,0.08)',
+              color:      payrollType === t ? '#fff'  : NAVY,
+              border:     payrollType === t ? 'none'  : '1px solid rgba(2,64,79,0.2)'
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiBlock label="Headcount"              value={fmtN(totalHeadcount)}            sub={filterType !== 'All' ? `${filterType} employees` : 'Active employees'} accent={NAVY} />
-        <KpiBlock label="Monthly Cost to Company" value={hasCostData ? fmtN(Math.round(totalMonthly)) : '—'} sub={effectiveMonth + (hasCostData ? '' : ' · no payroll yet')} accent={NAVY} />
+        <KpiBlock label={`Monthly Cost${payrollType !== 'All' ? ` · ${payrollType}` : ' to Company'}`} value={hasCostData ? fmtN(Math.round(totalMonthly)) : '—'} sub={effectiveMonth + (hasCostData ? '' : ' · no payroll yet')} accent={NAVY} />
         <KpiBlock label="Annualised Cost YTD"     value={fmtN(Math.round(annualisedYTD))} sub={ytdLabel}      accent={NAVY} />
       </div>
 

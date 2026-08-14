@@ -558,6 +558,12 @@ async function buildSnapshot(targetDate) {
     bcAvail ? bc('KFT_Employment_History').catch(() => [])                                : Promise.resolve([])
   ]);
 
+  // KFT_Employee_Headcount now exposes an explicit 'employeeNo' column (Employee."No.").
+  // When BC returns the explicit column, AuxiliaryIndex1 (the legacy system-column alias
+  // for the root dataitem's primary key) may no longer be populated. Backfill it so all
+  // downstream references to r.AuxiliaryIndex1 continue to work without any other changes.
+  headcountRows.forEach(r => { if (!r.AuxiliaryIndex1 && r.employeeNo) r.AuxiliaryIndex1 = r.employeeNo; });
+
   // Persist every employee's job title (KFT_Employee_Headcount now covers Active and
   // Inactive/Terminated/New — its BC-side active-only filter was removed). A minority of
   // inactive rows still have a blank jobTitle in BC itself; this cache preserves whatever
@@ -1255,16 +1261,25 @@ async function buildSnapshot(targetDate) {
     if (stdPay.length === 0 && progPay.length === 0 && consPay.length === 0)
       console.warn('  WARNING: all payroll queries returned 0 rows — check BC web services are published');
 
-    // Exclude vendor/non-employee entries that appear in MSP consultant batches but aren't
-    // people on staff — accounting firms, agencies, etc. billed through the same "consultant"
-    // mechanism (e.g. KFTV431 "Cabinet D'Expertise Comptable ET D'Audit", ConsultantType
-    // 'Company'). Only IDs present in the employee table (KFT_Employee_Headcount) are real
-    // headcount; ConsultantType 'Company' is a second, independent signal for the same thing,
-    // kept as a belt-and-suspenders check in case a vendor ever gets a stray headcount row.
+    // KFTV-prefixed IDs are vendor/company contractors billed through the MSP mechanism
+    // (e.g. KFTV431 "Cabinet D'Expertise Comptable ET D'Audit", KFTV729, etc.).
+    // KFT-prefixed IDs are real employees — keep all of them, even when their MSP ID
+    // differs from the Employee table ID (BC data mismatch: e.g. KFT0959 in MSP vs
+    // KFT1100 in Employee table for Kedir Mussa).
+    //
+    // PayrollStatus is now exposed from the BC query (no server-side filter).
+    // Exclude Rejected batches for KFTV vendors and genuinely rejected KFT rows,
+    // but keep Rejected-status rows for KFT employees — these are often historical
+    // payments that were rejected during a consultant ID correction in BC master data.
+    consPay = consPay.filter(r => {
+      const id     = String(r.ConsultantID || '');
+      const status = String(r.PayrollStatus || '').toLowerCase();
+      if (id.startsWith('KFTV')) return false;          // always exclude vendors
+      if (status === 'rejected') return false;           // exclude genuinely rejected KFT batches
+      return true;
+    });
+    // For standard/programme payroll, the headcount set guards against stray vendor rows.
     const hcNoSet = new Set(headcountRows.map(r => r.AuxiliaryIndex1).filter(Boolean));
-    consPay = consPay.filter(r => hcNoSet.has(r.ConsultantID) && r.ConsultantType !== 'Company');
-    // Same rule for standard/program payroll — currently always clean (every row already
-    // matches a headcount record) but kept as a guard in case a vendor ever lands here too.
     stdPay  = stdPay.filter(r => hcNoSet.has(r.employeeNo));
     progPay = progPay.filter(r => hcNoSet.has(r.employeeNo));
 
@@ -1378,11 +1393,9 @@ async function buildSnapshot(targetDate) {
         }
 
         const toETB = v => (isForeign && rate > 0) ? Number(v) * rate : Number(v);
-        // Amount (FIN-Payments Header) is always in the payment currency — use it when a voucher
-        // exists. LineAmount (MSP Lines) is a fallback for no-voucher rows (LeftOuterJoin null).
-        // MSP Lines can store ETB or USD depending on batch setup, so applying an exchange rate
-        // to LineAmount risks double-conversion for ETB-batch consultants.
-        const rawAmount = Number(r.Amount || 0) || Number(r.LineAmount || 0);
+        // Always use the MSP Processing Line amount as the authoritative payroll figure.
+        // FINPaymentHeader is used only for CurrencyCode and ExchangeRate.
+        const rawAmount = Number(r.LineAmount || 0);
         return {
           ...r,
           employeeNo:       r.ConsultantID,
@@ -1467,6 +1480,8 @@ async function buildSnapshot(targetDate) {
     const pensionEntSrcMap  = {};  // "vc|src" → amount
     const pensionDeptMap    = {};  // parentBU → { kifiya, safee }
     const pensionMthMap     = {};  // monthLabel → amount
+    const pensionStdMthMap  = {};  // standard (KIFIYA) pension by month
+    const pensionProgMthMap = {};  // programme (SAFEE) pension by month
 
     stdPension.forEach(r => {
       if (!r.payrollPeriod || !r.employerPension) return;
@@ -1481,7 +1496,8 @@ async function buildSnapshot(targetDate) {
       pensionEntSrcMap[`${vc}|KIFIYA`] = (pensionEntSrcMap[`${vc}|KIFIYA`] || 0) + amt;
       if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
       pensionDeptMap[dept].kifiya += amt;
-      pensionMthMap[mth] = (pensionMthMap[mth] || 0) + amt;
+      pensionMthMap[mth]    = (pensionMthMap[mth]    || 0) + amt;
+      pensionStdMthMap[mth] = (pensionStdMthMap[mth] || 0) + amt;
     });
 
     progPension.forEach(r => {
@@ -1497,7 +1513,8 @@ async function buildSnapshot(targetDate) {
       pensionEntSrcMap[`${vc}|SAFEE`] = (pensionEntSrcMap[`${vc}|SAFEE`] || 0) + amt;
       if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
       pensionDeptMap[dept].safee += amt;
-      pensionMthMap[mth] = (pensionMthMap[mth] || 0) + amt;
+      pensionMthMap[mth]     = (pensionMthMap[mth]     || 0) + amt;
+      pensionProgMthMap[mth] = (pensionProgMthMap[mth] || 0) + amt;
     });
 
     // Build headcount name → employeeType and name → jobTitle maps
@@ -1639,14 +1656,24 @@ async function buildSnapshot(targetDate) {
     });
 
     // Monthly trend line — one data point per payroll period
-    const mthMap = {};
+    const mthMap  = {};
+    const typeMap = {};  // key → { key, label, standard, programme, consultant }
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
       const d     = new Date(r.payrollPeriod);
       const key   = d.getFullYear() * 100 + (d.getMonth() + 1);
       const label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      if (!mthMap[key]) mthMap[key] = { key, label, total: 0 };
-      mthMap[key].total += num(r.totalEarning);
+      if (!mthMap[key])  mthMap[key]  = { key, label, total: 0 };
+      if (!typeMap[key]) typeMap[key] = { key, label, standard: 0, programme: 0, consultant: 0 };
+      const amt = num(r.totalEarning);
+      mthMap[key].total += amt;
+      if ((r.employeeType || '').trim() === 'Individual Consultant') {
+        typeMap[key].consultant += amt;
+      } else if ((r.payrollSource || '') === 'KIFIYA') {
+        typeMap[key].standard   += amt;
+      } else {
+        typeMap[key].programme  += amt;
+      }
     });
 
     // Inject employer pension into all snapshot-level cost aggregations
@@ -1673,6 +1700,10 @@ async function buildSnapshot(targetDate) {
     });
     Object.values(mthMap).forEach(m => {
       m.total += pensionMthMap[m.label] || 0;
+    });
+    Object.values(typeMap).forEach(m => {
+      m.standard  += pensionStdMthMap[m.label]  || 0;
+      m.programme += pensionProgMthMap[m.label] || 0;
     });
 
     // byEntitySource computed after pension injection so totals are pension-inclusive
@@ -1874,6 +1905,14 @@ async function buildSnapshot(targetDate) {
       monthly: Object.values(mthMap)
         .sort((a, b) => a.key - b.key)
         .map(({ label, total }) => ({ label, total: Math.round(total) })),
+      monthlyByType: Object.values(typeMap)
+        .sort((a, b) => a.key - b.key)
+        .map(({ label, standard, programme, consultant }) => ({
+          label,
+          standard:   Math.round(standard),
+          programme:  Math.round(programme),
+          consultant: Math.round(consultant)
+        })),
       drillDown,
       buDrillDown,
       byJobDrillDown,
@@ -1910,10 +1949,14 @@ async function buildSnapshot(targetDate) {
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim();
       const empKey  = r.employeeNo || 'Unknown';
       const hc      = empNoToHC[empKey];
-      // Employee table (KFT_Employee_Headcount, by ID) is authoritative. Fall back to the
-      // payroll row's own field (e.g. 'Individual Consultant' on consPay rows, which have no
-      // employee-table record), then the headcount name-bridge as a last resort.
-      const et      = (hc && hc.type !== 'Unknown') ? hc.type
+      const isIC    = r.employeeType === 'Individual Consultant';
+      // Individual Consultant rows (consPay) always keep their explicit type — some consultants
+      // also have an Employee-table record with a different type (e.g. Permanent), but for
+      // payroll classification purposes the consPay row's own label is authoritative.
+      // For everyone else, the Employee table is authoritative, then the payroll row, then
+      // the headcount name-bridge as a last resort.
+      const et      = isIC ? 'Individual Consultant'
+        : (hc && hc.type !== 'Unknown') ? hc.type
         : (r.employeeType && r.employeeType !== 'Unknown') ? r.employeeType
         : hcByName[name.toLowerCase()] || 'Unknown';
       // Group by the employee's home department from the employee table when known,
@@ -1930,7 +1973,10 @@ async function buildSnapshot(targetDate) {
       const d       = new Date(r.payrollPeriod);
       const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const earning = num(r.totalEarning);
-      const key     = `${empKey}||${src}`;   // one record per employee per payroll source
+      // IC rows get a distinct key suffix so their amounts are never merged with a same-employee
+      // progPay record that has a different type — both progPay and consPay use payrollSource SAFEE,
+      // and without the suffix the first-processed (progPay) entry's type would win for both.
+      const key     = isIC ? `${empKey}||${src}||IC` : `${empKey}||${src}`;
       const status  = empStatusByNo[empKey] || 'Unknown';
       // isCountable mirrors hr.*'s Active/New-with-complete-details headcount rule — used by
       // the frontend to decide whether this person adds to Head Count, independent of the
