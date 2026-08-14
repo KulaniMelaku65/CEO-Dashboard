@@ -5,6 +5,8 @@ import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
+// Local-only toggle — keep false in anything committed/pushed.
+const SHOW_PAYROLL_TYPE_FILTER = false
 // Zebra-stripe / hover-state row backgrounds for the dark theme — swapped in place of
 // the near-white pastels this table used to use (those relied on white being the page
 // background; on the dark shell they'd leave white text on a near-white row = invisible).
@@ -403,23 +405,25 @@ export default function HRPageReview({ data }) {
       <PeopleOpsFilterBar data={data} />
 
       {/* ── Payroll type filter ── */}
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">Payroll Type:</span>
-        {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
-          <button
-            key={t}
-            onClick={() => setPayrollType(t)}
-            className="px-3 py-1 rounded-full text-[10px] font-bold transition-colors"
-            style={{
-              background: payrollType === t ? NAVY    : 'rgba(2,64,79,0.08)',
-              color:      payrollType === t ? '#fff'  : NAVY,
-              border:     payrollType === t ? 'none'  : '1px solid rgba(2,64,79,0.2)'
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      {SHOW_PAYROLL_TYPE_FILTER && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold text-muted uppercase tracking-wide">Payroll Type:</span>
+          {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
+            <button
+              key={t}
+              onClick={() => setPayrollType(t)}
+              className="px-3 py-1 rounded-full text-[10px] font-bold transition-colors"
+              style={{
+                background: payrollType === t ? NAVY    : 'rgba(2,64,79,0.08)',
+                color:      payrollType === t ? '#fff'  : NAVY,
+                border:     payrollType === t ? 'none'  : '1px solid rgba(2,64,79,0.2)'
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── KPI row 1 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
