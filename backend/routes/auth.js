@@ -1,6 +1,7 @@
 const router      = require('express').Router();
 const bcrypt      = require('bcryptjs');
 const jwt         = require('jsonwebtoken');
+const rateLimit   = require('express-rate-limit');
 const db          = require('../db');
 const requireAuth = require('../middleware/auth');
 
@@ -11,8 +12,20 @@ const COOKIE = {
   maxAge:   8 * 60 * 60 * 1000   // 8-hour session
 };
 
+// Rate limit login attempts only — not /me (hit on every page load/refresh to check the
+// existing session) or /logout, which would otherwise share the same brute-force budget
+// and get exhausted by normal browsing traffic rather than actual repeated login attempts.
+// skipSuccessfulRequests means a correct login doesn't count against the limit either —
+// only actual failed/incorrect attempts accumulate toward the 30-per-15-minutes cap.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many attempts — try again in 15 minutes.' }
+});
+
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password)
     return res.status(400).json({ error: 'Username and password are required.' });

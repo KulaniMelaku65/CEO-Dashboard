@@ -3,7 +3,6 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const authRoutes      = require('./routes/auth');
@@ -27,13 +26,6 @@ if (origins.length) {
 
 app.use(express.json({ limit: '10mb' })); // snapshots are large JSON blobs
 app.use(cookieParser());
-
-// Strict rate limit on auth routes to prevent brute-force
-app.use('/api/auth', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: 'Too many attempts — try again in 15 minutes.' }
-}));
 
 app.use('/api/auth',      authRoutes);
 app.use('/api/snapshots', snapshotRoutes);

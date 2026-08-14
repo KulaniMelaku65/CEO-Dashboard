@@ -1238,12 +1238,10 @@ async function buildSnapshot(targetDate) {
       'KFT_Payroll_Cost',              // 0 stdPay
       'KFT_Prog_Payroll_Cost',         // 1 progPay
       'KFT_Consultant_Payroll_Cost',   // 2 consPay
-      'KFT_Payroll_Pension',           // 3 stdPension
-      'KFT_Prog_Payroll_Pension',      // 4 progPension
-      'KFT_Period_Trans_Verify',       // 5 stdPT  — raw component rows (KIFIYA)
-      'KFT_Prog_Period_Trans_Verify'   // 6 progPT — raw component rows (SAFEE)
+      'KFT_Period_Trans_Verify',       // 3 stdPT  — raw component rows (KIFIYA)
+      'KFT_Prog_Period_Trans_Verify'   // 4 progPT — raw component rows (SAFEE)
     ];
-    let [stdPay, progPay, consPay, stdPension, progPension, stdPT, progPT] = await Promise.all(
+    let [stdPay, progPay, consPay, stdPT, progPT] = await Promise.all(
       payrollQueryNames.map(name =>
         bcAvail
           ? bc(name).catch(err => {
@@ -1360,7 +1358,7 @@ async function buildSnapshot(targetDate) {
 
     const allPay = [
       ...stdPay.map(r  => ({ ...r, payrollSource: 'KIFIYA' })),
-      ...progPay.map(r => ({ ...r, payrollSource: 'SAFEE'  })),
+      ...progPay.map(r => ({ ...r, payrollSource: 'SAFEE', _isProgPay: true })),
       ...consPay.map(r => {
         // BC returns PascalCase field names matching the AL column definitions.
         // PayPeriod is "M-YYYY" (e.g. "9-2025") — convert to ISO "YYYY-MM-01" for date parsing.
@@ -1420,17 +1418,16 @@ async function buildSnapshot(targetDate) {
     if (allPay.length === 0 && (stdPay.length + progPay.length + consPay.length) > 0)
       console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
 
-    // Employer pension lookup: employeeNo|monthLabel → pension amount
-    // Sourced from KFT_Payroll_Pension (Period Transactions) and KFT_Prog_Payroll_Pension.
-    // Employer Amount may be stored as negative in BC; we take Math.abs().
+    // Employer pension = exactly 11% of Total Earning per employee per month.
+    // Derived from stdPay/progPay (Payroll Processing Lines) — no Period Transactions needed.
     const pensionByEmpMonth = {};
-    [...stdPension, ...progPension].forEach(r => {
-      if (!r.payrollPeriod || !r.employeeNo || !r.employerPension) return;
+    [...stdPay, ...progPay].forEach(r => {
+      if (!r.payrollPeriod || !r.employeeNo || !r.totalEarning) return;
       const d = new Date(r.payrollPeriod);
       if (isNaN(d.getTime())) return;
       const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
       const key = `${r.employeeNo}|${mthLbl}`;
-      pensionByEmpMonth[key] = (pensionByEmpMonth[key] || 0) + Math.abs(r.employerPension);
+      pensionByEmpMonth[key] = (pensionByEmpMonth[key] || 0) + Math.abs(Number(r.totalEarning)) * 0.11;
     });
 
     // ── Period Transactions component lookup ──────────────────────────────────
@@ -1483,9 +1480,9 @@ async function buildSnapshot(targetDate) {
     const pensionStdMthMap  = {};  // standard (KIFIYA) pension by month
     const pensionProgMthMap = {};  // programme (SAFEE) pension by month
 
-    stdPension.forEach(r => {
-      if (!r.payrollPeriod || !r.employerPension) return;
-      const amt  = Math.abs(r.employerPension);
+    stdPay.forEach(r => {
+      if (!r.payrollPeriod || !r.totalEarning) return;
+      const amt  = Math.abs(Number(r.totalEarning)) * 0.11;
       const vc   = r.virtualCompany || 'Unknown';
       const d    = new Date(r.payrollPeriod);
       if (isNaN(d.getTime())) return;
@@ -1500,9 +1497,9 @@ async function buildSnapshot(targetDate) {
       pensionStdMthMap[mth] = (pensionStdMthMap[mth] || 0) + amt;
     });
 
-    progPension.forEach(r => {
-      if (!r.payrollPeriod || !r.employerPension) return;
-      const amt  = Math.abs(r.employerPension);
+    progPay.forEach(r => {
+      if (!r.payrollPeriod || !r.totalEarning) return;
+      const amt  = Math.abs(Number(r.totalEarning)) * 0.11;
       const vc   = r.virtualCompany || 'Unknown';
       const d    = new Date(r.payrollPeriod);
       if (isNaN(d.getTime())) return;
@@ -1667,7 +1664,12 @@ async function buildSnapshot(targetDate) {
       if (!typeMap[key]) typeMap[key] = { key, label, standard: 0, programme: 0, consultant: 0 };
       const amt = num(r.totalEarning);
       mthMap[key].total += amt;
-      if ((r.employeeType || '').trim() === 'Individual Consultant') {
+      // Use empNoToType as fallback — some BC rows have blank employeeType even when the
+      // Employee table has it set (e.g. stdPay rows for employees whose type is 'Individual
+      // Consultant' in the employee table). Without the fallback, reclassified KIFIYA IC rows
+      // (payrollSource='SAFEE' but r.employeeType='') land in programme instead of consultant.
+      const effectiveType = (r.employeeType || '').trim() || (empNoToType[r.employeeNo] || '');
+      if (effectiveType === 'Individual Consultant') {
         typeMap[key].consultant += amt;
       } else if ((r.payrollSource || '') === 'KIFIYA') {
         typeMap[key].standard   += amt;
@@ -1675,7 +1677,6 @@ async function buildSnapshot(targetDate) {
         typeMap[key].programme  += amt;
       }
     });
-
     // Inject employer pension into all snapshot-level cost aggregations
     Object.entries(pensionVCMap).forEach(([vc, amt]) => {
       vcMap[vc] = (vcMap[vc] || 0) + amt;
@@ -1701,9 +1702,22 @@ async function buildSnapshot(targetDate) {
     Object.values(mthMap).forEach(m => {
       m.total += pensionMthMap[m.label] || 0;
     });
-    Object.values(typeMap).forEach(m => {
-      m.standard  += pensionStdMthMap[m.label]  || 0;
-      m.programme += pensionProgMthMap[m.label] || 0;
+    // Pension is kept out of typeMap so monthlyByType totals are ERP-matching (raw Total Earning).
+    // Pension is still reflected in mthMap.total (full employer cost) and in the pension dimension maps.
+
+    // Raw per-source monthly totals — sums allPay.totalEarning grouped by origin payroll table.
+    // progPay rows are tagged _isProgPay to distinguish them from consPay (both payrollSource='SAFEE').
+    // This matches BC ERP page totals: all employees in the source table, no PT adjustment, no pension.
+    const rawMthBySource = {};
+    allPay.forEach(r => {
+      if (!r.payrollPeriod) return;
+      const d = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
+      if (!rawMthBySource[k]) rawMthBySource[k] = { standard: 0, programme: 0 };
+      if (r.payrollSource === 'KIFIYA') rawMthBySource[k].standard  += num(r.totalEarning);
+      else if (r._isProgPay)            rawMthBySource[k].programme += num(r.totalEarning);
+      // consPay rows omitted — consultant amounts come from typeMap
     });
 
     // byEntitySource computed after pension injection so totals are pension-inclusive
@@ -1907,10 +1921,10 @@ async function buildSnapshot(targetDate) {
         .map(({ label, total }) => ({ label, total: Math.round(total) })),
       monthlyByType: Object.values(typeMap)
         .sort((a, b) => a.key - b.key)
-        .map(({ label, standard, programme, consultant }) => ({
+        .map(({ key, label, consultant }) => ({
           label,
-          standard:   Math.round(standard),
-          programme:  Math.round(programme),
+          standard:   Math.round(rawMthBySource[key]?.standard  || 0),
+          programme:  Math.round(rawMthBySource[key]?.programme || 0),
           consultant: Math.round(consultant)
         })),
       drillDown,
@@ -2002,11 +2016,8 @@ async function buildSnapshot(targetDate) {
       e.total += effective;
       if (!_pensionAccounted.has(ptKey)) {
         _pensionAccounted.add(ptKey);
-        // Prefer status-filtered PT employer amounts (covers pension + all other employer costs).
-        // Fall back to the unfiltered pension queries if PT data not yet published.
-        const pensionAmt = ptDataAvailable
-          ? (ptEmployerByEmpMonth[ptKey] || 0)
-          : (pensionByEmpMonth[ptKey] || 0);
+        // Pension = 11% of Total Earning, pre-computed in pensionByEmpMonth.
+        const pensionAmt = pensionByEmpMonth[ptKey] || 0;
         e.pensionMonthTotals[mthLbl] = pensionAmt;
         e.pensionTotal += pensionAmt;
       }
