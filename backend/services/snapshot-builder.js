@@ -1449,8 +1449,10 @@ async function buildSnapshot(targetDate) {
     // SAFEE/consultant row's lookup, inflating that row's "effective" amount to match the
     // salary instead of the actual consultant fee. ptEmployerByEmpMonth (pension) stays
     // source-agnostic on purpose — see _pensionAccounted below.
-    const ptGrossByEmpMonth    = {};
-    const ptEmployerByEmpMonth = {};
+    const ptGrossByEmpMonth         = {};
+    const ptEmployerByEmpMonth      = {};  // source-agnostic (for empPayMap de-dup)
+    const ptKifiyaEmployerByEmpMonth = {}; // KIFIYA-only employer amounts (for pension dimension maps)
+    const ptSafeeEmployerByEmpMonth  = {}; // SAFEE-only employer amounts (for pension dimension maps)
     [...stdPT.map(r => ({ ...r, _ptSource: 'KIFIYA' })), ...progPT.map(r => ({ ...r, _ptSource: 'SAFEE' }))].forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo) return;
       const d = new Date(r.payrollPeriod);
@@ -1461,7 +1463,11 @@ async function buildSnapshot(targetDate) {
       const amt    = Number(r.amount || 0);
       const empAmt = Math.abs(Number(r.employerAmount || 0));
       if (amt > 0) ptGrossByEmpMonth[srcKey] = (ptGrossByEmpMonth[srcKey] || 0) + amt;
-      if (empAmt > 0) ptEmployerByEmpMonth[key] = (ptEmployerByEmpMonth[key] || 0) + empAmt;
+      if (empAmt > 0) {
+        ptEmployerByEmpMonth[key] = (ptEmployerByEmpMonth[key] || 0) + empAmt;
+        if (r._ptSource === 'KIFIYA') ptKifiyaEmployerByEmpMonth[key] = (ptKifiyaEmployerByEmpMonth[key] || 0) + empAmt;
+        else                          ptSafeeEmployerByEmpMonth[key]  = (ptSafeeEmployerByEmpMonth[key]  || 0) + empAmt;
+      }
     });
     const ptDataAvailable = (stdPT.length + progPT.length) > 0;
     if (ptDataAvailable) {
@@ -1470,49 +1476,70 @@ async function buildSnapshot(targetDate) {
       console.log('  Period Transactions: no rows — publish KFT_Period_Trans_Verify and KFT_Prog_Period_Trans_Verify as BC web services');
     }
 
-    // Pension aggregations by dimension — built from raw pension arrays so source attribution
-    // (KIFIYA vs SAFEE) is preserved without relying on the merged allPay loop.
+    // Employer-cost aggregations by dimension.
+    // When Period Transactions are available we use the actual employer amounts from BC
+    // (pension on basic salary + gratuity + any other employer-borne items) — this is more
+    // accurate than applying a flat 11% to Total Earning which includes allowances.
+    // When PT data is absent we fall back to 11% × Total Earning as an approximation.
     const pensionVCMap      = {};
     const pensionSrcMap     = {};
     const pensionEntSrcMap  = {};  // "vc|src" → amount
     const pensionDeptMap    = {};  // parentBU → { kifiya, safee }
     const pensionMthMap     = {};  // monthLabel → amount
-    const pensionStdMthMap  = {};  // standard (KIFIYA) pension by month
-    const pensionProgMthMap = {};  // programme (SAFEE) pension by month
+    const pensionStdMthMap  = {};  // standard (KIFIYA) employer cost by month
+    const pensionProgMthMap = {};  // programme (SAFEE) employer cost by month
 
-    stdPay.forEach(r => {
-      if (!r.payrollPeriod || !r.totalEarning) return;
-      const amt  = Math.abs(Number(r.totalEarning)) * 0.11;
-      const vc   = r.virtualCompany || 'Unknown';
-      const d    = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const mth  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      const dept = sectionToDept[r.businessUnitDept || 'Unknown'] || r.businessUnitDept || 'Unknown';
-      pensionVCMap[vc]                 = (pensionVCMap[vc] || 0) + amt;
-      pensionSrcMap['KIFIYA']          = (pensionSrcMap['KIFIYA'] || 0) + amt;
-      pensionEntSrcMap[`${vc}|KIFIYA`] = (pensionEntSrcMap[`${vc}|KIFIYA`] || 0) + amt;
-      if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
-      pensionDeptMap[dept].kifiya += amt;
-      pensionMthMap[mth]    = (pensionMthMap[mth]    || 0) + amt;
-      pensionStdMthMap[mth] = (pensionStdMthMap[mth] || 0) + amt;
+    // Quick empNo → {vc, dept} from headcount (authoritative).
+    // Full empNoToHC is built later; this copy is only for the pension dimension maps here.
+    const _hcVCDept = {};
+    headcountRows.forEach(r => {
+      const no = r.AuxiliaryIndex1;
+      if (no && !_hcVCDept[no]) _hcVCDept[no] = {
+        vc:   r.virtualCompany   || 'Unknown',
+        dept: sectionToDept[r.businessUnitDept || 'Unknown'] || r.businessUnitDept || 'Unknown'
+      };
     });
 
-    progPay.forEach(r => {
-      if (!r.payrollPeriod || !r.totalEarning) return;
-      const amt  = Math.abs(Number(r.totalEarning)) * 0.11;
-      const vc   = r.virtualCompany || 'Unknown';
-      const d    = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const mth  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      const dept = sectionToDept[r.businessUnitDept || 'Unknown'] || r.businessUnitDept || 'Unknown';
-      pensionVCMap[vc]                = (pensionVCMap[vc] || 0) + amt;
-      pensionSrcMap['SAFEE']          = (pensionSrcMap['SAFEE'] || 0) + amt;
-      pensionEntSrcMap[`${vc}|SAFEE`] = (pensionEntSrcMap[`${vc}|SAFEE`] || 0) + amt;
+    const _addPensionDim = (empNo, mth, amt, src, fallbackVC, fallbackBU) => {
+      const hc   = _hcVCDept[empNo] || {};
+      const vc   = hc.vc   || fallbackVC || 'Unknown';
+      const dept = hc.dept || sectionToDept[fallbackBU || 'Unknown'] || fallbackBU || 'Unknown';
+      pensionVCMap[vc]                  = (pensionVCMap[vc] || 0) + amt;
+      pensionSrcMap[src]                = (pensionSrcMap[src] || 0) + amt;
+      pensionEntSrcMap[`${vc}|${src}`]  = (pensionEntSrcMap[`${vc}|${src}`] || 0) + amt;
       if (!pensionDeptMap[dept]) pensionDeptMap[dept] = { kifiya: 0, safee: 0 };
-      pensionDeptMap[dept].safee += amt;
-      pensionMthMap[mth]     = (pensionMthMap[mth]     || 0) + amt;
-      pensionProgMthMap[mth] = (pensionProgMthMap[mth] || 0) + amt;
-    });
+      if (src === 'KIFIYA') { pensionDeptMap[dept].kifiya += amt; pensionStdMthMap[mth]  = (pensionStdMthMap[mth]  || 0) + amt; }
+      else                  { pensionDeptMap[dept].safee  += amt; pensionProgMthMap[mth] = (pensionProgMthMap[mth] || 0) + amt; }
+      pensionMthMap[mth] = (pensionMthMap[mth] || 0) + amt;
+    };
+
+    if (ptDataAvailable) {
+      // PT-based employer costs: pension (on basic salary), gratuity, and any other employer items
+      Object.entries(ptKifiyaEmployerByEmpMonth).forEach(([key, amt]) => {
+        const i = key.indexOf('|');
+        _addPensionDim(key.slice(0, i), key.slice(i + 1), amt, 'KIFIYA');
+      });
+      Object.entries(ptSafeeEmployerByEmpMonth).forEach(([key, amt]) => {
+        const i = key.indexOf('|');
+        _addPensionDim(key.slice(0, i), key.slice(i + 1), amt, 'SAFEE');
+      });
+    } else {
+      // Fallback: approximate employer pension as 11% of Total Earning
+      stdPay.forEach(r => {
+        if (!r.payrollPeriod || !r.totalEarning) return;
+        const d = new Date(r.payrollPeriod);
+        if (isNaN(d.getTime())) return;
+        _addPensionDim(r.employeeNo, d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+          Math.abs(Number(r.totalEarning)) * 0.11, 'KIFIYA', r.virtualCompany, r.businessUnitDept);
+      });
+      progPay.forEach(r => {
+        if (!r.payrollPeriod || !r.totalEarning) return;
+        const d = new Date(r.payrollPeriod);
+        if (isNaN(d.getTime())) return;
+        _addPensionDim(r.employeeNo, d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+          Math.abs(Number(r.totalEarning)) * 0.11, 'SAFEE', r.virtualCompany, r.businessUnitDept);
+      });
+    }
 
     // Build headcount name → employeeType and name → jobTitle maps
     // Both use a shortKey (first + last) to handle 3-part Ethiopian names where
@@ -2016,8 +2043,12 @@ async function buildSnapshot(targetDate) {
       e.total += effective;
       if (!_pensionAccounted.has(ptKey)) {
         _pensionAccounted.add(ptKey);
-        // Pension = 11% of Total Earning, pre-computed in pensionByEmpMonth.
-        const pensionAmt = pensionByEmpMonth[ptKey] || 0;
+        // Use actual employer amounts from Period Transactions (pension on basic salary +
+        // gratuity + other employer costs). Falls back to 11% of Total Earning approximation
+        // when PT data is not available (BC web services not yet published).
+        const pensionAmt = ptDataAvailable
+          ? (ptEmployerByEmpMonth[ptKey] || pensionByEmpMonth[ptKey] || 0)
+          : (pensionByEmpMonth[ptKey] || 0);
         e.pensionMonthTotals[mthLbl] = pensionAmt;
         e.pensionTotal += pensionAmt;
       }
