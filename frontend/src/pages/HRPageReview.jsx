@@ -434,9 +434,9 @@ export default function HRPageReview({ data }) {
 
       {/* ── KPI row 2 ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiBlock label="Kifiya (Monthly)"        value={hasCostData ? fmtN(Math.round(kifiyaMonthly)) : '—'} sub={effectiveMonth} accent={TEAL} />
-        <KpiBlock label="MSP/Program (Monthly)" value={hasCostData ? fmtN(Math.round(safeeMonthly)) : '—'} sub={effectiveMonth} accent="#1A7A72" small />
-        <KpiBlock label="Kifiya Share of Payroll"         value={hasCostData ? fmtPct(kifiyaSharePct) : '—'}
+        <KpiBlock label="Corporate (Monthly)"        value={hasCostData ? fmtN(Math.round(kifiyaMonthly)) : '—'} sub={effectiveMonth} accent={TEAL} />
+        <KpiBlock label="Programme (Monthly)" value={hasCostData ? fmtN(Math.round(safeeMonthly)) : '—'} sub={effectiveMonth} accent="#1A7A72" small />
+        <KpiBlock label="Corporate Share of Payroll"         value={hasCostData ? fmtPct(kifiyaSharePct) : '—'}
           sub={hasCostData ? `${fmtN(Math.round(kifiyaMonthly))} of ${fmtN(Math.round(totalMonthly))}` : 'No payroll data yet'} accent={ORANGE} />
       </div>
 
@@ -457,8 +457,8 @@ export default function HRPageReview({ data }) {
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px]">Head Count</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
                 <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Kifiya</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#EB7D23' }}>MSP/Program</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Corporate</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#EB7D23' }}>Programme</th>
               </tr>
             </thead>
             <tbody>

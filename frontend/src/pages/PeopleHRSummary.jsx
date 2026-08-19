@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell, LineChart, Line
@@ -45,6 +46,8 @@ export default function PeopleHRSummary({ data }) {
   const rev = data.hrReview  || {}
 
   const { filterBU, filterType, filterVC, filterSource, filterMonth, filterYear } = usePeopleOpsFilters()
+
+  const [locationView, setLocationView] = useState('city') // 'city' | 'country'
 
   const sectionToDept    = hr.sectionToDept    || {}
   const deptDisplayNames = hr.deptDisplayNames || {}
@@ -217,7 +220,7 @@ export default function PeopleHRSummary({ data }) {
           : 0
         const avgNonAgentHC = n > 0
           ? baseTurnoverSeries.reduce((s, t) =>
-              s + (t.roster || []).filter(r => matchesTurnoverFilters(r) && r.type !== 'Individual Consultant').length, 0) / n
+              s + (t.roster || []).filter(r => matchesTurnoverFilters(r) && !r.isAgent).length, 0) / n
           : 0
         return {
           rate:         avgHC         > 0 ? +((totalLeavers / avgHC)         * 100).toFixed(1) : 0,
@@ -248,15 +251,25 @@ export default function PeopleHRSummary({ data }) {
       .map(([region, count]) => ({ region, count }))
       .sort((a, b) => b.count - a.count)
   })()
+  const byCountry = (() => {
+    const counts = {}
+    activeEmployees.forEach(e => {
+      if (!e.country) return
+      counts[e.country] = (counts[e.country] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count)
+  })()
   const hqField = activeEmployees.reduce((acc, e) => {
     if (e.region) { if (e.isHQ) acc.hq++; else acc.field++ }
     return acc
   }, { hq: 0, field: 0 })
 
-  // ── Budget Line — cost split by payroll source (closest we have to "budget line") ──
+  // ── Budget Source — cost split by payroll source (Corporate vs Programme) ──
   const budgetLine = [
-    { name: 'KIFIYA',          value: filteredPayroll.filter(r => r.payrollSource === 'KIFIYA').reduce((s, r) => s + ((r.monthTotals[effectiveMonth]||0) + (r.pensionMonthTotals?.[effectiveMonth]||0)), 0) },
-    { name: 'MSP / Programme', value: filteredPayroll.filter(r => r.payrollSource === 'SAFEE').reduce((s, r) => s + ((r.monthTotals[effectiveMonth]||0) + (r.pensionMonthTotals?.[effectiveMonth]||0)), 0) },
+    { name: 'Corporate', value: filteredPayroll.filter(r => r.payrollSource === 'KIFIYA').reduce((s, r) => s + ((r.monthTotals[effectiveMonth]||0) + (r.pensionMonthTotals?.[effectiveMonth]||0)), 0) },
+    { name: 'Programme', value: filteredPayroll.filter(r => r.payrollSource === 'SAFEE').reduce((s, r) => s + ((r.monthTotals[effectiveMonth]||0) + (r.pensionMonthTotals?.[effectiveMonth]||0)), 0) },
   ].map(d => ({ ...d, value: Math.round(d.value) })).filter(d => d.value > 0)
   const budgetLineTotal = budgetLine.reduce((s, d) => s + d.value, 0)
   const BUDGET_COLORS = [TEAL, ORANGE]
@@ -317,7 +330,7 @@ export default function PeopleHRSummary({ data }) {
           <div className="p-4 flex flex-col justify-between" style={{ background: PANEL }}>
             <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Turnover Rate w/o Agents</p>
             <p className="font-extrabold text-white leading-none" style={{ fontSize: 40 }}>{fmtPct1(turnoverRateNoAgents)}</p>
-            <p className="text-[9px] mt-1" style={{ color: AXIS }}>Excl. Individual Consultants · {turnoverPeriodLabel}</p>
+            <p className="text-[9px] mt-1" style={{ color: AXIS }}>Excl. Agents · {turnoverPeriodLabel}</p>
           </div>
 
           <div className="p-4 flex flex-col justify-between" style={{ background: PANEL }}>
@@ -338,7 +351,7 @@ export default function PeopleHRSummary({ data }) {
         {/* ── Row 3: Business Unit + CTC By Business Unit ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 1, background: LINE }}>
           <div className="p-4" style={{ background: PANEL }}>
-            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: ORANGE }}>Business Unit</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: ORANGE }}>No of Employees by Business Unit</p>
             {buHeadcountData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={buHeadcountData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
@@ -370,13 +383,33 @@ export default function PeopleHRSummary({ data }) {
           </div>
         </div>
 
-        {/* ── Row 4: Based In + Budget Line ── */}
+        {/* ── Row 4: Based In + Budget Source ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 1, background: LINE }}>
           <div className="p-4" style={{ background: PANEL }}>
-            <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: ORANGE }}>Based In</p>
-            {byLocation.length > 0 ? (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Based In</p>
+              <div className="flex rounded-md overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+                {['city', 'country'].map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setLocationView(v)}
+                    className="px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide transition-colors"
+                    style={{
+                      background: locationView === v ? ORANGE : 'transparent',
+                      color:      locationView === v ? BG     : AXIS
+                    }}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(locationView === 'city' ? byLocation : byCountry).length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={byLocation.map(l => ({ name: l.region, count: l.count }))} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <BarChart
+                  data={(locationView === 'city' ? byLocation : byCountry).map(l => ({ name: l.region || l.country, count: l.count }))}
+                  margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 8, fill: AXIS }} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={60} />
                   <YAxis tick={{ fontSize: 9, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -389,7 +422,7 @@ export default function PeopleHRSummary({ data }) {
 
           <div className="p-4 flex items-center" style={{ background: PANEL }}>
             <div className="w-full">
-              <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: ORANGE }}>Budget Line</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide mb-3" style={{ color: ORANGE }}>Budget Source</p>
               {budgetLine.length > 0 ? (
                 <div className="flex items-center gap-6">
                   <PieChart width={160} height={160}>

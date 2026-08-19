@@ -57,18 +57,58 @@ async function callGroq(messages) {
   return upstream.json();
 }
 
-// POST /api/ai/chat — proxy to Gemini (preferred) or GROQ so the API key never reaches the browser
+// OpenAI's chat completions response is already in the { choices: [{ message }] }
+// shape the frontend expects, so no reshaping is needed here (unlike Gemini).
+async function callOpenAI(messages) {
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.OPENAI_KEY}`
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens:  400,
+      temperature: 0.5
+    })
+  });
+  if (!upstream.ok) {
+    const detail = (await upstream.text()).slice(0, 300);
+    console.error('OpenAI error:', upstream.status, detail);
+    return null;
+  }
+  return upstream.json();
+}
+
+// Provider is either forced via AI_PROVIDER ('gemini' | 'openai' | 'groq') or picked
+// by whichever key is set, in that same priority order — so dropping a new key into
+// .env is enough to switch providers without touching code.
+const PROVIDERS = {
+  gemini: { key: 'GEMINI_KEY', call: callGemini },
+  openai: { key: 'OPENAI_KEY', call: callOpenAI },
+  groq:   { key: 'GROQ_KEY',   call: callGroq   }
+};
+
+function resolveProvider() {
+  const forced = (process.env.AI_PROVIDER || '').toLowerCase();
+  if (forced && PROVIDERS[forced] && process.env[PROVIDERS[forced].key]) return forced;
+  return Object.keys(PROVIDERS).find(name => process.env[PROVIDERS[name].key]) || null;
+}
+
+// POST /api/ai/chat — proxy to whichever provider is configured so the API key never reaches the browser
 router.post('/chat', requireAuth, async (req, res) => {
   const { messages } = req.body || {};
   if (!Array.isArray(messages) || !messages.length)
     return res.status(400).json({ error: 'messages array is required.' });
 
-  const useGemini = !!process.env.GEMINI_KEY;
-  if (!useGemini && !process.env.GROQ_KEY)
+  const provider = resolveProvider();
+  if (!provider)
     return res.status(503).json({ error: 'AI service not configured.' });
 
   try {
-    const result = useGemini ? await callGemini(messages) : await callGroq(messages);
+    const result = await PROVIDERS[provider].call(messages);
     if (!result) return res.status(502).json({ error: 'AI service returned an error.' });
     res.json(result);
   } catch (e) {

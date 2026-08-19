@@ -130,8 +130,8 @@ export default function PeopleOpsFilterBar({ data }) {
         <Sel label="Employment Type" value={filterType}   onChange={setFilterType}   options={allEmployeeTypes} />
         <Sel label="Virtual Company" value={filterVC}     onChange={setFilterVC}     options={allVCs} />
         <Sel label="Budget Source"   value={filterSource} onChange={setFilterSource} options={[
-          { value: 'KIFIYA', label: 'Kifiya' },
-          { value: 'SAFEE',  label: 'MSP/Program' }
+          { value: 'KIFIYA', label: 'Corporate' },
+          { value: 'SAFEE',  label: 'Programme' }
         ]} />
         <Sel label="Month" value={selMonth} onChange={m => applyPeriod(m, selYear)} options={monthNames} />
         <Sel label="Year"  value={selYear}  onChange={y => applyPeriod(selMonth, y)} options={years} />

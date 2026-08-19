@@ -673,6 +673,19 @@ async function buildSnapshot(targetDate) {
     return hit ? hit[0] : 'Other';
   };
 
+  // Country rollup on top of the region buckets above — every Ethiopian region
+  // collapses to 'Ethiopia', foreign regions are already country names.
+  const REGION_TO_COUNTRY = {
+    'Addis Ababa': 'Ethiopia', 'Amhara': 'Ethiopia', 'Tigray': 'Ethiopia', 'Oromia': 'Ethiopia',
+    'SNNP': 'Ethiopia', 'Sidama': 'Ethiopia', 'Somali': 'Ethiopia', 'Diredawa': 'Ethiopia',
+    'South Africa': 'South Africa', 'Kenya': 'Kenya', 'Pakistan': 'Pakistan',
+  };
+  const normalizeCountry = (raw) => {
+    const region = normalizeRegion(raw);
+    if (!region) return null;
+    return REGION_TO_COUNTRY[region] || 'Other';
+  };
+
   // 'New' employees (recently onboarded, not yet transitioned to 'Active' in BC) count
   // as current headcount everywhere 'Active' does — same treatment, just a different
   // BC-side status label for someone who is genuinely on staff right now. BUT only once
@@ -763,6 +776,7 @@ async function buildSnapshot(targetDate) {
       employeeType:   r.employeeType  || '',
       virtualCompany: r.virtualCompany || '',
       region:         normalizeRegion(r.Employee_Location),
+      country:        normalizeCountry(r.Employee_Location),
       isHQ:           (r.Employee_Location || '').trim().toUpperCase().includes('HQ')
     });
 
@@ -792,6 +806,7 @@ async function buildSnapshot(targetDate) {
   // no location set or that don't match a known region are excluded rather than
   // dumped into a misleading "Unknown" bucket.
   const hrByLocation = {};
+  const hrByCountry  = {};
   let hqCount = 0, fieldCount = 0;
   headcountRows.forEach(r => {
     if (r.employeeStatus && !isActiveStatus(r.employeeStatus, r.AuxiliaryIndex1)) return;
@@ -799,10 +814,15 @@ async function buildSnapshot(targetDate) {
     const region = normalizeRegion(rawLoc);
     if (!region) return;
     hrByLocation[region] = (hrByLocation[region] || 0) + 1;
+    const country = REGION_TO_COUNTRY[region] || 'Other';
+    hrByCountry[country] = (hrByCountry[country] || 0) + 1;
     if (rawLoc.toUpperCase().includes('HQ')) hqCount++; else fieldCount++;
   });
   const byLocation = Object.entries(hrByLocation)
     .map(([region, count]) => ({ region, count }))
+    .sort((a, b) => b.count - a.count);
+  const byCountry = Object.entries(hrByCountry)
+    .map(([country, count]) => ({ country, count }))
     .sort((a, b) => b.count - a.count);
   const hqFieldSplit = { hq: hqCount, field: fieldCount };
 
@@ -904,8 +924,14 @@ async function buildSnapshot(targetDate) {
   // payroll-source distinction, not Permanent/Contract/etc) and were undercounting
   // hr.headcountEvolution[].byType relative to the bucket's real total count.
   const typeByEmpNo = {};
+  // employeeNo → Agent (boolean), from KFT_Employee_Headcount's explicit 'Agent' column.
+  // "Turnover Rate w/o Agents" excludes whoever this flags, not employeeType — Agents
+  // aren't the same population as Individual Consultants. Same full (all-statuses)
+  // coverage as typeByEmpNo above, so it's usable as a historical-bucket fallback too.
+  const agentByEmpNo = {};
   headcountRows.forEach(r => {
     if (r.AuxiliaryIndex1 && r.employeeType) typeByEmpNo[r.AuxiliaryIndex1] = r.employeeType;
+    if (r.AuxiliaryIndex1) agentByEmpNo[r.AuxiliaryIndex1] = !!r.Agent;
   });
 
   const vcByEmpNo = {};
@@ -950,7 +976,7 @@ async function buildSnapshot(targetDate) {
     // Last bucket = the current month: tally directly from headcountRows (the employee
     // table), the same source and same values already shown when no month filter is applied.
     if (i === months12.length - 1) {
-      let male = 0, female = 0, eth = 0, hub = 0;
+      let male = 0, female = 0, eth = 0, hub = 0, agents = 0;
       const byBU = {}, byType = {}, byJobTitle = {};
       // roster — one tagged entry per counted employee this month, used by the frontend to
       // recompute a BU/Type/VC-filtered average headcount for turnover (the byBU/byType maps
@@ -961,17 +987,19 @@ async function buildSnapshot(targetDate) {
         const g = cleanGender(r.gender);
         if (g === 'Male') male++; else if (g === 'Female') female++;
         if (r.virtualCompany === 'ETH') eth++; else if (r.virtualCompany === 'HUB') hub++;
+        const isAgent = !!r.Agent;
+        if (isAgent) agents++;
         const sc = r.businessUnitDept || 'Unknown';
         const buCode = sectionToDept[sc] || sc;
         bumpBU(byBU, buCode, r.virtualCompany, g, r.employeeType);
         bumpGenderMap(byType, r.employeeType, g);
         bumpGenderMap(byJobTitle, r.jobTitle, g);
-        roster.push({ no: r.AuxiliaryIndex1, buCode, type: r.employeeType || 'Unknown', vc: r.virtualCompany || 'Unknown' });
+        roster.push({ no: r.AuxiliaryIndex1, buCode, type: r.employeeType || 'Unknown', vc: r.virtualCompany || 'Unknown', isAgent });
       });
-      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, byBU, byType, byJobTitle, roster };
+      return { label: m.label, count: activeNosSet.size, male, female, eth, hub, agents, byBU, byType, byJobTitle, roster };
     }
 
-    let count = 0, male = 0, female = 0, eth = 0, hub = 0;
+    let count = 0, male = 0, female = 0, eth = 0, hub = 0, agents = 0;
     const byBU = {}, byType = {};
     const roster = [];
     // No byJobTitle for past months — GetEmployee carries no job-title field at all
@@ -987,9 +1015,14 @@ async function buildSnapshot(targetDate) {
       const vc = vcByEmpNo[e.no];
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
       const type = e.employeeType || typeByEmpNo[e.no];
+      // Agent is only carried by headcountRows (KFT_Employee_Headcount), which has no
+      // per-month history — agentByEmpNo[e.no] is that source's current/latest value used
+      // as a best-effort fallback for past months, same limitation as typeByEmpNo above.
+      const isAgent = agentByEmpNo[e.no] || false;
+      if (isAgent) agents++;
       bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
       bumpGenderMap(byType, type, g);
-      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown' });
+      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown', isAgent });
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return; // already counted above
@@ -1011,11 +1044,13 @@ async function buildSnapshot(targetDate) {
       // a payroll-source distinction, not Permanent/Contract/etc) — fall back to the
       // unfiltered headcountRows lookup, which now covers departed people too.
       const type = typeByEmpNo[e.employeeNo];
+      const isAgent = agentByEmpNo[e.employeeNo] || false;
+      if (isAgent) agents++;
       bumpBU(byBU, buCode, vc, g, type);
       bumpGenderMap(byType, type, g);
-      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown' });
+      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown', isAgent });
     });
-    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {}, roster };
+    return { label: m.label, count, male, female, eth, hub, agents, byBU, byType, byJobTitle: {}, roster };
   });
 
   // ── Turnover rate (last 12 months) ──────────────────────────────────────────
@@ -1060,21 +1095,18 @@ async function buildSnapshot(targetDate) {
     };
   });
 
-  // Trailing-12-month aggregate turnover rate, plus a variant that excludes Individual
-  // Consultants from the headcount base. empHist (the leavers source above) has no
-  // employeeType field and in practice almost never contains consultants at all — they
-  // exit via payroll simply stopping, not a formal separation record — so the leavers
-  // count is already consultant-free; only the headcount denominator differs here.
+  // Trailing-12-month aggregate turnover rate, plus a variant that excludes Agents
+  // (KFT_Employee_Headcount's explicit 'Agent' flag — a distinct population from Individual
+  // Consultants) from the headcount base. empHist (the leavers source above) has no Agent
+  // field and in practice almost never contains agents at all — they exit via payroll simply
+  // stopping, not a formal separation record — so the leavers count is already agent-free;
+  // only the headcount denominator differs here.
   const totalLeavers12mo = turnover.reduce((s, t) => s + t.leavers, 0);
   const avgHeadcount12mo = headcountEvolution.length > 0
     ? headcountEvolution.reduce((s, m) => s + m.count, 0) / headcountEvolution.length
     : 0;
   const avgNonAgentHeadcount12mo = headcountEvolution.length > 0
-    ? headcountEvolution.reduce((s, m) => {
-        const agents = m.byType?.['Individual Consultant'];
-        const agentCount = agents ? (agents.male || 0) + (agents.female || 0) : 0;
-        return s + (m.count - agentCount);
-      }, 0) / headcountEvolution.length
+    ? headcountEvolution.reduce((s, m) => s + (m.count - (m.agents || 0)), 0) / headcountEvolution.length
     : 0;
   const turnoverRate12mo         = avgHeadcount12mo > 0 ? +((totalLeavers12mo / avgHeadcount12mo) * 100).toFixed(1) : 0;
   const turnoverRateNoAgents12mo = avgNonAgentHeadcount12mo > 0 ? +((totalLeavers12mo / avgNonAgentHeadcount12mo) * 100).toFixed(1) : 0;
@@ -1097,7 +1129,7 @@ async function buildSnapshot(targetDate) {
     });
   };
   const buildHistoricalBucket = (m) => {
-    let count = 0, male = 0, female = 0, eth = 0, hub = 0;
+    let count = 0, male = 0, female = 0, eth = 0, hub = 0, agents = 0;
     const byBU = {}, byType = {};
     const roster = [];
     employees.forEach(e => {
@@ -1110,9 +1142,11 @@ async function buildSnapshot(targetDate) {
       const vc = vcByEmpNo[e.no];
       if (vc === 'ETH') eth++; else if (vc === 'HUB') hub++;
       const type = e.employeeType || typeByEmpNo[e.no];
+      const isAgent = agentByEmpNo[e.no] || false;
+      if (isAgent) agents++;
       bumpBU(byBU, buByEmpNo[e.no], vc, g, type);
       bumpGenderMap(byType, type, g);
-      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown' });
+      roster.push({ no: e.no, buCode: buByEmpNo[e.no] || 'Unknown', type: type || 'Unknown', vc: vc || 'Unknown', isAgent });
     });
     empHist.forEach(e => {
       if (activeNosSet.has(e.employeeNo)) return;
@@ -1128,11 +1162,13 @@ async function buildSnapshot(targetDate) {
       const sc = e.dimension2 || 'Unknown';
       const buCode = sectionToDept[sc] || sc;
       const type = typeByEmpNo[e.employeeNo];
+      const isAgent = agentByEmpNo[e.employeeNo] || false;
+      if (isAgent) agents++;
       bumpBU(byBU, buCode, vc, g, type);
       bumpGenderMap(byType, type, g);
-      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown' });
+      roster.push({ no: e.employeeNo, buCode, type: type || 'Unknown', vc: vc || 'Unknown', isAgent });
     });
-    return { label: m.label, count, male, female, eth, hub, byBU, byType, byJobTitle: {}, roster };
+    return { label: m.label, count, male, female, eth, hub, agents, byBU, byType, byJobTitle: {}, roster };
   };
 
   const currentBucketLabel = months12[months12.length - 1].label;
@@ -1169,11 +1205,7 @@ async function buildSnapshot(targetDate) {
     const totalLeavers = turnoverByYear[year].reduce((s, t) => s + t.leavers, 0);
     const avgHC = series.length > 0 ? series.reduce((s, m) => s + m.count, 0) / series.length : 0;
     const avgNonAgentHC = series.length > 0
-      ? series.reduce((s, m) => {
-          const agents = m.byType?.['Individual Consultant'];
-          const agentCount = agents ? (agents.male || 0) + (agents.female || 0) : 0;
-          return s + (m.count - agentCount);
-        }, 0) / series.length
+      ? series.reduce((s, m) => s + (m.count - (m.agents || 0)), 0) / series.length
       : 0;
     turnoverSummaryByYear[year] = {
       rate:         avgHC > 0 ? +((totalLeavers / avgHC) * 100).toFixed(1) : 0,
@@ -1194,6 +1226,7 @@ async function buildSnapshot(targetDate) {
     byDeptHierarchy,
     byVirtualCompany: Object.entries(hrByVirtualCo).map(([virtualCompany, count]) => ({ virtualCompany, count })).sort((a, b) => b.count - a.count),
     byLocation,
+    byCountry,
     hqFieldSplit,
     byJobTitle,
     seniorityList,
