@@ -6,7 +6,7 @@ const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
 // Local-only toggle — keep false in anything committed/pushed.
-const SHOW_PAYROLL_TYPE_FILTER = true
+const SHOW_PAYROLL_TYPE_FILTER = false
 // Zebra-stripe / hover-state row backgrounds for the dark theme — swapped in place of
 // the near-white pastels this table used to use (those relied on white being the page
 // background; on the dark shell they'd leave white text on a near-white row = invisible).

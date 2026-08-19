@@ -1473,6 +1473,15 @@ async function buildSnapshot(targetDate) {
     // salary's PT amount leak into their SAFEE/consultant row.
     const ptKifiyaEmployerByEmpMonth = {}; // KIFIYA-only employer amounts (for pension dimension maps)
     const ptSafeeEmployerByEmpMonth  = {}; // SAFEE-only employer amounts (for pension dimension maps)
+    // AuxiliaryIndex2 'E001' is the Basic Salary wage-type component (verified against live
+    // data: the D002 pension component's employerAmount is exactly 11% of the same
+    // employee/month's E001 amount, every time — never 11% of Total Earning, which includes
+    // allowances E001 doesn't). Captured per source|empNo|month so that when an employee/month
+    // has PT rows but BC simply never posted a D002 pension component for them (does happen —
+    // ~3% of KIFIYA rows), the fallback below can still use 11% of their real PT-reported Basic
+    // Salary instead of falling all the way back to 11% of Total Earning.
+    const ptKifiyaBasicByEmpMonth = {};
+    const ptSafeeBasicByEmpMonth  = {};
     [...stdPT.map(r => ({ ...r, _ptSource: 'KIFIYA' })), ...progPT.map(r => ({ ...r, _ptSource: 'SAFEE' }))].forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo) return;
       const d = new Date(r.payrollPeriod);
@@ -1483,6 +1492,11 @@ async function buildSnapshot(targetDate) {
       if (empAmt > 0) {
         if (r._ptSource === 'KIFIYA') ptKifiyaEmployerByEmpMonth[key] = (ptKifiyaEmployerByEmpMonth[key] || 0) + empAmt;
         else                          ptSafeeEmployerByEmpMonth[key]  = (ptSafeeEmployerByEmpMonth[key]  || 0) + empAmt;
+      }
+      if (r.AuxiliaryIndex2 === 'E001') {
+        const basicAmt = Math.abs(Number(r.amount || 0));
+        if (r._ptSource === 'KIFIYA') ptKifiyaBasicByEmpMonth[key] = (ptKifiyaBasicByEmpMonth[key] || 0) + basicAmt;
+        else                          ptSafeeBasicByEmpMonth[key]  = (ptSafeeBasicByEmpMonth[key]  || 0) + basicAmt;
       }
     });
     const ptDataAvailable = (stdPT.length + progPT.length) > 0;
@@ -2061,11 +2075,17 @@ async function buildSnapshot(targetDate) {
         _pensionAccounted.add(pensionAcctKey);
         // Use source-specific PT employer amounts so KIFIYA employees get pension only
         // from Period Transactions (matching report 50230) and SAFEE employees only from
-        // Prog-Period Transactions (matching report 50231). Falls back to 11% of Total
-        // Earning when PT data is not available.
-        const srcPtMap = src === 'KIFIYA' ? ptKifiyaEmployerByEmpMonth : ptSafeeEmployerByEmpMonth;
+        // Prog-Period Transactions (matching report 50231). BC occasionally posts PT rows
+        // for an employee/month with no D002 pension component at all (~3% of KIFIYA rows) —
+        // when that happens, fall back to 11% of that same employee/month's PT-reported
+        // Basic Salary (E001) rather than jumping straight to Total Earning, since pension
+        // is basic-salary-based, not total-earning-based. Only when PT has no data
+        // whatsoever for the key (BC web services not yet published, or a genuine gap) does
+        // this fall back to 11% of Total Earning as a last resort.
+        const srcPtMap    = src === 'KIFIYA' ? ptKifiyaEmployerByEmpMonth : ptSafeeEmployerByEmpMonth;
+        const srcBasicMap = src === 'KIFIYA' ? ptKifiyaBasicByEmpMonth    : ptSafeeBasicByEmpMonth;
         const pensionAmt = ptDataAvailable
-          ? (srcPtMap[ptKey] || pensionByEmpMonth[ptKey] || 0)
+          ? (srcPtMap[ptKey] || (srcBasicMap[ptKey] ? srcBasicMap[ptKey] * 0.11 : 0) || pensionByEmpMonth[ptKey] || 0)
           : (pensionByEmpMonth[ptKey] || 0);
         e.pensionMonthTotals[mthLbl] = pensionAmt;
         e.pensionTotal += pensionAmt;
