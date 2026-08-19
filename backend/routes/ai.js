@@ -10,12 +10,18 @@ function toGeminiBody(messages) {
   return {
     ...(system && { systemInstruction: { parts: [{ text: system }] } }),
     contents,
-    generationConfig: { maxOutputTokens: 400, temperature: 0.5 }
+    // gemini-3.6-flash spends output tokens on hidden "thinking" before the visible reply —
+    // an uncapped thinking budget regularly ate the entire 400-token limit on ordinary
+    // questions, cutting the answer off mid-sentence with no visible text at all. Capping
+    // thinkingBudget and raising the ceiling leaves guaranteed room for the actual answer.
+    generationConfig: { maxOutputTokens: 800, temperature: 0.5, thinkingConfig: { thinkingBudget: 200 } }
   };
 }
 
 async function callGemini(messages) {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  // gemini-2.0-flash was retired by Google (returns 404 for everyone, not key-specific) —
+  // gemini-3.6-flash is the current default. Override with GEMINI_MODEL if that changes again.
+  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const upstream = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_KEY}`,
     {

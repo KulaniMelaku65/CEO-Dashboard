@@ -224,7 +224,7 @@ export default function App() {
         />
       </div>
 
-      <ChatBot data={data} />
+      <ChatBot data={data} pageId={SLIDES[slide]?.id} pageLabel={SLIDES[slide]?.label} />
     </div>
   )
 }

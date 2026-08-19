@@ -1,7 +1,63 @@
 import { useState, useRef, useEffect } from 'react'
 import { ai } from '../lib/api.js'
 
-export default function ChatBot({ data }) {
+// Which top-level snapshot keys are relevant per page — without this, the context
+// was always built by JSON.stringify-ing the whole snapshot from the top and slicing
+// to 4000 chars, so on the HR pages (and most others) the budget was spent entirely on
+// budgetActual/budgetOverview/cashflow/reports before the serializer ever reached hr or
+// hrReview, and the assistant had no HR data to answer from regardless of what page the
+// user was on.
+const PAGE_DATA_KEYS = {
+  'overview':               ['budgetOverview', 'budgetActual', 'cashflow'],
+  'financial':               ['reports', 'budgetActual'],
+  'budget':                  ['corporateBudget', 'budgetOverview'],
+  'lending':                  ['lending', 'loanOps'],
+  'collections':              ['budgetActual'],
+  'risk':                     ['risk'],
+  'hr':                       ['hr', 'hrReview'],
+  'hr-summary':               ['hr', 'hrReview'],
+  'employee-cost':            ['employeeCost', 'hr'],
+  'employee-cost-detail':     ['employeeCost'],
+  'employee-cost-variance':   ['employeeCost'],
+  'hr-page-review':           ['hr', 'hrReview'],
+  'reports':                  ['reports']
+}
+
+// Per-employee/per-transaction detail and raw lookup maps the model doesn't need to
+// answer headline questions — stripped so they don't crowd out the aggregate figures
+// (turnover rate, headcount, CTC) within the char budget. empNoToType/empNoToJobTitle
+// in particular are pure employeeNo→value lookup tables for the frontend's own joins,
+// not summaries — together they ran to ~50k characters with zero chat value.
+const HEAVY_KEYS = new Set([
+  'roster', 'employees', 'joinerRecords', 'leaverRecords', 'employeePayroll',
+  'buDrillDown', 'activeRoster', 'headcountMatrix', 'seniorityList',
+  'empNoToType', 'empNoToJobTitle', 'byJobTitle'
+])
+function stripHeavy(val) {
+  if (Array.isArray(val)) return val.map(stripHeavy)
+  if (val && typeof val === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(val)) {
+      if (HEAVY_KEYS.has(k)) continue
+      // headcountEvolution is a 12-20 month time series with a full per-BU/per-type
+      // breakdown each — only the most recent few months are worth the space for a
+      // "what's headcount right now" style question.
+      if (k === 'headcountEvolution' && Array.isArray(v)) { out[k] = v.slice(-3).map(stripHeavy); continue }
+      out[k] = stripHeavy(v)
+    }
+    return out
+  }
+  return val
+}
+
+function buildContext(data, pageId) {
+  const keys = PAGE_DATA_KEYS[pageId] || Object.keys(data || {})
+  const relevant = { asOf: data?.asOf }
+  keys.forEach(k => { if (data?.[k] !== undefined) relevant[k] = stripHeavy(data[k]) })
+  return JSON.stringify(relevant).slice(0, 20000)
+}
+
+export default function ChatBot({ data, pageId, pageLabel }) {
   const [open, setOpen]       = useState(false)
   const [messages, setMessages] = useState([
     { role: 'assistant', content: "Hi! I'm Kifiya's AI assistant. Ask me anything about the dashboard data." }
@@ -23,7 +79,8 @@ export default function ChatBot({ data }) {
     setLoading(true)
     try {
       const system = `You are an executive dashboard assistant for Kifiya Financial Technology. Be concise.
-Current data snapshot: ${JSON.stringify(data).slice(0, 4000)}`
+The user is currently viewing the "${pageLabel || 'dashboard'}" page — prioritize that page's data when answering.
+Current data snapshot: ${buildContext(data, pageId)}`
       const r = await ai.chat([{ role: 'system', content: system }, ...next])
       const j = await r.json()
       const reply = j.choices?.[0]?.message?.content || j.error || 'No response.'
