@@ -1432,39 +1432,22 @@ async function buildSnapshot(targetDate) {
 
     // ── Period Transactions component lookup ──────────────────────────────────
     // Q50228/50229 return one row per wage-type component per employee per period
-    // (no aggregation). We build two per-employee-per-month maps:
-    //   ptGrossByEmpMonth   — sum of positive Amount values = gross earnings from PT
-    //   ptEmployerByEmpMonth — sum of abs(Employer Amount) = all employer-side costs
-    //
-    // ptGross is compared against Lines.Total Earning in empPayMap below.
-    // Any gap (ptGross > linesEarning) represents pay components that exist in
-    // Period Transactions but are not captured in the Lines summary fields.
-    // ptEmployer replaces pensionByEmpMonth when PT data is available because it
-    // covers ALL employer-borne costs (pension + gratuity + any other employer items)
-    // and is filtered to committed batches, unlike the unfiltered pension queries.
-    // ptGrossByEmpMonth is keyed WITH payrollSource (KIFIYA for stdPT, SAFEE for progPT).
-    // Without the source in the key, an employee who is paid from more than one source in
-    // the same month (e.g. a Permanent staffer who is ALSO an Individual Consultant, like
-    // KFT0028) would have their much larger KIFIYA salary's PT gross leak into the unrelated
-    // SAFEE/consultant row's lookup, inflating that row's "effective" amount to match the
-    // salary instead of the actual consultant fee. ptEmployerByEmpMonth (pension) stays
-    // source-agnostic on purpose — see _pensionAccounted below.
-    const ptGrossByEmpMonth         = {};
-    const ptEmployerByEmpMonth      = {};  // source-agnostic (for empPayMap de-dup)
+    // (no aggregation). We sum abs(Employer Amount) per employee per month, split by
+    // source: KIFIYA employees get pension only from stdPT (report 50230), SAFEE
+    // employees only from progPT (report 50231). Kept source-scoped so an employee
+    // paid from more than one source in the same month (e.g. a Permanent staffer who
+    // is ALSO an Individual Consultant, like KFT0028) doesn't have their KIFIYA
+    // salary's PT amount leak into their SAFEE/consultant row.
     const ptKifiyaEmployerByEmpMonth = {}; // KIFIYA-only employer amounts (for pension dimension maps)
     const ptSafeeEmployerByEmpMonth  = {}; // SAFEE-only employer amounts (for pension dimension maps)
     [...stdPT.map(r => ({ ...r, _ptSource: 'KIFIYA' })), ...progPT.map(r => ({ ...r, _ptSource: 'SAFEE' }))].forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo) return;
       const d = new Date(r.payrollPeriod);
       if (isNaN(d.getTime())) return;
-      const mthLbl    = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      const key       = `${r.employeeNo}|${mthLbl}`;
-      const srcKey    = `${r._ptSource}|${key}`;
-      const amt    = Number(r.amount || 0);
+      const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const key    = `${r.employeeNo}|${mthLbl}`;
       const empAmt = Math.abs(Number(r.employerAmount || 0));
-      if (amt > 0) ptGrossByEmpMonth[srcKey] = (ptGrossByEmpMonth[srcKey] || 0) + amt;
       if (empAmt > 0) {
-        ptEmployerByEmpMonth[key] = (ptEmployerByEmpMonth[key] || 0) + empAmt;
         if (r._ptSource === 'KIFIYA') ptKifiyaEmployerByEmpMonth[key] = (ptKifiyaEmployerByEmpMonth[key] || 0) + empAmt;
         else                          ptSafeeEmployerByEmpMonth[key]  = (ptSafeeEmployerByEmpMonth[key]  || 0) + empAmt;
       }
@@ -2032,27 +2015,30 @@ async function buildSnapshot(targetDate) {
       };
       const e          = empPayMap[key];
       const ptKey      = `${empKey}|${mthLbl}`;
-      // If Period Transactions data is available, use the gross from PT when it
-      // exceeds Lines.Total Earning — this captures pay components that exist in
-      // Period Transactions but are not reflected in the Lines summary fields.
-      // Keyed by source (see ptGrossByEmpMonth build) so a KIFIYA salary's PT gross
-      // never leaks into a same-employee SAFEE/consultant row for the same month.
-      const ptGross    = ptDataAvailable ? (ptGrossByEmpMonth[`${src}|${ptKey}`] || 0) : 0;
-      const effective  = ptGross > earning ? ptGross : earning;
-      e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + effective;
-      e.total += effective;
-      if (!_pensionAccounted.has(ptKey)) {
-        _pensionAccounted.add(ptKey);
-        // Use actual employer amounts from Period Transactions (pension on basic salary +
-        // gratuity + other employer costs). Falls back to 11% of Total Earning approximation
-        // when PT data is not available (BC web services not yet published).
+      // Source-scoped pension key so KIFIYA and SAFEE entries for the same employee
+      // are accounted independently (prevents SAFEE PT amounts leaking into a KIFIYA
+      // employee's pension, which caused the dashboard to exceed the report by ~20 778).
+      const pensionAcctKey = `${src}|${ptKey}`;
+      // Use totalEarning from payroll lines as the authoritative earnings figure —
+      // matches what the ERP queries and payroll reports show. PT gross is not used
+      // to inflate this because doing so causes the dashboard to exceed the report total.
+      e.monthTotals[mthLbl] = (e.monthTotals[mthLbl] || 0) + earning;
+      e.total += earning;
+      if (!_pensionAccounted.has(pensionAcctKey)) {
+        _pensionAccounted.add(pensionAcctKey);
+        // Use source-specific PT employer amounts so KIFIYA employees get pension only
+        // from Period Transactions (matching report 50230) and SAFEE employees only from
+        // Prog-Period Transactions (matching report 50231). Falls back to 11% of Total
+        // Earning when PT data is not available.
+        const srcPtMap = src === 'KIFIYA' ? ptKifiyaEmployerByEmpMonth : ptSafeeEmployerByEmpMonth;
         const pensionAmt = ptDataAvailable
-          ? (ptEmployerByEmpMonth[ptKey] || pensionByEmpMonth[ptKey] || 0)
+          ? (srcPtMap[ptKey] || pensionByEmpMonth[ptKey] || 0)
           : (pensionByEmpMonth[ptKey] || 0);
         e.pensionMonthTotals[mthLbl] = pensionAmt;
         e.pensionTotal += pensionAmt;
       }
     });
+
     const employeePayroll = Object.values(empPayMap).map(e => ({
       ...e,
       total:             Math.round(e.total),
