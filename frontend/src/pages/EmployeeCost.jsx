@@ -7,6 +7,8 @@ import KpiCard from '../components/KpiCard.jsx'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
+// Local-only toggle — keep false in anything committed/pushed.
+const SHOW_PAYROLL_TYPE_FILTER = false
 const KIFIYA_COLOR = '#7FA8C9'
 const SAFEE_COLOR  = '#1FB6A6'
 const MALE_COLOR    = '#7FA8C9'
@@ -464,21 +466,23 @@ export default function EmployeeCost({ data }) {
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-navy">Employee Cost Monthly Trend</h3>
-            <div className="flex gap-1">
-              {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
-                <button
-                  key={t}
-                  onClick={() => setPayrollType(t)}
-                  className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
-                  style={{
-                    background: payrollType === t ? '#0A3A46' : '#f3f4f6',
-                    color:      payrollType === t ? '#fff'    : '#6b7280'
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+            {SHOW_PAYROLL_TYPE_FILTER && (
+              <div className="flex gap-1">
+                {['All', 'Standard', 'Programme', 'Consultant'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setPayrollType(t)}
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+                    style={{
+                      background: payrollType === t ? '#0A3A46' : '#f3f4f6',
+                      color:      payrollType === t ? '#fff'    : '#6b7280'
+                    }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
