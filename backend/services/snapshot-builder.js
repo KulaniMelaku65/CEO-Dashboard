@@ -551,12 +551,22 @@ async function buildSnapshot(targetDate) {
     ]
   };
 
-  const [employees, headcountRows, rawDimVals, empHist] = await Promise.all([
+  let [employees, headcountRows, rawDimVals, empHist] = await Promise.all([
     bcAvail ? bc('GetEmployee').catch(() => [])                                           : Promise.resolve([]),
     bcAvail ? bc('KFT_Employee_Headcount').catch(() => [])                                : Promise.resolve([]),
     bcAvail ? bc('KFT_Dimension_Values', '?$orderby=dimensionCode,code').catch(() => []) : Promise.resolve([]),
     bcAvail ? bc('KFT_Employment_History').catch(() => [])                                : Promise.resolve([])
   ]);
+
+  // Known vendors/companies with a BC-side data error putting them under a plain
+  // KFT-format employee/consultant ID instead of the proper KFTV vendor-ID convention.
+  // KFT0967 ("Cabinet D'Expertise") is the same vendor already excluded under KFTV431/
+  // KFTV729 below — it even has a full Employee master record (GetEmployee), so no
+  // automatic check (KFTV prefix, headcount presence) catches it. Scrubbed at the source
+  // so it's excluded from headcount, payroll, and every downstream figure, not just one path.
+  const KNOWN_VENDOR_IDS = new Set(['KFT0967']);
+  employees = employees.filter(e => !KNOWN_VENDOR_IDS.has(e.no));
+  empHist   = empHist.filter(e => !KNOWN_VENDOR_IDS.has(e.employeeNo));
 
   // KFT_Employee_Headcount now exposes an explicit 'employeeNo' column (Employee."No.").
   // When BC returns the explicit column, AuxiliaryIndex1 (the legacy system-column alias
@@ -1074,9 +1084,11 @@ async function buildSnapshot(targetDate) {
     buCode: sectionToDept[e.dimension2] || e.dimension2 || 'Unknown', type: typeByEmpNo[e.employeeNo] || 'Unknown', vc: e.dimension1 || 'Unknown'
   }));
   const turnover = months12.map((m, i) => {
-    const prevCount = i > 0 ? headcountEvolution[i - 1].count : headcountEvolution[0].count;
-    const currCount = headcountEvolution[i].count;
-    const avgCount  = (prevCount + currCount) / 2;
+    const prev = i > 0 ? headcountEvolution[i - 1] : headcountEvolution[0];
+    const curr = headcountEvolution[i];
+    // Denominator excludes Agents (KFT_Employee_Headcount's explicit 'Agent' flag) —
+    // there is only ever one turnover rate now, and it's always agent-excluded.
+    const avgCount = ((prev.count - (prev.agents || 0)) + (curr.count - (curr.agents || 0))) / 2;
 
     const joinerRecords = allForJoiners.filter(e => {
       const d = e.hired ? new Date(e.hired) : null;
@@ -1095,21 +1107,17 @@ async function buildSnapshot(targetDate) {
     };
   });
 
-  // Trailing-12-month aggregate turnover rate, plus a variant that excludes Agents
-  // (KFT_Employee_Headcount's explicit 'Agent' flag — a distinct population from Individual
-  // Consultants) from the headcount base. empHist (the leavers source above) has no Agent
-  // field and in practice almost never contains agents at all — they exit via payroll simply
+  // Trailing-12-month aggregate turnover rate. Denominator excludes Agents
+  // (KFT_Employee_Headcount's explicit 'Agent' flag — a distinct, much larger population
+  // than Individual Consultants). empHist (the leavers source above) has no Agent field
+  // and in practice almost never contains agents at all — they exit via payroll simply
   // stopping, not a formal separation record — so the leavers count is already agent-free;
-  // only the headcount denominator differs here.
+  // only the headcount denominator matters here. There is only ever one turnover rate now.
   const totalLeavers12mo = turnover.reduce((s, t) => s + t.leavers, 0);
   const avgHeadcount12mo = headcountEvolution.length > 0
-    ? headcountEvolution.reduce((s, m) => s + m.count, 0) / headcountEvolution.length
-    : 0;
-  const avgNonAgentHeadcount12mo = headcountEvolution.length > 0
     ? headcountEvolution.reduce((s, m) => s + (m.count - (m.agents || 0)), 0) / headcountEvolution.length
     : 0;
-  const turnoverRate12mo         = avgHeadcount12mo > 0 ? +((totalLeavers12mo / avgHeadcount12mo) * 100).toFixed(1) : 0;
-  const turnoverRateNoAgents12mo = avgNonAgentHeadcount12mo > 0 ? +((totalLeavers12mo / avgNonAgentHeadcount12mo) * 100).toFixed(1) : 0;
+  const turnoverRate12mo = avgHeadcount12mo > 0 ? +((totalLeavers12mo / avgHeadcount12mo) * 100).toFixed(1) : 0;
 
   // ── Turnover / Monthly Hires by calendar year ─────────────────────────────────
   // Same reconstruction as headcountEvolution/turnover above, but aligned to actual
@@ -1185,8 +1193,8 @@ async function buildSnapshot(targetDate) {
 
     turnoverByYear[year] = series.map((bucket, i) => {
       const m = yMonths[i];
-      const prevCount = i > 0 ? series[i - 1].count : series[0].count;
-      const avgCount  = (prevCount + bucket.count) / 2;
+      const prev = i > 0 ? series[i - 1] : series[0];
+      const avgCount = ((prev.count - (prev.agents || 0)) + (bucket.count - (bucket.agents || 0))) / 2;
       const joinerRecords = allForJoiners.filter(e => {
         const d = e.hired ? new Date(e.hired) : null;
         return d && d >= m.start && d <= m.end;
@@ -1203,13 +1211,11 @@ async function buildSnapshot(targetDate) {
     });
 
     const totalLeavers = turnoverByYear[year].reduce((s, t) => s + t.leavers, 0);
-    const avgHC = series.length > 0 ? series.reduce((s, m) => s + m.count, 0) / series.length : 0;
-    const avgNonAgentHC = series.length > 0
+    const avgHC = series.length > 0
       ? series.reduce((s, m) => s + (m.count - (m.agents || 0)), 0) / series.length
       : 0;
     turnoverSummaryByYear[year] = {
-      rate:         avgHC > 0 ? +((totalLeavers / avgHC) * 100).toFixed(1) : 0,
-      rateNoAgents: avgNonAgentHC > 0 ? +((totalLeavers / avgNonAgentHC) * 100).toFixed(1) : 0,
+      rate: avgHC > 0 ? +((totalLeavers / avgHC) * 100).toFixed(1) : 0,
     };
   });
 
@@ -1236,7 +1242,6 @@ async function buildSnapshot(targetDate) {
     headcountEvolution,
     turnover,
     turnoverRate12mo,
-    turnoverRateNoAgents12mo,
     turnoverByYear,
     turnoverSummaryByYear,
     // Live per-employee active roster (from KFT_Employee_Headcount) — used by HR Page
@@ -1272,9 +1277,10 @@ async function buildSnapshot(targetDate) {
       'KFT_Prog_Payroll_Cost',         // 1 progPay
       'KFT_Consultant_Payroll_Cost',   // 2 consPay
       'KFT_Period_Trans_Verify',       // 3 stdPT  — raw component rows (KIFIYA)
-      'KFT_Prog_Period_Trans_Verify'   // 4 progPT — raw component rows (SAFEE)
+      'KFT_Prog_Period_Trans_Verify',  // 4 progPT — raw component rows (SAFEE)
+      'KFT_Direct_Pay_Vouchers'        // 5 rawDirectPay — FIN-Payments Header salary vouchers
     ];
-    let [stdPay, progPay, consPay, stdPT, progPT] = await Promise.all(
+    let [stdPay, progPay, consPay, stdPT, progPT, rawDirectPay] = await Promise.all(
       payrollQueryNames.map(name =>
         bcAvail
           ? bc(name).catch(err => {
@@ -1298,6 +1304,10 @@ async function buildSnapshot(targetDate) {
     // differs from the Employee table ID (BC data mismatch: e.g. KFT0959 in MSP vs
     // KFT1100 in Employee table for Kedir Mussa).
     //
+    // KNOWN_VENDOR_IDS (declared above, near the employees/empHist fetch) catches
+    // KFT0967 here too — the same "Cabinet D'Expertise" vendor as KFTV431/KFTV729,
+    // misfiled under a plain KFT-format consultant ID instead of the KFTV convention.
+    //
     // PayrollStatus is now exposed from the BC query (no server-side filter).
     // Exclude Rejected batches for KFTV vendors and genuinely rejected KFT rows,
     // but keep Rejected-status rows for KFT employees — these are often historical
@@ -1306,6 +1316,11 @@ async function buildSnapshot(targetDate) {
       const id     = String(r.ConsultantID || '');
       const status = String(r.PayrollStatus || '').toLowerCase();
       if (id.startsWith('KFTV')) return false;          // always exclude vendors
+      if (KNOWN_VENDOR_IDS.has(id)) return false;         // vendor misfiled under a KFT-format ID
+      // ConsultantType is BC's own classification of who's being paid — only
+      // "Individual Consultant" belongs on the dashboard; any other type (company/vendor
+      // contracts, etc.) is excluded outright, regardless of ID format.
+      if (String(r.ConsultantType || '').trim() !== 'Individual Consultant') return false;
       if (status === 'rejected') return false;           // exclude genuinely rejected KFT batches
       return true;
     });
@@ -1389,6 +1404,124 @@ async function buildSnapshot(targetDate) {
       console.log(`  [redistribute] ${target.ConsultantID} voucher ${target.VoucherDate} (${Math.round(spreadDays)}d spread) ${origPeriod} → ${priorPeriod}`);
     });
 
+    // ── Direct-pay vouchers (FIN-Payments Header salary payments) ────────────────
+    // Covers employees whose monthly CTC is captured as a posted FIN-Payments Header
+    // voucher rather than through Payroll Processing Lines.
+    //
+    // Identity resolution:
+    //   Aug 2026+ → parse "ID No - KFT####" from paymentNarration
+    //   Pre-Aug   → exact/partial match of payTo name against headcount fullName,
+    //               then fall back to accountNo if it is already a KFT employee number.
+    //
+    // Only Posted vouchers (filtered in AL query). Only 2026 onwards is relevant.
+    const _directPayAugCutoff = new Date('2026-08-01');
+    const _hcNameToEmpNo      = {};
+    const _hcEmpNoToRow       = {};
+    headcountRows.forEach(r => {
+      if (!r.AuxiliaryIndex1) return;
+      _hcEmpNoToRow[r.AuxiliaryIndex1] = r;
+      if (r.fullName) _hcNameToEmpNo[r.fullName.trim().toLowerCase()] = r.AuxiliaryIndex1;
+    });
+
+    const _stdPayEmpMonths = new Set();
+    stdPay.forEach(r => {
+      if (!r.employeeNo || !r.payrollPeriod) return;
+      const d = new Date(r.payrollPeriod);
+      if (isNaN(d.getTime())) return;
+      _stdPayEmpMonths.add(`${r.employeeNo}|${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    });
+
+    const directPay = (rawDirectPay || [])
+      .filter(r => {
+        const d = new Date(r.voucherDate || 0);
+        return d >= new Date('2026-01-01') && d <= targetEnd;
+      })
+      .map(r => {
+        const d = new Date(r.voucherDate || 0);
+        if (isNaN(d.getTime())) return null;
+
+        // ── Resolve employee number ────────────────────────────────
+        let empNo = null;
+        const narration   = String(r.paymentNarration || r.payNarration || '');
+        const idMatch     = narration.match(/ID\s*No\.?\s*[-:\s]+\s*(KFT\d+)/i);
+        const isAugOrLater = d >= _directPayAugCutoff;
+
+        if (idMatch) {
+          // The narration text is free-typed in BC and not guaranteed to be a real
+          // employee. Validate against hcNoSet (same check the pre-Aug fallback below
+          // already does) rather than trusting the parsed ID blindly.
+          const parsedId = idMatch[1].toUpperCase();
+          if (hcNoSet.has(parsedId)) empNo = parsedId;
+          else return null;
+        } else if (isAugOrLater) {
+          // Aug 2026+: ID in narration is mandatory. Skip vouchers without it —
+          // they are reimbursements, advances, or other non-salary payments.
+          return null;
+        } else {
+          // Pre-Aug: narration must still say "Salary" or "Consultancy fee" — real
+          // Individual Consultants (employees, not vendors) are commonly paid via
+          // "Consultancy fee" narration rather than "Salary". Payee-name matching below
+          // still has to resolve to an actual headcount record either way, so this
+          // doesn't reopen the door to vendor payments (e.g. KFTV-prefixed accounts, or
+          // KFT0967 — both already excluded upstream regardless of narration wording).
+          if (!/salary|consultancy\s*fee/i.test(narration)) return null;
+
+          // Identify by payTo name match against headcount full names
+          const payToRaw = String(r.payTo || r.accountName || '').trim();
+          const payToLow = payToRaw.toLowerCase();
+          if (payToLow) {
+            empNo = _hcNameToEmpNo[payToLow];
+            if (!empNo) {
+              // Partial match: find longest headcount name that is a substring
+              let bestLen = 0;
+              for (const [nm, no] of Object.entries(_hcNameToEmpNo)) {
+                if ((payToLow.includes(nm) || nm.includes(payToLow)) && nm.length > bestLen) {
+                  bestLen = nm.length; empNo = no;
+                }
+              }
+            }
+          }
+          // Fallback: accountNo if it is already in headcount
+          if (!empNo) {
+            const acct = String(r.accountNo || '').trim();
+            if (hcNoSet.has(acct)) empNo = acct;
+          }
+        }
+        if (!empNo) return null;
+
+        // Skip if this employee already has a stdPay entry for the same month
+        // (prevents double-counting for employees partially on both systems)
+        const monthKey = `${empNo}|${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (_stdPayEmpMonths.has(monthKey)) return null;
+
+        // ── Currency conversion ────────────────────────────────────
+        const currency = (r.currencyCode || '').trim().toUpperCase();
+        const isForeign = currency !== '' && currency !== 'ETB';
+        const rate      = Number(r.exchangeRate) || 1;
+        const rawAmt    = Number(r.totalPaymentAmount) || 0;
+        const earning   = isForeign && rate > 0 ? rawAmt * rate : rawAmt;
+        if (earning <= 0) return null;
+
+        const hcRow = _hcEmpNoToRow[empNo] || {};
+        return {
+          employeeNo:       empNo,
+          firstName:        hcRow.fullName || String(r.payTo || '').trim(),
+          lastName:         '',
+          employeeType:     hcRow.employeeType || 'Unknown',
+          virtualCompany:   (r.globalDim1 || hcRow.virtualCompany || 'Unknown').trim(),
+          businessUnitDept: (r.globalDim2 || hcRow.businessUnitDept || 'Unknown').trim(),
+          totalEarning:     earning,
+          payrollPeriod:    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
+          payrollStatus:    'Posted',
+          payrollSource:    'KIFIYA',
+          _isDirectPay:     true
+        };
+      })
+      .filter(Boolean);
+
+    if (rawDirectPay?.length > 0 || directPay.length > 0)
+      console.log(`  Direct pay: ${directPay.length} resolved from ${rawDirectPay.length} raw vouchers (2026)`);
+
     const allPay = [
       ...stdPay.map(r  => ({ ...r, payrollSource: 'KIFIYA' })),
       ...progPay.map(r => ({ ...r, payrollSource: 'SAFEE', _isProgPay: true })),
@@ -1440,7 +1573,8 @@ async function buildSnapshot(targetDate) {
           payrollPeriod,
           payrollSource:    'SAFEE'
         };
-      })
+      }),
+      ...directPay   // already formatted; Posted-only, 2026+, no stdPay overlap
     ].filter(r => {
       const st = (r.payrollStatus || '').toLowerCase();
       if (st === 'open' || st === 'pending approval') return false;
@@ -1448,7 +1582,7 @@ async function buildSnapshot(targetDate) {
       const d = new Date(r.payrollPeriod);
       return d >= payrollStart && d <= targetEnd;
     });
-    if (allPay.length === 0 && (stdPay.length + progPay.length + consPay.length) > 0)
+    if (allPay.length === 0 && (stdPay.length + progPay.length + consPay.length + directPay.length) > 0)
       console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
 
     // Employer pension = exactly 11% of Total Earning per employee per month.
@@ -2073,22 +2207,20 @@ async function buildSnapshot(targetDate) {
       e.total += earning;
       if (!_pensionAccounted.has(pensionAcctKey)) {
         _pensionAccounted.add(pensionAcctKey);
-        // Use source-specific PT employer amounts so KIFIYA employees get pension only
-        // from Period Transactions (matching report 50230) and SAFEE employees only from
-        // Prog-Period Transactions (matching report 50231). BC occasionally posts PT rows
-        // for an employee/month with no D002 pension component at all (~3% of KIFIYA rows) —
-        // when that happens, fall back to 11% of that same employee/month's PT-reported
-        // Basic Salary (E001) rather than jumping straight to Total Earning, since pension
-        // is basic-salary-based, not total-earning-based. Only when PT has no data
-        // whatsoever for the key (BC web services not yet published, or a genuine gap) does
-        // this fall back to 11% of Total Earning as a last resort.
-        const srcPtMap    = src === 'KIFIYA' ? ptKifiyaEmployerByEmpMonth : ptSafeeEmployerByEmpMonth;
-        const srcBasicMap = src === 'KIFIYA' ? ptKifiyaBasicByEmpMonth    : ptSafeeBasicByEmpMonth;
-        const pensionAmt = ptDataAvailable
-          ? (srcPtMap[ptKey] || (srcBasicMap[ptKey] ? srcBasicMap[ptKey] * 0.11 : 0) || pensionByEmpMonth[ptKey] || 0)
-          : (pensionByEmpMonth[ptKey] || 0);
-        e.pensionMonthTotals[mthLbl] = pensionAmt;
-        e.pensionTotal += pensionAmt;
+        // Individual Consultants are contractors — no employer pension contribution.
+        if (!isIC) {
+          // Use source-specific PT employer amounts so KIFIYA employees get pension only
+          // from Period Transactions (matching report 50230) and SAFEE employees only from
+          // Prog-Period Transactions (matching report 50231). Falls back to 11% of Basic
+          // Salary from PT, then 11% of Total Earning as a last resort.
+          const srcPtMap    = src === 'KIFIYA' ? ptKifiyaEmployerByEmpMonth : ptSafeeEmployerByEmpMonth;
+          const srcBasicMap = src === 'KIFIYA' ? ptKifiyaBasicByEmpMonth    : ptSafeeBasicByEmpMonth;
+          const pensionAmt = ptDataAvailable
+            ? (srcPtMap[ptKey] || (srcBasicMap[ptKey] ? srcBasicMap[ptKey] * 0.11 : 0) || pensionByEmpMonth[ptKey] || 0)
+            : (pensionByEmpMonth[ptKey] || 0);
+          e.pensionMonthTotals[mthLbl] = pensionAmt;
+          e.pensionTotal += pensionAmt;
+        }
       }
     });
 

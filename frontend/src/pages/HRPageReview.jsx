@@ -1,6 +1,8 @@
 import { useState, useMemo, Fragment } from 'react'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
+import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
+import { buildEmployeeExportRows, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -392,13 +394,23 @@ export default function HRPageReview({ data }) {
   const grandSafee     = tableRows.reduce((s, r) => s + r.safee, 0)
 
 
+  const deptDisplayNames = hr.deptDisplayNames || {}
+  const exportRows = buildEmployeeExportRows(filteredPay, effectiveMonth, filteredRoster, deptDisplayNames)
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Analysis</h2>
-        <p className="text-xs text-muted font-medium">
-          Active employees · headcount and payroll cost · all filters update instantly
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Analysis</h2>
+          <p className="text-xs text-muted font-medium">
+            Active employees · headcount and payroll cost · all filters update instantly
+          </p>
+        </div>
+        <ExportButton
+          rows={exportRows}
+          columns={EMPLOYEE_EXPORT_COLUMNS}
+          filename={`hr-analysis-${effectiveMonth || 'export'}.csv`.replace(/\s+/g, '-')}
+        />
       </div>
 
       {/* ── Filter bar (shared across all People & Operations pages) ── */}

@@ -4,7 +4,9 @@ import {
   PieChart, Pie, Cell, LineChart, Line
 } from 'recharts'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
+import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
+import { buildEmployeeExportRows, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 
 const BG      = '#052C36'
 const PANEL   = '#0A3A46'
@@ -180,8 +182,9 @@ export default function PeopleHRSummary({ data }) {
           .sort((a, b) => b.count - a.count)
       })()
 
-  // ── Turnover — year-scoped when a Year filter is selected, otherwise the rolling
-  // trailing-12-months view (same fields, different window). Each monthly bucket also
+  // ── Turnover — always year-scoped: the selected Year filter, or the current calendar
+  // year (from the snapshot's asOf date, not the browser clock, so a historical snapshot
+  // still shows ITS current year) when no Year filter is picked. Each monthly bucket also
   // carries a tagged roster/joinerRecords/leaverRecords, so BU/Employment Type/Virtual
   // Company filters narrow turnover too — same as every other figure on this page.
   // Budget Source is left out here: it's a payroll concept with no historical
@@ -189,8 +192,10 @@ export default function PeopleHRSummary({ data }) {
   // a source from), the same limitation already documented for headcount above.
   const turnoverByYear        = hr.turnoverByYear        || {}
   const turnoverSummaryByYear = hr.turnoverSummaryByYear || {}
-  const selectedYearTurnover  = filterYear !== 'All' ? turnoverByYear[filterYear]        : null
-  const selectedYearSummary   = filterYear !== 'All' ? turnoverSummaryByYear[filterYear] : null
+  const currentYear           = String(data.asOf ? new Date(data.asOf).getFullYear() : new Date().getFullYear())
+  const effectiveTurnoverYear = filterYear !== 'All' ? filterYear : currentYear
+  const selectedYearTurnover  = turnoverByYear[effectiveTurnoverYear]        || null
+  const selectedYearSummary   = turnoverSummaryByYear[effectiveTurnoverYear] || null
 
   const baseTurnoverSeries  = selectedYearTurnover || hr.turnover || []
   const turnoverFilterActive = filterBU !== 'All' || filterType !== 'All' || filterVC !== 'All'
@@ -199,14 +204,17 @@ export default function PeopleHRSummary({ data }) {
     (filterType === 'All' || r.type   === filterType) &&
     (filterVC   === 'All' || r.vc     === filterVC)
 
+  // Denominator excludes Agents everywhere — there is only ever one turnover rate.
+  const nonAgentCount = (roster) => roster.filter(r => matchesTurnoverFilters(r) && !r.isAgent).length
+
   const turnoverSeries = turnoverFilterActive
     ? baseTurnoverSeries.map((t, i) => {
-        const roster     = (t.roster || []).filter(matchesTurnoverFilters)
-        const prevRoster  = i > 0 ? (baseTurnoverSeries[i - 1].roster || []).filter(matchesTurnoverFilters) : roster
-        const avgCount    = (prevRoster.length + roster.length) / 2
-        const joiners     = (t.joinerRecords || []).filter(matchesTurnoverFilters).length
-        const leavers     = (t.leaverRecords || []).filter(matchesTurnoverFilters).length
-        const rate        = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0
+        const count      = nonAgentCount(t.roster || [])
+        const prevCount  = i > 0 ? nonAgentCount(baseTurnoverSeries[i - 1].roster || []) : count
+        const avgCount   = (prevCount + count) / 2
+        const joiners    = (t.joinerRecords || []).filter(matchesTurnoverFilters).length
+        const leavers    = (t.leaverRecords || []).filter(matchesTurnoverFilters).length
+        const rate       = avgCount > 0 ? +((leavers / avgCount) * 100).toFixed(1) : 0
         return { label: t.label, joiners, leavers, rate }
       })
     : baseTurnoverSeries
@@ -216,26 +224,16 @@ export default function PeopleHRSummary({ data }) {
         const totalLeavers = turnoverSeries.reduce((s, t) => s + t.leavers, 0)
         const n = baseTurnoverSeries.length
         const avgHC = n > 0
-          ? baseTurnoverSeries.reduce((s, t) => s + (t.roster || []).filter(matchesTurnoverFilters).length, 0) / n
+          ? baseTurnoverSeries.reduce((s, t) => s + nonAgentCount(t.roster || []), 0) / n
           : 0
-        const avgNonAgentHC = n > 0
-          ? baseTurnoverSeries.reduce((s, t) =>
-              s + (t.roster || []).filter(r => matchesTurnoverFilters(r) && !r.isAgent).length, 0) / n
-          : 0
-        return {
-          rate:         avgHC         > 0 ? +((totalLeavers / avgHC)         * 100).toFixed(1) : 0,
-          rateNoAgents: avgNonAgentHC > 0 ? +((totalLeavers / avgNonAgentHC) * 100).toFixed(1) : 0,
-        }
+        return { rate: avgHC > 0 ? +((totalLeavers / avgHC) * 100).toFixed(1) : 0 }
       })()
     : null
 
-  const turnoverRate         = turnoverSummary ? turnoverSummary.rate
-    : selectedYearSummary    ? selectedYearSummary.rate
+  const turnoverRate        = turnoverSummary ? turnoverSummary.rate
+    : selectedYearSummary   ? selectedYearSummary.rate
     : (hr.turnoverRate12mo ?? null)
-  const turnoverRateNoAgents = turnoverSummary ? turnoverSummary.rateNoAgents
-    : selectedYearSummary    ? selectedYearSummary.rateNoAgents
-    : (hr.turnoverRateNoAgents12mo ?? null)
-  const turnoverPeriodLabel  = filterYear !== 'All' ? filterYear : 'Trailing 12 months'
+  const turnoverPeriodLabel = effectiveTurnoverYear
 
   // ── Based In (region) + HQ/Field split — built from activeEmployees so these also
   // narrow with every active filter (BU/Type/VC/Source), not just the company-wide
@@ -280,11 +278,20 @@ export default function PeopleHRSummary({ data }) {
     joiners: t.joiners
   }))
 
+  const exportRows = buildEmployeeExportRows(filteredPayroll, effectiveMonth, activeEmployees, deptDisplayNames)
+
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">People & Culture</h2>
-        <p className="text-xs text-muted font-medium">Workforce & cost snapshot — headcount, turnover, and CTC by business unit</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-extrabold text-navy mb-0.5">People & Culture</h2>
+          <p className="text-xs text-muted font-medium">Workforce & cost snapshot — headcount, turnover, and CTC by business unit</p>
+        </div>
+        <ExportButton
+          rows={exportRows}
+          columns={EMPLOYEE_EXPORT_COLUMNS}
+          filename={`people-culture-${effectiveMonth || 'export'}.csv`.replace(/\s+/g, '-')}
+        />
       </div>
 
       <PeopleOpsFilterBar data={data} />
@@ -308,7 +315,7 @@ export default function PeopleHRSummary({ data }) {
         </div>
 
         {/* ── Row 2: Employment Type table + Turnover + BU charts ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-4" style={{ gap: 1, background: LINE }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3" style={{ gap: 1, background: LINE }}>
           <div className="p-4" style={{ background: PANEL }}>
             <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: ORANGE }}>Employment Type</p>
             <div className="space-y-1.5">
@@ -321,15 +328,9 @@ export default function PeopleHRSummary({ data }) {
             </div>
           </div>
 
-          <div className="p-4 flex flex-col justify-between" style={{ background: PANEL }}>
+          <div className="p-4 flex flex-col items-center justify-center text-center" style={{ background: PANEL }}>
             <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Turnover Rate</p>
-            <p className="font-extrabold text-white leading-none" style={{ fontSize: 40 }}>{fmtPct1(turnoverRate)}</p>
-            <p className="text-[9px] mt-1" style={{ color: AXIS }}>{turnoverPeriodLabel}</p>
-          </div>
-
-          <div className="p-4 flex flex-col justify-between" style={{ background: PANEL }}>
-            <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Turnover Rate w/o Agents</p>
-            <p className="font-extrabold text-white leading-none" style={{ fontSize: 40 }}>{fmtPct1(turnoverRateNoAgents)}</p>
+            <p className="font-extrabold text-white leading-none mt-2" style={{ fontSize: 40 }}>{fmtPct1(turnoverRate)}</p>
             <p className="text-[9px] mt-1" style={{ color: AXIS }}>Excl. Agents · {turnoverPeriodLabel}</p>
           </div>
 
@@ -387,7 +388,7 @@ export default function PeopleHRSummary({ data }) {
         <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: 1, background: LINE }}>
           <div className="p-4" style={{ background: PANEL }}>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Based In</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Employees by City and Country</p>
               <div className="flex rounded-md overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
                 {['city', 'country'].map(v => (
                   <button
