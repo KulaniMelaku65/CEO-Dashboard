@@ -1413,7 +1413,7 @@ async function buildSnapshot(targetDate) {
     //   Pre-Aug   → exact/partial match of payTo name against headcount fullName,
     //               then fall back to accountNo if it is already a KFT employee number.
     //
-    // Only Posted vouchers (filtered in AL query). Only 2026 onwards is relevant.
+    // Posted and Approved vouchers (filtered in AL query). Only 2026 onwards is relevant.
     const _directPayAugCutoff = new Date('2026-08-01');
     const _hcNameToEmpNo      = {};
     const _hcEmpNoToRow       = {};
@@ -1512,7 +1512,7 @@ async function buildSnapshot(targetDate) {
           businessUnitDept: (r.globalDim2 || hcRow.businessUnitDept || 'Unknown').trim(),
           totalEarning:     earning,
           payrollPeriod:    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
-          payrollStatus:    'Posted',
+          payrollStatus:    String(r.status || '').trim() || 'Posted',
           payrollSource:    'KIFIYA',
           _isDirectPay:     true
         };
