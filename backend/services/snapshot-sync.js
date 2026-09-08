@@ -51,7 +51,7 @@ async function syncSnapshot(date) {
       ).get(targetDate);
       if (prev) {
         const p = JSON.parse(prev.data);
-        const BC_KEYS = ['budgetActual', 'budgetOverview', 'cashflow', 'reports', 'hr', 'lending', 'dimensionNames'];
+        const BC_KEYS = ['budgetActual', 'budgetOverview', 'cashflow', 'reports', 'balanceSheet', 'hr', 'lending', 'dimensionNames'];
         BC_KEYS.forEach(k => { if (p[k]) data[k] = p[k]; });
         console.log(`[sync] BC not configured — carried forward BC fields from ${prev.snapshot_date}`);
       }

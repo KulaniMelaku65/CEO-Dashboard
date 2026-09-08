@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { auth, snapshots } from './lib/api.js'
 import { PeopleOpsFiltersProvider } from './context/PeopleOpsFilters.jsx'
 import LoginOverlay from './components/LoginOverlay.jsx'
@@ -17,38 +17,47 @@ import EmployeeCost from './pages/EmployeeCost.jsx'
 import EmployeeCostDetail from './pages/EmployeeCostDetail.jsx'
 import EmployeeCostVariance from './pages/EmployeeCostVariance.jsx'
 import HRPageReview from './pages/HRPageReview.jsx'
+import DepartmentOverrides from './pages/DepartmentOverrides.jsx'
 import Risk from './pages/Risk.jsx'
-import Reports from './pages/Reports.jsx'
+import BalanceSheet from './pages/BalanceSheet.jsx'
+import CashFlow from './pages/CashFlow.jsx'
+import Tax from './pages/Tax.jsx'
 
 // Full slide list — kept intact so other sections can be restored later by
 // switching SLIDES back to ALL_SLIDES (currently limited to People & Operations only,
 // per request, while the rest of the app isn't being shown in the sidebar).
+// The finance blueprint's 6 tabs, in its own order, sit right after Overview:
+// Financial Performance, Corporate Budget (= Budget Analysis), Collections & Revenue,
+// Balance Sheet, Cashflow, Tax — the last 3 are new pages, not yet full-featured (see
+// each page's own in-app note on what's pending from Yohannes' account mapping).
 export const ALL_SLIDES = [
-  { id: 'overview',     label: 'Executive Overview',    Page: Overview },
-  { id: 'financial',    label: 'Financial Performance', Page: Financial },
-  { id: 'budget',       label: 'Corporate Budget',      Page: BudgetAnalysis },
-  { id: 'lending',      label: 'Lending Ecosystem',     Page: LoanOps },
-  { id: 'collections',  label: 'Collections & Revenue', Page: Collections },
-  { id: 'risk',         label: 'Risk & Portfolio',      Page: Risk },
+  { id: 'overview',      label: 'Executive Overview',    Page: Overview },
+  { id: 'financial',     label: 'Financial Performance', Page: Financial },
+  { id: 'budget',        label: 'Corporate Budget',      Page: BudgetAnalysis },
+  { id: 'collections',   label: 'Collections & Revenue', Page: Collections },
+  { id: 'balance-sheet', label: 'Balance Sheet',         Page: BalanceSheet },
+  { id: 'cashflow',      label: 'Cashflow',              Page: CashFlow },
+  { id: 'tax',           label: 'Tax',                   Page: Tax },
+  { id: 'lending',    label: 'Lending Ecosystem',     Page: LoanOps },
+  { id: 'risk',       label: 'Risk & Portfolio',      Page: Risk },
   { id: 'hr',                    label: 'People & Operations Old', Page: HR },
   { id: 'hr-summary',            label: 'People & Culture',    Page: PeopleHRSummary },
   { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
   { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
   { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
   { id: 'hr-page-review',        label: 'HR Analysis',          Page: HRPageReview },
-  { id: 'reports',               label: 'Reports & Insights',  Page: Reports },
+  { id: 'department-overrides',  label: 'Organization Mapping', Page: DepartmentOverrides, parentId: 'hr-page-review' },
 ]
 
-// People & Operations Old / Employee Cost / Cost by BU / MoM Comparison hidden for now,
-// per request. People & Culture (formerly HR Summary) and HR Analysis were previously
-// nested under People & Operations Old — promoted to standalone top-level entries (no
-// parentId) since the old parent page is now hidden and can no longer host them in the
-// sidebar's nested-children layout.
-const HIDDEN_IDS = new Set(['hr', 'employee-cost', 'employee-cost-detail', 'employee-cost-variance'])
-export const SLIDES = ALL_SLIDES.filter(s =>
-  (s.id === 'hr' || s.id === 'hr-summary' || s.id === 'hr-page-review' || s.parentId === 'hr') &&
-  !HIDDEN_IDS.has(s.id)
-)
+// Sidebar shows only People & Culture / HR Analysis / Organization Mapping for now —
+// the finance tabs (Financial Performance, Corporate Budget, Collections & Revenue,
+// Balance Sheet, Cashflow, Tax) stay defined in ALL_SLIDES so they can be switched back
+// on later, just not rendered in the sidebar today. Same for Executive Overview, Lending
+// Ecosystem, Risk & Portfolio, and the old People & Operations page + its children.
+const VISIBLE_IDS = new Set([
+  'hr-summary', 'hr-page-review', 'department-overrides'
+])
+export const SLIDES = ALL_SLIDES.filter(s => VISIBLE_IDS.has(s.id))
 
 const SLIDE_MS = 12000
 
@@ -56,12 +65,10 @@ export default function App() {
   const [user, setUser]             = useState(null)
   const [data, setData]             = useState(null)
   const [slide, setSlide]           = useState(0)
-  const [paused, setPaused]         = useState(false)
   const [status, setStatus]         = useState('loading')
   const [histDate, setHistDate]     = useState(null)
   const [booting, setBooting]       = useState(true)
   const [sidebarOpen, setSidebar]   = useState(false)
-  const pauseTimer                  = useRef(null)
 
   const loadData = useCallback(async (date) => {
     setStatus('loading')
@@ -84,31 +91,11 @@ export default function App() {
       .finally(() => setBooting(false))
   }, [])
 
-  // Auto-advance slideshow
-  useEffect(() => {
-    if (!user || !data || paused) return
-    const t = setInterval(() => setSlide(s => (s + 1) % SLIDES.length), SLIDE_MS)
-    return () => clearInterval(t)
-  }, [user, data, paused])
-
   // Close sidebar when route changes on mobile
   useEffect(() => { setSidebar(false) }, [slide])
 
-  const goToSlide = (idx) => {
-    setSlide(idx)
-    setPaused(true)
-    clearTimeout(pauseTimer.current)
-    pauseTimer.current = setTimeout(() => setPaused(false), 30000)
-  }
-
-  const togglePause = () => {
-    if (paused) {
-      setPaused(false)
-      clearTimeout(pauseTimer.current)
-    } else {
-      setPaused(true)
-    }
-  }
+  // No auto-advance — stay on whatever page is selected until the user navigates away.
+  const goToSlide = (idx) => setSlide(idx)
 
   const handleLogin = async (username, password) => {
     const r = await auth.login(username, password)
@@ -164,9 +151,7 @@ export default function App() {
         <Topbar
           data={data}
           status={status}
-          paused={paused}
           histDate={histDate}
-          onTogglePause={togglePause}
           onRefresh={handleRefresh}
           onHistDate={handleHistDate}
           onMenuToggle={() => setSidebar(o => !o)}
@@ -207,7 +192,7 @@ export default function App() {
                   }`}
                 >
                   <div className="p-4 md:p-6 pb-10">
-                    <Page data={data} />
+                    <Page data={data} onDataRefresh={() => loadData(histDate || undefined)} />
                   </div>
                 </div>
               ))}
@@ -219,7 +204,7 @@ export default function App() {
           slides={SLIDES}
           current={slide}
           duration={SLIDE_MS}
-          paused={paused}
+          paused
           onDotClick={goToSlide}
         />
       </div>

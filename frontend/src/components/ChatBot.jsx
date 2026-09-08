@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { ai } from '../lib/api.js'
+import { renderMarkdown } from '../lib/markdown.jsx'
 
 // Which top-level snapshot keys are relevant per page — without this, the context
 // was always built by JSON.stringify-ing the whole snapshot from the top and slicing
@@ -109,7 +110,7 @@ Current data snapshot: ${buildContext(data, pageId)}`
       {open && (
         <div
           className="fixed bottom-32 right-5 z-50 bg-white rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
-          style={{ width: 320, height: 440 }}
+          style={{ width: 400, height: 520, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 160px)' }}
         >
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border flex-shrink-0" style={{ background: '#02404F' }}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#EB7D23' }}>
@@ -127,19 +128,19 @@ Current data snapshot: ${buildContext(data, pageId)}`
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed font-medium"
+                  className={`${m.role === 'assistant' ? 'max-w-[95%]' : 'max-w-[85%]'} rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed font-medium`}
                   style={m.role === 'user'
                     ? { background: '#02404F', color: 'white', borderBottomRightRadius: 4 }
-                    : { background: '#F4F6FA', color: '#02404F', borderBottomLeftRadius: 4 }
+                    : { background: '#0F3D46', color: '#FFFFFF', borderBottomLeftRadius: 4 }
                   }
                 >
-                  {m.content}
+                  {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
                 </div>
               </div>
             ))}
             {loading && (
               <div className="flex justify-start">
-                <div className="rounded-2xl px-4 py-2.5 text-xs text-muted font-medium" style={{ background: '#F4F6FA', borderBottomLeftRadius: 4 }}>
+                <div className="rounded-2xl px-4 py-2.5 text-xs font-medium" style={{ background: '#0F3D46', color: 'rgba(255,255,255,0.6)', borderBottomLeftRadius: 4 }}>
                   Thinking…
                 </div>
               </div>

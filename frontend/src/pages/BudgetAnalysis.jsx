@@ -4,6 +4,8 @@ import {
   ResponsiveContainer, Legend
 } from 'recharts'
 import { budget as budgetApi } from '../lib/api.js'
+import { aggregateByPeriod } from '../lib/period.js'
+import PeriodToggle from '../components/PeriodToggle.jsx'
 
 const NAVY   = '#02404F'
 const ORANGE = '#EB7D23'
@@ -68,7 +70,7 @@ function KpiCard({ label, value, sub, color }) {
   return (
     <div className="bg-white rounded-2xl p-4 border border-border">
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-black" style={{ color: color || NAVY }}>{value}</p>
+      <p className="text-2xl font-black" style={{ color: color || '#FFFFFF' }}>{value}</p>
       {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
     </div>
   )
@@ -90,18 +92,23 @@ function UtilBar({ pct }) {
 // ── Tab components ───────────────────────────────────────────────────────────
 
 function OverviewTab({ cb, buLabel }) {
-  const chartData = cb.monthly.labels.map((label, i) => ({
+  const [period, setPeriod] = useState('monthly')
+  const monthlyData = cb.monthly.labels.map((label, i) => ({
     label,
     Budget: cb.monthly.budget[i] || 0,
     Actual: cb.monthly.actual[i] || 0,
   }))
+  const chartData = aggregateByPeriod(monthlyData, period)
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div className="bg-white rounded-2xl border border-border p-4">
-        <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
-          Budget vs Actual — Monthly
-        </p>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <p className="text-xs font-extrabold text-muted uppercase tracking-wider">
+            Budget vs Actual — {period === 'monthly' ? 'Monthly' : period === 'quarterly' ? 'Quarterly' : 'Annual'}
+          </p>
+          <PeriodToggle value={period} onChange={setPeriod} />
+        </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
@@ -145,8 +152,50 @@ function OverviewTab({ cb, buLabel }) {
   )
 }
 
+// Hover popover — expense category breakdown for one department (rentals,
+// consultancy, utilities, etc.), per the "hover to see the detail" requirement.
+function CategoryHoverDetail({ categories }) {
+  if (!categories || categories.length === 0) return null
+  return (
+    <div
+      className="absolute left-0 top-full mt-1 bg-white rounded-xl border border-border shadow-xl overflow-hidden"
+      style={{ zIndex: 50, width: 320 }}
+    >
+      <div className="px-3 py-2 border-b border-border bg-bg">
+        <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Expense Category Breakdown</p>
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left px-3 py-1.5 font-bold text-muted">Category</th>
+              <th className="text-right px-2 py-1.5 font-bold text-muted">Budget</th>
+              <th className="text-right px-2 py-1.5 font-bold text-muted">Actual</th>
+              <th className="text-right px-3 py-1.5 font-bold text-muted">Util %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c, i) => (
+              <tr key={c.code} className={i % 2 === 0 ? 'bg-white' : 'bg-bg/50'}>
+                <td className="px-3 py-1.5 font-semibold text-navy">{c.name}</td>
+                <td className="px-2 py-1.5 text-right text-muted">{fmtM(c.budgetYTD)}</td>
+                <td className="px-2 py-1.5 text-right font-semibold text-navy">{fmtM(c.actualYTD)}</td>
+                <td className="px-3 py-1.5 text-right font-bold"
+                  style={{ color: (c.utilPct || 0) > 100 ? RED : (c.utilPct || 0) > 80 ? ORANGE : GREEN }}>
+                  {fmtPct(c.utilPct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function ByBUTab({ cb, buLabel }) {
   const [sort, setSort] = useState('budgetYTD')
+  const [hoverUnit, setHoverUnit] = useState(null)
   const sorted = [...cb.byBU].sort((a, b) => (b[sort] || 0) - (a[sort] || 0))
   const hasActuals = cb.byBU.some(r => r.actualYTD != null)
 
@@ -174,7 +223,7 @@ function ByBUTab({ cb, buLabel }) {
                   key={c.key}
                   className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider cursor-pointer hover:text-navy transition-colors"
                   onClick={() => setSort(c.key)}
-                  style={sort === c.key ? { color: NAVY } : {}}
+                  style={sort === c.key ? { color: '#FFFFFF' } : {}}
                 >
                   {c.label} {sort === c.key ? '↓' : ''}
                 </th>
@@ -184,17 +233,26 @@ function ByBUTab({ cb, buLabel }) {
           <tbody>
             {sorted.map((r, i) => {
               const over = (r.utilPct || 0) > 100
+              const hasCategories = r.categories && r.categories.length > 0
               return (
                 <tr key={r.unit} className={i % 2 === 0 ? 'bg-white' : 'bg-bg/50'}>
-                  <td className="px-4 py-2 font-semibold text-navy">{buLabel(r.unit)}</td>
+                  <td
+                    className={`relative px-4 py-2 font-semibold text-navy ${hasCategories ? 'cursor-help' : ''}`}
+                    onMouseEnter={() => hasCategories && setHoverUnit(r.unit)}
+                    onMouseLeave={() => setHoverUnit(null)}
+                  >
+                    {buLabel(r.unit)}
+                    {hasCategories && <span className="ml-1 text-[9px] text-muted" title="Hover for expense category breakdown">ⓘ</span>}
+                    {hoverUnit === r.unit && <CategoryHoverDetail categories={r.categories} />}
+                  </td>
                   <td className="px-4 py-2 text-right text-muted">{fmtM(r.budgetYTD)}</td>
                   {hasActuals && <>
-                    <td className="px-4 py-2 text-right font-semibold" style={{ color: NAVY }}>{fmtM(r.actualYTD)}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-navy">{fmtM(r.actualYTD)}</td>
                     <td className="px-4 py-2 text-right" style={{ color: (r.varianceYTD || 0) >= 0 ? GREEN : RED }}>
                       {fmtM(r.varianceYTD)}
                     </td>
                     <td className="px-4 py-2 text-right text-muted">{fmtPct(r.varPct)}</td>
-                    <td className="px-4 py-2 text-right font-bold" style={{ color: over ? RED : NAVY }}>
+                    <td className="px-4 py-2 text-right font-bold" style={{ color: over ? RED : '#FFFFFF' }}>
                       {fmtPct(r.utilPct)}
                     </td>
                   </>}
@@ -211,10 +269,10 @@ function ByBUTab({ cb, buLabel }) {
                   <td className="px-4 py-2 text-navy">Total</td>
                   <td className="px-4 py-2 text-right text-muted">{fmtM(totBud)}</td>
                   {hasActuals && <>
-                    <td className="px-4 py-2 text-right" style={{ color: NAVY }}>{fmtM(totAct)}</td>
+                    <td className="px-4 py-2 text-right text-navy">{fmtM(totAct)}</td>
                     <td className="px-4 py-2 text-right" style={{ color: totVar >= 0 ? GREEN : RED }}>{fmtM(totVar)}</td>
                     <td className="px-4 py-2 text-right text-muted">{fmtPct(totBud ? (totVar / totBud * 100) : null)}</td>
-                    <td className="px-4 py-2 text-right" style={{ color: NAVY }}>
+                    <td className="px-4 py-2 text-right text-navy">
                       {fmtPct(totBud ? (totAct / totBud * 100) : null)}
                     </td>
                   </>}
@@ -230,28 +288,30 @@ function ByBUTab({ cb, buLabel }) {
 
 function MonthlyTab({ cb, buLabel }) {
   const [selectedBU, setSelectedBU] = useState('__all__')
+  const [period, setPeriod] = useState('monthly')
 
   const buList = [{ unit: '__all__', label: 'All Business Units' }, ...cb.byBU.map(r => ({ unit: r.unit, label: buLabel(r.unit) }))]
 
-  let chartData
+  let monthlyData
   if (selectedBU === '__all__') {
-    chartData = cb.monthly.labels.map((label, i) => ({
+    monthlyData = cb.monthly.labels.map((label, i) => ({
       label,
       Budget: cb.monthly.budget[i] || 0,
       Actual: cb.monthly.actual[i] || 0,
     }))
   } else {
     const bu = cb.byBU.find(r => r.unit === selectedBU)
-    chartData = (bu?.monthly || []).map((m, i) => ({
+    monthlyData = (bu?.monthly || []).map((m, i) => ({
       label:  cb.monthly.labels[i] || `M${i + 1}`,
       Budget: m.bud || 0,
       Actual: m.act || 0,
     }))
   }
+  const chartData = aggregateByPeriod(monthlyData, period)
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <label className="text-xs font-extrabold text-muted uppercase tracking-wider">Business Unit:</label>
         <select
           value={selectedBU}
@@ -262,11 +322,13 @@ function MonthlyTab({ cb, buLabel }) {
             <option key={b.unit} value={b.unit}>{b.label}</option>
           ))}
         </select>
+        <PeriodToggle value={period} onChange={setPeriod} />
       </div>
 
       <div className="bg-white rounded-2xl border border-border p-4">
         <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
           Budget vs Actual — {selectedBU === '__all__' ? 'All Business Units' : buLabel(selectedBU)}
+          {period !== 'monthly' && ` · ${period === 'quarterly' ? 'Quarterly' : 'Annual'}`}
         </p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
@@ -378,7 +440,7 @@ function OpexTab({ cb }) {
                       <span className="text-muted mr-1">{r.code}</span>{r.name}
                     </td>
                     <td className="px-3 py-2 text-right text-muted">{fmtM(r.budgetYTD)}</td>
-                    <td className="px-3 py-2 text-right font-semibold" style={{ color: NAVY }}>{fmtM(r.actualYTD)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-navy">{fmtM(r.actualYTD)}</td>
                     <td className="px-3 py-2 text-right font-bold"
                       style={{ color: (r.utilPct || 0) > 100 ? RED : (r.utilPct || 0) > 80 ? ORANGE : GREEN }}>
                       {fmtPct(r.utilPct)}

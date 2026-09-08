@@ -4,6 +4,8 @@ import {
   ResponsiveContainer, Legend, Cell
 } from 'recharts'
 import { fmtETB, fmtPct } from '../lib/fmt.js'
+import { aggregateByPeriod } from '../lib/period.js'
+import PeriodToggle from '../components/PeriodToggle.jsx'
 
 const LINE_COLORS = {
   Revenue:        '#02404F',
@@ -59,17 +61,33 @@ function FinKpi({ line, selected, onClick }) {
   )
 }
 
+const trendArrow = t => t === 'up' ? '↑' : t === 'down' ? '↓' : '→'
+const trendColor = t => t === 'up' ? '#2EBD85' : t === 'down' ? '#E5544B' : '#6B7C93'
+
 export default function Financial({ data }) {
   const lines          = data.budgetActual?.lines || []
+  const lineDrilldowns = data.budgetActual?.lineDrilldowns || {}
   const monthly        = data.budgetOverview?.monthly
   const utilization    = data.corporateBudget?.byBU || []
   const dimNames       = data.dimensionNames || {}
   const revenueByBank  = data.financialSS?.revenueByBank || []
 
-  const [selMonth, setSelMonth] = useState(null)
-  const [selLine,  setSelLine]  = useState(null)
+  // Ratios / full P&L waterfall / management report — merged in from the former
+  // standalone Reports & Insights tab so Financial Performance is the single P&L tab.
+  const reports    = data.reports || {}
+  const ratios     = reports.ratios     || []
+  const pl         = reports.pl         || []
+  const management = reports.management || []
+
+  const [selMonth,    setSelMonth]    = useState(null)
+  const [selLine,     setSelLine]     = useState(null)
+  const [period,      setPeriod]      = useState('monthly')
+  const [expandedRow, setExpandedRow] = useState(null)
 
   const getName = code => dimNames[code] || code
+  // These two drilldowns are broken out by the account schedule's own line items
+  // (M-MGT-RPT), not by department, unlike the rest of the KPI cards.
+  const isScheduleLineView = selLine === 'Revenue' || selLine === 'Cost of Sales'
 
   const mData = (monthly?.labels || []).map((label, i) => ({
     label,
@@ -77,7 +95,10 @@ export default function Financial({ data }) {
     Actual: monthly.actual?.[i] || 0,
   }))
 
-  const selM = selMonth !== null ? mData[selMonth] : null
+  // Month-level drill-down (click a bar / the month pills) only makes sense in Monthly
+  // mode — a Quarterly/Annually bar no longer corresponds to one month's index.
+  const selM = period === 'monthly' && selMonth !== null ? mData[selMonth] : null
+  const chartData = aggregateByPeriod(mData, period)
 
   return (
     <div className="space-y-5">
@@ -91,28 +112,33 @@ export default function Financial({ data }) {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={() => setSelMonth(null)}
-            className="text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
-            style={selMonth === null
-              ? { background: '#02404F', color: '#fff', borderColor: '#02404F' }
-              : { borderColor: '#E3E9F2', color: '#6B7C93' }}
-          >
-            YTD
-          </button>
-          {mData.map((m, i) => (
-            <button
-              key={m.label}
-              onClick={() => setSelMonth(i === selMonth ? null : i)}
-              className="text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
-              style={selMonth === i
-                ? { background: '#EB7D23', color: '#fff', borderColor: '#EB7D23' }
-                : { borderColor: '#E3E9F2', color: '#6B7C93' }}
-            >
-              {m.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <PeriodToggle value={period} onChange={m => { setPeriod(m); setSelMonth(null) }} />
+          {period === 'monthly' && (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setSelMonth(null)}
+                className="text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
+                style={selMonth === null
+                  ? { background: '#02404F', color: '#fff', borderColor: '#02404F' }
+                  : { borderColor: '#E3E9F2', color: '#6B7C93' }}
+              >
+                YTD
+              </button>
+              {mData.map((m, i) => (
+                <button
+                  key={m.label}
+                  onClick={() => setSelMonth(i === selMonth ? null : i)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
+                  style={selMonth === i
+                    ? { background: '#EB7D23', color: '#fff', borderColor: '#EB7D23' }
+                    : { borderColor: '#E3E9F2', color: '#6B7C93' }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -123,10 +149,108 @@ export default function Financial({ data }) {
             key={line.name}
             line={line}
             selected={selLine === line.name}
-            onClick={() => setSelLine(s => s === line.name ? null : line.name)}
+            onClick={() => { setSelLine(s => s === line.name ? null : line.name); setExpandedRow(null) }}
           />
         ))}
       </div>
+
+      {/* Line-item drilldown — click a KPI card above to expand its breakdown */}
+      {selLine && lineDrilldowns[selLine]?.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-navy">
+                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : isScheduleLineView ? 'by Line' : 'by Department'}
+              </h3>
+              <p className="text-[10px] text-muted mt-0.5">
+                {selLine === 'Gross Profit' ? 'Revenue minus Cost of Sales'
+                  : selLine === 'Revenue' ? 'Per M-MGT-RPT account schedule — click BPASS to see it by bank partner'
+                  : isScheduleLineView ? 'Per M-MGT-RPT account schedule — click the card again to close'
+                  : 'Click the card again to close'}
+              </p>
+            </div>
+            <button onClick={() => { setSelLine(null); setExpandedRow(null) }} className="text-xs font-bold text-muted hover:text-navy px-2 py-1">✕</button>
+          </div>
+          <div className="space-y-3">
+            {(() => {
+              const rows = lineDrilldowns[selLine]
+              const maxAbs = Math.max(...rows.map(r => Math.abs(r.actual)), 1)
+              return rows.map(r => {
+                const pct = (Math.abs(r.actual) / maxAbs) * 100
+                const neg = r.actual < 0
+                const hasChildren = r.children?.length > 0
+                const isOpen = hasChildren && expandedRow === r.unit
+                const childMaxAbs = hasChildren ? Math.max(...r.children.map(c => Math.abs(c.actual)), 1) : 1
+                return (
+                  <div key={r.unit}>
+                    <div
+                      className={hasChildren ? 'cursor-pointer' : undefined}
+                      onClick={hasChildren ? () => setExpandedRow(o => o === r.unit ? null : r.unit) : undefined}
+                    >
+                      <div className="flex justify-between items-baseline mb-1 gap-2">
+                        <span className="text-xs font-bold text-navy truncate flex items-center gap-1">
+                          {hasChildren && <span className="text-muted">{isOpen ? '▾' : '▸'}</span>}
+                          {getName(r.unit)}
+                        </span>
+                        <span className="text-xs font-extrabold flex-shrink-0" style={{ color: neg ? '#E5544B' : '#FFFFFF' }}>
+                          {neg ? '-' : ''}ETB {fmtETB(Math.abs(r.actual))}
+                        </span>
+                      </div>
+                      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, background: neg ? '#E5544B' : '#1FB6A6' }}
+                        />
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div className="mt-3 ml-4 pl-3 border-l-2 space-y-2.5" style={{ borderColor: '#E3E9F2' }}>
+                        {r.children.map(c => {
+                          const cPct = (Math.abs(c.actual) / childMaxAbs) * 100
+                          const cNeg = c.actual < 0
+                          return (
+                            <div key={c.unit}>
+                              <div className="flex justify-between items-baseline mb-1 gap-2">
+                                <span className="text-[11px] font-semibold text-navy truncate">{getName(c.unit)}</span>
+                                <span className="text-[11px] font-bold flex-shrink-0" style={{ color: cNeg ? '#E5544B' : '#FFFFFF' }}>
+                                  {cNeg ? '-' : ''}ETB {fmtETB(Math.abs(c.actual))}
+                                </span>
+                              </div>
+                              <div className="h-2 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{ width: `${cPct}%`, background: cNeg ? '#E5544B' : '#1FB6A6' }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Key ratios (Gross/EBITDA/Net Margin, liquidity, leverage) */}
+      {ratios.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {ratios.map(ratio => (
+            <div key={ratio.label} className="bg-white rounded-2xl border border-border p-5 shadow-card">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">{ratio.label}</p>
+              <p className="text-2xl font-extrabold text-navy">{ratio.value}</p>
+              {ratio.trend ? (
+                <p className="text-xs font-semibold mt-1" style={{ color: trendColor(ratio.trend) }}>
+                  {trendArrow(ratio.trend)} {ratio.trend === 'up' ? 'Improving' : ratio.trend === 'down' ? 'Declining' : 'Stable'}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Month callout (shown when a month pill is selected) */}
       {selM && (
@@ -165,17 +289,21 @@ export default function Financial({ data }) {
 
         {/* Monthly bar chart */}
         <div className="xl:col-span-3 bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-1">Monthly Revenue vs Budget (ETB)</h3>
-          <p className="text-[10px] text-muted mb-4 font-medium">Click a bar to drill into that month</p>
+          <h3 className="text-sm font-bold text-navy mb-1">
+            {period === 'monthly' ? 'Monthly' : period === 'quarterly' ? 'Quarterly' : 'Annual'} Revenue vs Budget (ETB)
+          </h3>
+          <p className="text-[10px] text-muted mb-4 font-medium">
+            {period === 'monthly' ? 'Click a bar to drill into that month' : `Summed from monthly figures, by ${period === 'quarterly' ? 'quarter' : 'year'}`}
+          </p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart
-              data={mData}
+              data={chartData}
               margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
               onClick={e => {
-                if (e?.activeTooltipIndex !== undefined)
+                if (period === 'monthly' && e?.activeTooltipIndex !== undefined)
                   setSelMonth(i => i === e.activeTooltipIndex ? null : e.activeTooltipIndex)
               }}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: period === 'monthly' ? 'pointer' : 'default' }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
@@ -186,10 +314,10 @@ export default function Financial({ data }) {
               />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
               <Bar dataKey="Budget" radius={[3, 3, 0, 0]} maxBarSize={24} name="Budget">
-                {mData.map((_, i) => <Cell key={i} fill={i === selMonth ? '#02404F' : '#D1DCE5'} />)}
+                {chartData.map((_, i) => <Cell key={i} fill={period === 'monthly' && i === selMonth ? '#02404F' : '#D1DCE5'} />)}
               </Bar>
               <Bar dataKey="Actual" radius={[3, 3, 0, 0]} maxBarSize={24} name="Actual">
-                {mData.map((_, i) => <Cell key={i} fill={i === selMonth ? '#EB7D23' : '#F5A870'} />)}
+                {chartData.map((_, i) => <Cell key={i} fill={period === 'monthly' && i === selMonth ? '#EB7D23' : '#F5A870'} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -327,6 +455,82 @@ export default function Financial({ data }) {
           </table>
         </div>
       </div>
+
+      {/* Full P&L waterfall — Revenue through Net Profit, including D&A and Financial Costs */}
+      {pl.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border">
+            <h3 className="text-sm font-bold text-navy">Profit & Loss Statement</h3>
+            <p className="text-[10px] text-muted mt-0.5 font-medium">Full waterfall including EBITDA, depreciation, financial costs and Net Profit</p>
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {pl.map((row, i) => {
+                const isHeader = row.type === 'header'
+                const isTotal  = row.type === 'total'
+                return (
+                  <tr
+                    key={`${row.name}-${i}`}
+                    className={isHeader ? 'bg-navy/5' : isTotal ? 'bg-navy/10' : i % 2 ? 'bg-bg/50' : ''}
+                  >
+                    <td className={`px-5 py-3 ${isHeader ? 'text-[10px] uppercase tracking-wider text-muted font-bold' : isTotal ? 'font-extrabold text-navy' : 'text-navy pl-8 font-medium'}`}>
+                      {row.name}
+                    </td>
+                    <td className={`px-5 py-3 text-right ${isTotal ? 'font-extrabold text-navy' : 'text-navy font-semibold'}`}>
+                      {row.value != null ? `ETB ${fmtETB(row.value, 2)}` : ''}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Management report — This Month / Last Month / YTD / vs Budget */}
+      {management.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-border">
+            <h3 className="text-sm font-bold text-navy">Management Report</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
+              <thead>
+                <tr className="bg-bg">
+                  {['Metric', 'This Month', 'Last Month', 'YTD', 'vs Budget'].map((h, i) => (
+                    <th key={h} className={`py-3 px-5 text-[10px] font-bold text-muted uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {management.map((row, i) => {
+                  const vs  = parseFloat(row.vsBudget)
+                  const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
+                  const fmtMth = (v) => row.isPercent
+                    ? (v != null && v !== 0 ? `${v.toFixed(1)}%` : '—')
+                    : (v  != null && v !== 0 ? `ETB ${fmtETB(v)}` : '—')
+                  const fmtYtd = (v) => row.isPercent
+                    ? (v != null ? `${v.toFixed(1)}%` : '—')
+                    : (v  != null ? `ETB ${fmtETB(v)}` : '—')
+                  return (
+                    <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
+                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtMth(row.month)}</td>
+                      <td className="px-5 py-3 text-right text-muted font-medium">{fmtMth(row.last)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtYtd(row.ytd)}</td>
+                      <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>
+                        {isNaN(vs) ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Revenue by Partner Bank — Superset */}
       {revenueByBank.length > 0 && (

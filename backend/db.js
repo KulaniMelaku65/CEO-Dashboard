@@ -43,6 +43,20 @@ db.exec(`
     job_title   TEXT NOT NULL,
     updated_at  TEXT DEFAULT (datetime('now'))
   );
+
+  -- Dashboard-only department/section reassignment. Business Central itself is never
+  -- written to (our BC integration is read-only) — this table lets the dashboard show an
+  -- employee under a different section than BC reports, applied on top of the live
+  -- headcount row at snapshot-build time. Set/cleared from the "Department Overrides"
+  -- page under HR Analysis.
+  CREATE TABLE IF NOT EXISTS department_overrides (
+    employee_no    TEXT PRIMARY KEY,
+    employee_name  TEXT,
+    from_section   TEXT,
+    section_code   TEXT NOT NULL,
+    updated_by     TEXT,
+    updated_at     TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;

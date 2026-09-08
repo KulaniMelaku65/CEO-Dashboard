@@ -11,6 +11,8 @@ export default function Collections({ data }) {
   const cf        = data.cashflow || {}
   const colByBank = data.loanOps?.disbByBank || []
   const monthly   = cf.monthlyCollections
+  const revenueByBank = data.financialSS?.revenueByBank || []
+  const revMonthly    = data.budgetOverview?.monthly
 
   const monthlyData = (monthly?.labels || []).map((label, i) => ({
     label,
@@ -19,6 +21,12 @@ export default function Collections({ data }) {
 
   const total = colByBank.reduce((s, b) => s + (b.Amount || 0), 0)
 
+  // Revenue accrued — latest accrued month only (per decision: not a running trend here).
+  const revLabels = revMonthly?.labels || []
+  const latestIdx = revLabels.length - 1
+  const revenueAccruedLabel  = latestIdx >= 0 ? revLabels[latestIdx] : null
+  const revenueAccruedAmount = latestIdx >= 0 ? (revMonthly.actual?.[latestIdx] || 0) : null
+
   return (
     <div className="space-y-6">
       <div>
@@ -26,13 +34,19 @@ export default function Collections({ data }) {
         <p className="text-xs text-muted font-medium">Cash collected via BPASS banking partners (GL 5013–5026)</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KpiCard
           label="Total Collections"
           value={`ETB ${fmtETB(cf.flows?.collections)}`}
           sub="YTD cash received"
           trend="up"
           accent="#02404F"
+        />
+        <KpiCard
+          label="Revenue Accrued"
+          value={revenueAccruedAmount != null ? `ETB ${fmtETB(revenueAccruedAmount)}` : '—'}
+          sub={revenueAccruedLabel ? `Latest accrued month — ${revenueAccruedLabel}` : 'No accrual data yet'}
+          accent="#1FB6A6"
         />
         <KpiCard
           label="Operating Outflows"
@@ -45,6 +59,24 @@ export default function Collections({ data }) {
           sub="YTD capital expenditure"
         />
       </div>
+
+      {/* Revenue by Partner Bank — YTD */}
+      {revenueByBank.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <h3 className="text-sm font-bold text-navy mb-1">Revenue by Partner Bank — YTD (ETB)</h3>
+          <p className="text-[10px] text-muted font-medium mb-3">Operating income + provision per bank</p>
+          <ResponsiveContainer width="100%" height={Math.max(180, revenueByBank.length * 40)}>
+            <BarChart data={revenueByBank} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={80} />
+              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <Bar dataKey="Revenue" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={20} name="Revenue" />
+              <Bar dataKey="Provision" fill="#E5544B" radius={[0, 4, 4, 0]} maxBarSize={20} name="Provision" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Collections by bank bar chart */}
       <div className="bg-white rounded-2xl border border-border p-5 shadow-card">

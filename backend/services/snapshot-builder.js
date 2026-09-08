@@ -16,12 +16,17 @@ const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 let _bcStaticCache = null;
 async function getBcStatic() {
   if (_bcStaticCache) return _bcStaticCache;
-  const [mgtLines, coaEndTotals, coaPostingRows] = await Promise.all([
+  const [mgtLines, bsLines, coaEndTotals, coaPostingRows, taxAccounts] = await Promise.all([
     bc('KFT_MGT_RPT_Lines'),
+    bc('KFT_Balance_Sheet_Lines').catch(() => []),
     bc('Chart_of_Accounts', "?$filter=Account_Type eq 'End-Total'").catch(() => []),
-    bc('Chart_of_Accounts', "?$filter=Account_Type eq 'Posting' and No ge '5000' and No le '9999'").catch(() => [])
+    // 1000-9999 covers both the P&L ranges (5000-9999) and the Balance Sheet ranges (1000-4999)
+    bc('Chart_of_Accounts', "?$filter=Account_Type eq 'Posting' and No ge '1000' and No le '9999'").catch(() => []),
+    // Tax Payables (326) posting accounts — VAT, WHT, Corporate Tax, Payroll Tax, and any
+    // future tax type added under this subcategory — for the Tax page.
+    bc('KFT_Chart_Of_Accounts', "?$filter=accountSubCategory eq '326 - Tax payables' and accountType eq 'Posting'").catch(() => [])
   ]);
-  _bcStaticCache = { mgtLines, coaEndTotals, coaPostingRows };
+  _bcStaticCache = { mgtLines, bsLines, coaEndTotals, coaPostingRows, taxAccounts };
   return _bcStaticCache;
 }
 
@@ -61,9 +66,11 @@ const CONFIG = {
     debtLong:         ['3700', '3749'],
     wip:              ['1500', '1599'],
     disbursements:    ['6021', '6022'],
+    nonCurrentAssets: ['1000', '1999'],
     currentAssets:    ['2000', '2995'],
     inventory:        ['2410', '2459'],
     currentLiab:      ['3005', '3599'],
+    nonCurrentLiab:   ['3600', '3999'],
     totalLiabilities: ['3000', '3999'],
     equity:           ['4000', '4999']
   },
@@ -125,7 +132,46 @@ async function buildSnapshot(targetDate) {
   // The sub-accounts here (e.g. 7011/7014) are posting accounts that roll into
   // Total CoA accounts (7099, 8199...) referenced by the schedule.
   let MGT_REV  = new Set(['5013','5014','5015','5016','5017','5018','5019','5020','5021','5022','5023','5024','5025','5026']);
-  let MGT_COS  = new Set(['6011','6013','6014','6015','6016','6051','6052','6053','6054','6055','6056','6057','6058']);
+  // Revenue broken out by M-MGT-RPT's own line items (one row per revenue stream —
+  // BPASS by bank partner, Device Financing, Invoice Financing, etc.), for the
+  // Revenue KPI's drilldown. Overwritten below with live Descriptions if reachable.
+  let MGT_REV_LINES = [
+    { account: '5015', description: 'BPASS - Enat' },
+    { account: '5014', description: 'BPASS - Bunna' },
+    { account: '5013', description: 'BPASS - CooP' },
+    { account: '5025', description: 'Revenue from Partnerships' },
+    { account: '5024', description: 'Smart Mobility' },
+    { account: '5023', description: 'Capital Solution' },
+    { account: '5022', description: 'Sharia Finance and Market Solution - Zamzam' },
+    { account: '5021', description: 'Sharia Finance and Market Solution - CooP' },
+    { account: '5020', description: 'AG Fin/Tech + Agent' },
+    { account: '5019', description: 'Device Financing' },
+    { account: '5018', description: 'Invoice Financing' },
+    { account: '5017', description: 'BPASS - Amhara' },
+    { account: '5026', description: 'BPASS - Zamzam' },
+    { account: '5016', description: 'BPASS - Wegagen' }
+  ];
+  // Note: default was missing 6018 "Security-CoS" (present in the live schedule's 6019
+  // formula) — included here now.
+  let MGT_COS  = new Set(['6011','6013','6014','6015','6016','6018','6051','6052','6053','6054','6055','6056','6057','6058']);
+  // Cost of Sales broken out by M-MGT-RPT's own line items, for the Cost of Sales KPI's
+  // drilldown. Overwritten below with live Descriptions if reachable.
+  let MGT_COS_LINES = [
+    { account: '6011', description: 'Cost of Sales' },
+    { account: '6057', description: 'Telecloud' },
+    { account: '6016', description: 'Vehicle Rental-CoS' },
+    { account: '6015', description: 'Per Diem Travel Allowance-CoS' },
+    { account: '6014', description: 'Travel- CoS' },
+    { account: '6013', description: 'Hotel and Accomodation-CoS' },
+    { account: '6056', description: 'CISO' },
+    { account: '6055', description: 'TECH' },
+    { account: '6054', description: 'Smart Mobility' },
+    { account: '6053', description: 'Capital Solutions' },
+    { account: '6052', description: 'Sharia Compliant Financing Solutions' },
+    { account: '6058', description: 'FMLS Project' },
+    { account: '6018', description: 'Security-CoS' },
+    { account: '6051', description: 'Financial and Market Linkage solutions' }
+  ];
   let MGT_SAL  = new Set(['8101','8102','8103','8104','8105','8106']);
   let MGT_OPEX = new Set([
     '7011','7014',                                    // → 7099 Selling & Distribution
@@ -142,10 +188,14 @@ async function buildSnapshot(targetDate) {
     '9013','9016','9017','9025'                       // Parking, Stamp Duty, Penalties, Loading
   ]);
 
+  // Balance Sheet account sets, resolved from the real M-BALANCE schedule below.
+  // Stay null (→ CONFIG.ranges fallback further down) if the schedule can't be reached.
+  let BS_FIXED = null, BS_CURRENT = null, BS_LIAB = null, BS_EQUITY = null;
+
   if (bcAvail) {
     try {
       // Load schedule + CoA from cache (fetched once per process, not per snapshot)
-      const { mgtLines, coaEndTotals, coaPostingRows } = await getBcStatic();
+      const { mgtLines, bsLines, coaEndTotals, coaPostingRows } = await getBcStatic();
 
       // Index rows by RowNo for fast lookup (BC returns PascalCase field names)
       const rowMap = {};
@@ -212,8 +262,23 @@ async function buildSnapshot(targetDate) {
       };
 
       // Revenue (RowNo 10000) and COS (RowNo 6019): account numbers listed directly in Totaling
-      if (rowMap['10000']?.Totaling) MGT_REV = extractAccts(rowMap['10000'].Totaling);
-      if (rowMap['6019']?.Totaling)  MGT_COS = extractAccts(rowMap['6019'].Totaling);
+      if (rowMap['10000']?.Totaling) {
+        MGT_REV = extractAccts(rowMap['10000'].Totaling);
+        // Each revenue account is also its own schedule row (RowNo === account number),
+        // one per revenue stream — pull its live Description for the drilldown.
+        MGT_REV_LINES = [...MGT_REV].map(acct => ({
+          account: acct,
+          description: (rowMap[acct]?.Description || acct).trim()
+        }));
+      }
+      if (rowMap['6019']?.Totaling) {
+        MGT_COS = extractAccts(rowMap['6019'].Totaling);
+        // Same pattern as revenue: each CoS account is also its own schedule row.
+        MGT_COS_LINES = [...MGT_COS].map(acct => ({
+          account: acct,
+          description: (rowMap[acct]?.Description || acct).trim()
+        }));
+      }
       if (rowMap['1']?.Totaling)     MGT_SAL = extractAccts(rowMap['1'].Totaling);
 
       // OPEX (RowNo 30000): all tokens in the Totaling are RowNos — resolve via rowMap
@@ -223,6 +288,70 @@ async function buildSnapshot(targetDate) {
       }
 
       console.log(`  M-MGT-RPT: Rev=${MGT_REV.size} accts, COS=${MGT_COS.size} accts, Sal=${MGT_SAL.size} accts, OPEX=${MGT_OPEX.size} accts`);
+
+      // ── Balance Sheet (M-BALANCE) — resolve the real schedule into account sets ──
+      // This is the same schedule Report 151 "Balance Sheet" runs via
+      // GeneralLedgerSetup."Acc. Sched. for Balance Sheet" (confirmed = M-BALANCE).
+      try {
+        const bsRowsSched = (bsLines || []).filter(r => r.ScheduleName === 'M-BALANCE');
+        if (bsRowsSched.length) {
+          const bsIdxByRowNo = {}, bsByRowNo = {};
+          bsRowsSched.forEach((r, i) => { bsIdxByRowNo[r.RowNo] = i; bsByRowNo[r.RowNo] = r; });
+
+          // A Posting-Accounts row's Totaling is an account filter: "lo..hi" ranges,
+          // single account numbers, or "|"-separated alternatives of either
+          // (e.g. "4030|4041", "4040|2995|5000..9999").
+          const parseAcctTotaling = totaling => {
+            const result = new Set();
+            (totaling || '').replace(/[()]/g, '').split('|').map(s => s.trim()).filter(Boolean).forEach(tok => {
+              const m = tok.match(/^(\d+)\.\.(\d+)$/);
+              if (m) {
+                const lo = Number(m[1]), hi = Number(m[2]);
+                coaPostingAccts.forEach(a => { const v = Number(a); if (v >= lo && v <= hi) result.add(a); });
+              } else if (/^\d+$/.test(tok) && coaPostingAccts.has(tok)) {
+                result.add(tok);
+              }
+            });
+            return result;
+          };
+
+          // A Formula row's Totaling references other RowNos: a row range ("P0002..P0017")
+          // or a "+"-joined sum of rows ("F0054+F0062"). Resolve recursively down to accounts.
+          const resolveBsRow = (rowNo, visited = new Set()) => {
+            if (visited.has(rowNo)) return new Set();
+            const visit = new Set(visited); visit.add(rowNo);
+            const row = bsByRowNo[rowNo];
+            if (!row) return new Set();
+            if (row.TotalingType === 'Posting Accounts') return parseAcctTotaling(row.Totaling);
+            const result = new Set();
+            (row.Totaling || '').split('+').map(s => s.trim()).filter(Boolean).forEach(term => {
+              const rangeM = term.match(/^([A-Za-z]\d+)\.\.([A-Za-z]\d+)$/);
+              if (rangeM) {
+                const i0 = bsIdxByRowNo[rangeM[1]], i1 = bsIdxByRowNo[rangeM[2]];
+                if (i0 != null && i1 != null)
+                  for (let i = i0; i <= i1; i++) resolveBsRow(bsRowsSched[i].RowNo, visit).forEach(a => result.add(a));
+              } else {
+                resolveBsRow(term, visit).forEach(a => result.add(a));
+              }
+            });
+            return result;
+          };
+
+          // F0018 Total Fixed Assets, F0031 Total Current Assets, F0062 Total Equity.
+          // Liabilities: F0036 ("=P0034..P0035") is a dead/orphaned "Long Term Liabilities"
+          // stub with no accounts in the live schedule — always empty. F0054
+          // ("=P0037..P0053") is the real 16-account liabilities total; use that instead.
+          const fixed = resolveBsRow('F0018'), current = resolveBsRow('F0031');
+          const liab  = resolveBsRow('F0054'), equity  = resolveBsRow('F0062');
+
+          if (fixed.size && current.size && liab.size && equity.size) {
+            BS_FIXED = fixed; BS_CURRENT = current; BS_LIAB = liab; BS_EQUITY = equity;
+            console.log(`  M-BALANCE: Fixed=${fixed.size} accts, Current=${current.size} accts, Liab=${liab.size} accts, Equity=${equity.size} accts`);
+          }
+        }
+      } catch (e) {
+        console.warn('  M-BALANCE fetch failed — using hardcoded account ranges:', e.message);
+      }
     } catch (e) {
       console.warn('  M-MGT-RPT fetch failed — using hardcoded account sets:', e.message);
     }
@@ -242,11 +371,87 @@ async function buildSnapshot(targetDate) {
   const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
   const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
 
-  const budgetActual = { lines: [
+  // Per-line department drilldowns for Financial Performance's KPI cards (click to
+  // expand). Built from the same MGT_* account sets that drive each card's own actual
+  // total, so a drilldown's parts always sum back to exactly the card's headline figure.
+  // Department display names aren't resolved yet at this point in the snapshot build —
+  // the frontend resolves 'unit' codes via dimensionNames/hr.deptDisplayNames, same as
+  // the existing "Budget Utilization by Business Unit" section does.
+  const byDeptFromAccts = (rows, accts, negate = false) => {
+    const m = {};
+    rows.forEach(x => {
+      if (!accts.has(String(x.accountNo))) return;
+      const u = x.globalDim2 || 'Unassigned';
+      m[u] = (m[u] || 0) + num(x.amount);
+    });
+    return Object.entries(m)
+      .map(([unit, amt]) => ({ unit, actual: toM(negate ? -amt : amt) }))
+      .filter(r => r.actual !== 0)
+      .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
+  };
+  // Sum actuals per schedule line's account (raw, un-rounded, un-negated). Pre-seeds
+  // every line at 0 — including accounts with zero postings this period — so the
+  // drilldown always mirrors the full schedule, not just the accounts that happened
+  // to post this period.
+  const sumByScheduleLine = (rows, lines) => {
+    const m = {};
+    lines.forEach(l => { m[l.account] = 0; });
+    rows.forEach(x => {
+      const a = String(x.accountNo);
+      if (a in m) m[a] += num(x.amount);
+    });
+    return m;
+  };
+
+  // Generic schedule-line drilldown (Cost of Sales, and anything else without special
+  // grouping): one row per schedule line, zero-balance lines included.
+  const byScheduleLine = (rows, lines, negate = false) => {
+    const m = sumByScheduleLine(rows, lines);
+    return lines
+      .map(l => ({ unit: l.description, actual: toM(negate ? -m[l.account] : m[l.account]) }))
+      .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
+  };
+
+  // Revenue drilldown by M-MGT-RPT line item (BPASS by bank partner, Device Financing,
+  // Invoice Financing, etc.) rather than by department — mirrors the actual account
+  // schedule's own revenue breakdown instead of a globalDim2 regrouping of it. The 6
+  // BPASS-by-bank-partner lines collapse into one "BPASS" row at the top level; its own
+  // drilldown (children) breaks back out to the individual bank partners.
+  const byRevenueLine = (rows, lines) => {
+    const m = sumByScheduleLine(rows, lines);
+
+    const isBpass = l => /^BPASS/i.test(l.description);
+    const bpassLines = lines.filter(isBpass);
+    const otherLines = lines.filter(l => !isBpass(l));
+
+    const bpassChildren = bpassLines
+      .map(l => ({ unit: l.description, actual: toM(-m[l.account]) }))
+      .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
+    const bpassRawTotal = bpassLines.reduce((s, l) => s - m[l.account], 0);
+    const bpassRow = { unit: 'BPASS (by bank partner)', actual: toM(bpassRawTotal), children: bpassChildren };
+
+    const otherRows = otherLines.map(l => ({ unit: l.description, actual: toM(-m[l.account]) }));
+
+    return [bpassRow, ...otherRows].sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
+  };
+
+  const MGT_EXP = new Set([...MGT_SAL, ...MGT_OPEX]);
+  const lineDrilldowns = {
+    'Revenue':       byRevenueLine(actuals, MGT_REV_LINES),
+    'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES),
+    'Expenses':      byDeptFromAccts(actuals, MGT_EXP),
+    // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
+    'Gross Profit': [
+      { unit: 'Revenue',       actual: toM(mgtRevA) },
+      { unit: 'Cost of Sales', actual: toM(-mgtCosA) }
+    ]
+  };
+
+  const budgetActual = { lineDrilldowns, lines: [
     { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
-    { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  }
   ]};
 
@@ -335,16 +540,16 @@ async function buildSnapshot(targetDate) {
   budgetActual.lines = [
     { name: 'Revenue',       budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
-    { name: 'Expenses',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpBYTD),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'Expenses',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebBYTD),      actual: toM(mgtEbA),      higherIsBetter: true  }
   ];
 
   budgetActual.monthlyLines = Array(12).fill(null).map((_, i) => [
     { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev(i),  higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos(i),  higherIsBetter: false },
-    { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP(i),   higherIsBetter: true  },
+    { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  }
   ]);
 
@@ -369,6 +574,10 @@ async function buildSnapshot(targetDate) {
     '840': 'Staff Welfare'
   };
   const cbBudU = {}, cbActU = {}, cbBudA = {}, cbActA = {};
+  // Department × category cross-tab — powers the "hover a department to see its
+  // expense category breakdown" drilldown (rentals, consultancy, utilities, etc.)
+  // on the Budget Analysis "By Business Unit" tab.
+  const cbBudUA = {}, cbActUA = {};
 
   budgets.forEach(x => {
     const u  = x.globalDim2 || 'Unassigned';
@@ -381,6 +590,8 @@ async function buildSnapshot(targetDate) {
     if (CB_ACCT_LABELS[pfx]) {
       if (!cbBudA[pfx]) cbBudA[pfx] = Array(12).fill(0);
       cbBudA[pfx][mi] += amt;
+      if (!cbBudUA[u]) cbBudUA[u] = {};
+      cbBudUA[u][pfx] = (cbBudUA[u][pfx] || 0) + amt;
     }
   });
 
@@ -398,6 +609,8 @@ async function buildSnapshot(targetDate) {
     if (CB_ACCT_LABELS[pfx]) {
       if (!cbActA[pfx]) cbActA[pfx] = Array(12).fill(0);
       cbActA[pfx][mi] += num(x.amount);
+      if (!cbActUA[u]) cbActUA[u] = {};
+      cbActUA[u][pfx] = (cbActUA[u][pfx] || 0) + num(x.amount);
     }
   });
 
@@ -424,7 +637,21 @@ async function buildSnapshot(targetDate) {
           monthly: mN.map((_, i) => ({
             bud: toM(cbBudU[u]?.[i] || 0),
             act: toM(Math.abs(cbActU[u]?.[i] || 0))
-          }))
+          })),
+          // Expense category breakdown for this one department — hover detail on
+          // the "By Business Unit" tab (rentals, consultancy, utilities, etc.)
+          categories: Object.keys(CB_ACCT_LABELS)
+            .filter(pfx => (cbBudUA[u]?.[pfx]) || (cbActUA[u]?.[pfx]))
+            .map(pfx => {
+              const cBud = cbBudUA[u]?.[pfx] || 0;
+              const cAct = Math.abs(cbActUA[u]?.[pfx] || 0);
+              return {
+                code: pfx, name: CB_ACCT_LABELS[pfx],
+                budgetYTD: toM(cBud), actualYTD: toM(cAct),
+                utilPct: cBud ? parseFloat((cAct / cBud * 100).toFixed(1)) : null
+              };
+            })
+            .sort((a, b) => (b.actualYTD || b.budgetYTD || 0) - (a.actualYTD || a.budgetYTD || 0))
         };
       })
       .filter(r => r.budgetYTD > 0 || r.actualYTD > 0)
@@ -513,21 +740,160 @@ async function buildSnapshot(targetDate) {
     { name: 'Net Profit',      value: toM(netA),  type: 'total' }
   ];
 
-  let bsRows;
+  let bsRows, glAccounts;
   if (IS_HISTORICAL) {
-    const glE = bcAvail ? await bc('KFT_GL_Entries',
-      `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`) : [];
+    const [glE, rawGlAccounts] = await Promise.all([
+      bcAvail ? bc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`) : Promise.resolve([]),
+      bcAvail ? bc('KFT_GL_Accounts').catch(() => []) : Promise.resolve([])
+    ]);
+    glAccounts = rawGlAccounts;
     const bsMap = {};
     glE.forEach(e => { const k = String(e.accountNo); bsMap[k] = (bsMap[k] || 0) + num(e.amount); });
     bsRows = Object.entries(bsMap).map(([accountNo, balance]) => ({ accountNo, balance }));
   } else {
-    bsRows = bcAvail ? await bc('KFT_GL_Balances') : [];
+    [bsRows, glAccounts] = await Promise.all([
+      bcAvail ? bc('KFT_GL_Balances') : Promise.resolve([]),
+      bcAvail ? bc('KFT_GL_Accounts').catch(() => []) : Promise.resolve([])
+    ]);
   }
+
+  // Account detail map: accountNo → { name, sub-category, type }
+  const acctDetailMap = {};
+  (glAccounts || []).forEach(r => {
+    if (r.no) acctDetailMap[String(r.no).trim()] = {
+      name: r.name            || '',
+      sub:  r.accountSubCategory || '',
+      type: r.accountType     || ''
+    };
+  });
+
   const G = k => bsRows
     .filter(x => inRange(String(x.accountNo), CONFIG.ranges[k]))
     .reduce((s, x) => s + num(x.balance), 0);
-  const ca = G('currentAssets'), inv = G('inventory'), cl = Math.abs(G('currentLiab'));
-  const liab = Math.abs(G('totalLiabilities')), eq = Math.abs(G('equity'));
+  const Gset = set => bsRows
+    .filter(x => set.has(String(x.accountNo)))
+    .reduce((s, x) => s + num(x.balance), 0);
+
+  // Prefer the real M-BALANCE schedule's account sets (matches BC's official Balance
+  // Sheet report exactly); fall back to the hardcoded CONFIG.ranges if the schedule
+  // couldn't be resolved this run. M-BALANCE has no current/non-current split for
+  // liabilities, so that distinction is still layered on via CONFIG.ranges either way.
+  const clAcctSet  = BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.currentLiab)))    : null;
+  const nclAcctSet = BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.nonCurrentLiab))) : null;
+  const invAcctSet = BS_CURRENT ? new Set([...BS_CURRENT].filter(a => inRange(a, CONFIG.ranges.inventory))) : null;
+
+  const ca  = BS_CURRENT ? Gset(BS_CURRENT) : G('currentAssets');
+  const inv = invAcctSet ? Gset(invAcctSet) : G('inventory');
+  const cl  = Math.abs(clAcctSet ? Gset(clAcctSet) : G('currentLiab'));
+  const liab = Math.abs(BS_LIAB   ? Gset(BS_LIAB)   : G('totalLiabilities'));
+  const eq   = Math.abs(BS_EQUITY ? Gset(BS_EQUITY) : G('equity'));
+
+  // Balance Sheet — sub-category-grouped account rows for each BS section.
+  // Assets are positive (DR normal), liabilities and equity are negated (CR stored).
+  const bsSectionRaw = (acctSet, negate = false) => {
+    const subMap = {}, subMinAcct = {};
+    bsRows.forEach(x => {
+      const a = String(x.accountNo);
+      if (!acctSet.has(a)) return;
+      const detail = acctDetailMap[a] || {};
+      const sub = detail.sub || detail.name || a;
+      const bal = num(x.balance) * (negate ? -1 : 1);
+      subMap[sub] = (subMap[sub] || 0) + bal;
+      if (!subMinAcct[sub] || a < subMinAcct[sub]) subMinAcct[sub] = a;
+    });
+    const rows = Object.entries(subMap)
+      .filter(([, v]) => v !== 0)
+      .sort(([a], [b]) => (subMinAcct[a] || '').localeCompare(subMinAcct[b] || ''))
+      .map(([rawName, balance]) => ({
+        name: rawName.replace(/^\d+\s*[-.\s]+/, '').trim(),
+        balance: Math.round(balance)
+      }));
+    const total = rows.reduce((s, x) => s + x.balance, 0);
+    return { rows, total };
+  };
+
+  const rangeSet = ([lo, hi]) => new Set(bsRows.map(x => String(x.accountNo)).filter(a => inRange(a, [lo, hi])));
+
+  const nca = BS_FIXED ? Gset(BS_FIXED) : G('nonCurrentAssets');
+  const ncLiab = Math.abs(nclAcctSet ? Gset(nclAcctSet) : G('nonCurrentLiab'));
+  const totalAssets = nca + ca;
+
+  const ncaSection = bsSectionRaw(BS_FIXED   || rangeSet(CONFIG.ranges.nonCurrentAssets));
+  const caSection  = bsSectionRaw(BS_CURRENT || rangeSet(CONFIG.ranges.currentAssets));
+  const clSection  = bsSectionRaw(clAcctSet  || rangeSet(CONFIG.ranges.currentLiab),    true);
+  const nclSection = bsSectionRaw(nclAcctSet || rangeSet(CONFIG.ranges.nonCurrentLiab), true);
+  const eqSection  = bsSectionRaw(BS_EQUITY  || rangeSet(CONFIG.ranges.equity),         true);
+
+  const balanceSheet = {
+    asOf: targetDate,
+    // Scalar KPIs (M ETB) kept for ratio cards
+    nonCurrentAssets:   toM(nca),
+    currentAssets:      toM(ca),
+    inventory:          toM(inv),
+    totalAssets:        toM(totalAssets),
+    currentLiabilities: toM(cl),
+    nonCurrentLiabilities: toM(ncLiab),
+    totalLiabilities:   toM(liab),
+    equity:             toM(eq),
+    totalAssetsImplied: toM(liab + eq),
+    ratios: {
+      currentRatio:  cl ? +(ca / cl).toFixed(2) : null,
+      quickRatio:    cl ? +((ca - inv) / cl).toFixed(2) : null,
+      debtToEquity:  eq ? +(liab / eq).toFixed(2) : null
+    },
+    // Account-level sections for the Balance Sheet detail page
+    sections: {
+      nonCurrentAssets:      ncaSection,
+      currentAssets:         caSection,
+      totalAssets:           ncaSection.total + caSection.total,
+      currentLiabilities:    clSection,
+      nonCurrentLiabilities: nclSection,
+      totalLiabilities:      clSection.total + nclSection.total,
+      equity:                eqSection,
+      totalEquity:           eqSection.total,
+      totalLiabEquity:       clSection.total + nclSection.total + eqSection.total
+    }
+  };
+
+  // ── Tax (VAT / WHT / Corporate / Payroll) ───────────────────────────────────
+  // Tax type accounts are resolved dynamically from KFT_Chart_Of_Accounts (subcategory
+  // "326 - Tax payables"), not hardcoded, so a new tax account added in BC picks up here
+  // automatically. Outstanding = current balance (same bsRows as the Balance Sheet);
+  // monthly = net change per month from the same `actuals` used for the P&L — both are
+  // credit-normal liability accounts, so negated to read positive when tax is owed/accrued.
+  const { taxAccounts } = await getBcStatic();
+  const TAX_LINES = (taxAccounts || [])
+    .filter(a => a.no)
+    .map(a => ({ account: String(a.no).trim(), description: (a.name || a.no).trim() }));
+
+  const taxBalByAcct = {};
+  bsRows.forEach(x => { const a = String(x.accountNo); taxBalByAcct[a] = (taxBalByAcct[a] || 0) + num(x.balance); });
+
+  const taxMonthlyByAcct = {};
+  TAX_LINES.forEach(l => { taxMonthlyByAcct[l.account] = Array(12).fill(0); });
+  actuals.forEach(x => {
+    const a = String(x.accountNo);
+    if (!(a in taxMonthlyByAcct)) return;
+    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    if (mi < 0) return;
+    taxMonthlyByAcct[a][mi] += num(x.amount);
+  });
+
+  const tax = {
+    asOf: targetDate,
+    byType: TAX_LINES
+      .map(l => ({
+        type: l.description,
+        outstanding: toM(-(taxBalByAcct[l.account] || 0)),
+        monthly: { labels, data: labels.map((_, i) => toM(-taxMonthlyByAcct[l.account][i])) }
+      }))
+      .sort((a, b) => Math.abs(b.outstanding) - Math.abs(a.outstanding)),
+    totalOutstanding: toM(-TAX_LINES.reduce((s, l) => s + (taxBalByAcct[l.account] || 0), 0)),
+    monthlyTotal: {
+      labels,
+      data: labels.map((_, i) => toM(-TAX_LINES.reduce((s, l) => s + taxMonthlyByAcct[l.account][i], 0)))
+    }
+  };
 
   const reports = {
     ratios: [
@@ -573,6 +939,17 @@ async function buildSnapshot(targetDate) {
   // for the root dataitem's primary key) may no longer be populated. Backfill it so all
   // downstream references to r.AuxiliaryIndex1 continue to work without any other changes.
   headcountRows.forEach(r => { if (!r.AuxiliaryIndex1 && r.employeeNo) r.AuxiliaryIndex1 = r.employeeNo; });
+
+  // Manual department/section overrides (dashboard-only — never written back to BC).
+  // Patched onto the raw headcount row before any dept/BU aggregation runs below, so
+  // every downstream view (headcount charts, cost by BU, HR Page Review, CSV export)
+  // picks up the reassignment automatically without needing its own override logic.
+  const deptOverrides = {};
+  db.prepare('SELECT employee_no, section_code FROM department_overrides').all()
+    .forEach(r => { deptOverrides[r.employee_no] = r.section_code; });
+  headcountRows.forEach(r => {
+    if (deptOverrides[r.AuxiliaryIndex1]) r.businessUnitDept = deptOverrides[r.AuxiliaryIndex1];
+  });
 
   // Persist every employee's job title (KFT_Employee_Headcount now covers Active and
   // Inactive/Terminated/New — its BC-side active-only filter was removed). A minority of
@@ -785,6 +1162,8 @@ async function buildSnapshot(targetDate) {
       jobTitle:       r.jobTitle      || '',
       employeeType:   r.employeeType  || '',
       virtualCompany: r.virtualCompany || '',
+      sectionCode,
+      sectionName,
       region:         normalizeRegion(r.Employee_Location),
       country:        normalizeCountry(r.Employee_Location),
       isHQ:           (r.Employee_Location || '').trim().toUpperCase().includes('HQ')
@@ -1567,7 +1946,7 @@ async function buildSnapshot(targetDate) {
           lastName:         '',
           employeeType:     'Individual Consultant',
           virtualCompany:   r.VirtualCompanyCode || 'Unknown',
-          businessUnitDept: r.BusinessUnitCode   || 'Unknown',
+          businessUnitDept: deptOverrides[r.ConsultantID] || r.BusinessUnitCode || 'Unknown',
           jobTitle:         '',
           totalEarning:     toETB(rawAmount),
           payrollPeriod,
@@ -2423,6 +2802,8 @@ async function buildSnapshot(targetDate) {
     corporateBudget,
     cashflow,
     reports,
+    balanceSheet,
+    tax,
     hr,
     hrReview,
     employeeCost,

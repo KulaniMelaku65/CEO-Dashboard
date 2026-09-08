@@ -6,7 +6,7 @@ import {
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
-import { buildEmployeeExportRows, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
+import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 
 const BG      = '#052C36'
 const PANEL   = '#0A3A46'
@@ -279,6 +279,7 @@ export default function PeopleHRSummary({ data }) {
   }))
 
   const exportRows = buildEmployeeExportRows(filteredPayroll, effectiveMonth, activeEmployees, deptDisplayNames)
+  const exportMeta = buildExportMeta({ filterBU, filterType, filterVC, filterSource, effectiveMonth, deptDisplayNames })
 
   return (
     <div className="space-y-4">
@@ -290,6 +291,7 @@ export default function PeopleHRSummary({ data }) {
         <ExportButton
           rows={exportRows}
           columns={EMPLOYEE_EXPORT_COLUMNS}
+          meta={exportMeta}
           filename={`people-culture-${effectiveMonth || 'export'}.csv`.replace(/\s+/g, '-')}
         />
       </div>

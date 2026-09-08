@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment } from 'react'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
-import { buildEmployeeExportRows, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
+import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -198,6 +198,14 @@ export default function HRPageReview({ data }) {
     : null
 
   const totalHeadcount = useMemo(() => {
+    // Budget Source is a payroll-only concept with no representation in the live
+    // headcount table at all (same limitation documented elsewhere: "Budget Source has
+    // no historical reconstruction"), so validHC/filteredHC/monthHeadcount below would
+    // silently ignore this filter and always show the unfiltered total. Count unique
+    // payroll-derived employees instead whenever Source is actually narrowed —
+    // filteredPay already respects filterSource (and is isCountable-filtered).
+    if (filterSource !== 'All')
+      return new Set(filteredPay.map(r => r.employeeNo)).size
     if (monthHeadcount != null) return monthHeadcount
     const hcCount = (filterBU === 'All' && filterType === 'All' && filterVC === 'All')
       ? validHC.reduce((s, r) => s + r.count, 0)
@@ -210,7 +218,7 @@ export default function HRPageReview({ data }) {
     if (hcCount === 0 && filteredPay.length > 0)
       return new Set(filteredPay.map(r => r.employeeNo)).size
     return hcCount
-  }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, monthHeadcount])
+  }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, filterSource, monthHeadcount])
 
   const { totalMonthly, kifiyaMonthly, safeeMonthly } = useMemo(() => {
     let total = 0, kifiya = 0, safee = 0
@@ -396,6 +404,7 @@ export default function HRPageReview({ data }) {
 
   const deptDisplayNames = hr.deptDisplayNames || {}
   const exportRows = buildEmployeeExportRows(filteredPay, effectiveMonth, filteredRoster, deptDisplayNames)
+  const exportMeta = buildExportMeta({ filterBU, filterType, filterVC, filterSource, effectiveMonth, deptDisplayNames })
 
   return (
     <div className="space-y-6">
@@ -409,6 +418,7 @@ export default function HRPageReview({ data }) {
         <ExportButton
           rows={exportRows}
           columns={EMPLOYEE_EXPORT_COLUMNS}
+          meta={exportMeta}
           filename={`hr-analysis-${effectiveMonth || 'export'}.csv`.replace(/\s+/g, '-')}
         />
       </div>

@@ -2,14 +2,14 @@ import { downloadCSV } from '../lib/csvExport.js'
 
 // variant 'light' = for light page chrome (navy text, matches the "Clear filters" button
 // style already used in PeopleOpsFilterBar); 'dark' = for placement on a dark panel.
-export default function ExportButton({ rows, columns, filename, label = 'Export', variant = 'light' }) {
+export default function ExportButton({ rows, columns, filename, meta, label = 'Export', variant = 'light' }) {
   const disabled = !rows || rows.length === 0
   const variantStyle = variant === 'dark'
     ? { borderColor: 'rgba(255,255,255,0.2)', color: '#fff' }
     : { borderColor: '#D7DEE6', color: '#02404F' }
   return (
     <button
-      onClick={() => downloadCSV(filename, rows, columns)}
+      onClick={() => downloadCSV(filename, rows, columns, meta)}
       disabled={disabled}
       title={disabled ? 'No rows to export for the current filters' : `Export ${rows.length} row(s) to CSV`}
       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:border-navy"

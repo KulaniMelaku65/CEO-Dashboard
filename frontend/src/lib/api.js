@@ -39,3 +39,13 @@ export const budget = {
   names: ()     => req('/api/bc/budget-names'),
   data:  (name) => req(`/api/bc/budget/${encodeURIComponent(name)}`),
 }
+
+export const departmentOverrides = {
+  list: () => req('/api/department-overrides'),
+  set: (employeeNo, employeeName, fromSection, sectionCode) => req('/api/department-overrides', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employeeNo, employeeName, fromSection, sectionCode })
+  }),
+  remove: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}`, { method: 'DELETE' }),
+}

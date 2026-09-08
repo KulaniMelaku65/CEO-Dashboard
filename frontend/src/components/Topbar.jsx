@@ -4,7 +4,7 @@ import { fmtDate } from '../lib/fmt.js'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-export default function Topbar({ data, status, paused, histDate, onTogglePause, onRefresh, onHistDate, onMenuToggle }) {
+export default function Topbar({ data, status, histDate, onRefresh, onHistDate, onMenuToggle }) {
   const [dates, setDates]       = useState([])
   const [pickerOpen, setPicker] = useState(false)
   const [selYear, setSelYear]   = useState(null)
@@ -186,21 +186,6 @@ export default function Topbar({ data, status, paused, histDate, onTogglePause, 
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
           </svg>
-        </button>
-
-        <button
-          onClick={onTogglePause}
-          title={paused ? 'Resume slideshow' : 'Pause slideshow'}
-          className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
-          style={paused
-            ? { borderColor: '#EB7D23', color: '#EB7D23', background: 'rgba(235,125,35,.08)' }
-            : { borderColor: '#E3E9F2', color: '#6B7C93', background: 'white' }}
-        >
-          {paused
-            ? <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            : <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          }
-          <span className="hidden md:inline">{paused ? 'Resume' : 'Pause'}</span>
         </button>
       </div>
     </header>
