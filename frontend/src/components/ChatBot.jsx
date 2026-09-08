@@ -59,6 +59,43 @@ function buildContext(data, pageId) {
   return JSON.stringify(relevant).slice(0, 20000)
 }
 
+// Single-employee lookup — activeRoster/employeePayroll are deliberately in HEAVY_KEYS
+// (stripped from the general context) to keep the char budget for aggregates, so a
+// name or employee number the user actually typed is searched locally here and, if
+// matched, that one record is attached on its own. This is the only way a "what
+// department is X in" / "what does X cost" question can be answered at all — without
+// it the assistant only ever sees totals, never individuals. Includes any active
+// dashboard-only department override automatically, since it's already baked into
+// activeRoster's buCode/sectionCode at sync time.
+function findEmployeeMatches(query, data) {
+  const roster = data?.hr?.activeRoster || []
+  if (!roster.length) return []
+  const q = query.toLowerCase()
+  const words = q.split(/\s+/).filter(w => w.length > 2)
+  return roster.filter(r => {
+    const no = (r.employeeNo || '').toLowerCase()
+    if (no && q.includes(no)) return true
+    const name = (r.name || '').toLowerCase()
+    return name && words.some(w => name.includes(w))
+  }).slice(0, 5)
+}
+
+function buildEmployeeBlock(matches, data) {
+  if (!matches.length) return ''
+  const payrollByNo = {}
+  ;(data?.hrReview?.employeePayroll || []).forEach(p => { payrollByNo[p.employeeNo] = p })
+  const enriched = matches.map(m => {
+    const pay = payrollByNo[m.employeeNo]
+    return {
+      employeeNo: m.employeeNo, name: m.name, jobTitle: m.jobTitle,
+      businessUnit: m.buCode, section: m.sectionName || m.sectionCode,
+      virtualCompany: m.vc, employeeType: m.type, status: m.status,
+      ...(pay ? { monthlyCost: pay.monthTotals, pensionMonthlyCost: pay.pensionMonthTotals, payrollSource: pay.payrollSource } : {})
+    }
+  })
+  return `\nEmployee record(s) matching the user's message, from the live active roster (department already reflects any dashboard override): ${JSON.stringify(enriched)}`
+}
+
 export default function ChatBot({ data, pageId, pageLabel }) {
   const [open, setOpen]       = useState(false)
   const [messages, setMessages] = useState([
@@ -91,9 +128,10 @@ export default function ChatBot({ data, pageId, pageLabel }) {
           overridesBlock = `\nActive dashboard-only department overrides (not reflected in Business Central itself): ${JSON.stringify(list).slice(0, 4000)}`
         } catch { /* best-effort — omit if unavailable */ }
       }
+      const employeeBlock = buildEmployeeBlock(findEmployeeMatches(text, data), data)
       const system = `You are an executive dashboard assistant for Kifiya Financial Technology. Be concise.
 The user is currently viewing the "${pageLabel || 'dashboard'}" page — prioritize that page's data when answering.
-Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}`
+Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${employeeBlock}`
       const r = await ai.chat([{ role: 'system', content: system }, ...next])
       const j = await r.json()
       const reply = j.choices?.[0]?.message?.content || j.error || 'No response.'
