@@ -108,6 +108,19 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
     || stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
   const hasCostData = payrollMonths.includes(effectiveMonth)
 
+  // Point-in-time headcount for the selected month/year — same source and caveat as HR
+  // Analysis: hr.headcountEvolution's byBU has no further type/VC split, so it's only
+  // trusted for the headcount number when those filters aren't also narrowing things.
+  // Without this, headcount always fell back to today's live roster count regardless of
+  // which month was selected.
+  const hcEvoLabels = hr.headcountEvolution || []
+  const headcountMonthLabel = filterMonth !== 'All'
+    ? filterMonth
+    : (yearOnly ? [...hcEvoLabels].reverse().find(m => m.label.endsWith(' ' + filterYear))?.label || null : null)
+  const monthEvo = headcountMonthLabel
+    ? hcEvoLabels.find(m => m.label === headcountMonthLabel)
+    : null
+
   const activeRoster = hr.activeRoster || []
   const filteredRoster = useMemo(() => activeRoster.filter(r => {
     const parentBU = resolveParent(r.buCode)
@@ -241,8 +254,11 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
         }
       }).sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
 
+      const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
+      const headcount = buMonthEvo ? buMonthEvo.count : bu.activeEmpSet.size
+
       return {
-        buCode: bu.buCode, buName: bu.buName, headcount: bu.activeEmpSet.size,
+        buCode: bu.buCode, buName: bu.buName, headcount,
         monthly: Math.round(bu.monthly), kifiya: Math.round(bu.kifiya), safee: Math.round(bu.safee),
         vcLabel: [...bu.vcs].filter(v => v && v !== 'Unknown').sort().join(' + ') || '—',
         sections
@@ -250,7 +266,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
     }).sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, deptDisplayNames, dimensionNames])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, deptDisplayNames, dimensionNames, monthEvo, filterType, filterVC])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)

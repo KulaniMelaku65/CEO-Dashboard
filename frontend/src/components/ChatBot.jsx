@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ai } from '../lib/api.js'
+import { ai, departmentOverrides } from '../lib/api.js'
 import { renderMarkdown } from '../lib/markdown.jsx'
 
 // Which top-level snapshot keys are relevant per page — without this, the context
@@ -21,6 +21,7 @@ const PAGE_DATA_KEYS = {
   'employee-cost-detail':     ['employeeCost'],
   'employee-cost-variance':   ['employeeCost'],
   'hr-page-review':           ['hr', 'hrReview'],
+  'department-overrides':     ['hr', 'hrReview'],
   'reports':                  ['reports']
 }
 
@@ -79,9 +80,20 @@ export default function ChatBot({ data, pageId, pageLabel }) {
     setMessages(next)
     setLoading(true)
     try {
+      // Organization Mapping's own override records (who was moved, from/to, by whom)
+      // live in a separate DB table, not the main snapshot — fetch them here so the
+      // assistant can actually answer "who was moved to X" style questions on that page.
+      let overridesBlock = ''
+      if (pageId === 'department-overrides') {
+        try {
+          const or = await departmentOverrides.list()
+          const list = or.ok ? await or.json() : []
+          overridesBlock = `\nActive dashboard-only department overrides (not reflected in Business Central itself): ${JSON.stringify(list).slice(0, 4000)}`
+        } catch { /* best-effort — omit if unavailable */ }
+      }
       const system = `You are an executive dashboard assistant for Kifiya Financial Technology. Be concise.
 The user is currently viewing the "${pageLabel || 'dashboard'}" page — prioritize that page's data when answering.
-Current data snapshot: ${buildContext(data, pageId)}`
+Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}`
       const r = await ai.chat([{ role: 'system', content: system }, ...next])
       const j = await r.json()
       const reply = j.choices?.[0]?.message?.content || j.error || 'No response.'
