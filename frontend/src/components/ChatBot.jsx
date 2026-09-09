@@ -117,15 +117,22 @@ export default function ChatBot({ data, pageId, pageLabel }) {
     setMessages(next)
     setLoading(true)
     try {
-      // Organization Mapping's own override records (who was moved, from/to, by whom)
-      // live in a separate DB table, not the main snapshot — fetch them here so the
-      // assistant can actually answer "who was moved to X" style questions on that page.
+      // Department-transfer records (who was moved, from which section to which, by
+      // whom, when) live in a separate DB table, not the main snapshot — fetch them on
+      // all three HR pages so "did X change department, from what to what" is
+      // answerable regardless of which of the three the user happens to be viewing.
       let overridesBlock = ''
-      if (pageId === 'department-overrides') {
+      if (['hr-summary', 'hr-page-review', 'department-overrides'].includes(pageId)) {
         try {
           const or = await departmentOverrides.list()
           const list = or.ok ? await or.json() : []
-          overridesBlock = `\nActive dashboard-only department overrides (not reflected in Business Central itself): ${JSON.stringify(list).slice(0, 4000)}`
+          const dimNames = data?.dimensionNames || {}
+          const enrichedList = list.map(o => ({
+            ...o,
+            from_section_name: dimNames[o.from_section] || o.from_section,
+            to_section_name:    dimNames[o.section_code]  || o.section_code
+          }))
+          overridesBlock = `\nDashboard-only department transfers (not reflected in Business Central itself — from_section/section_code are the section codes moved from/to, with human-readable names alongside): ${JSON.stringify(enrichedList).slice(0, 4000)}`
         } catch { /* best-effort — omit if unavailable */ }
       }
       const employeeBlock = buildEmployeeBlock(findEmployeeMatches(text, data), data)
