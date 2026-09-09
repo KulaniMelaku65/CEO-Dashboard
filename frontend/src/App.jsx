@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { auth, snapshots } from './lib/api.js'
 import { PeopleOpsFiltersProvider } from './context/PeopleOpsFilters.jsx'
+import { PAGE_REGISTRY } from './lib/pages.js'
 import LoginOverlay from './components/LoginOverlay.jsx'
+import ChangePasswordScreen from './components/ChangePasswordScreen.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Topbar from './components/Topbar.jsx'
 import SlideProgress from './components/SlideProgress.jsx'
@@ -22,42 +24,25 @@ import Risk from './pages/Risk.jsx'
 import BalanceSheet from './pages/BalanceSheet.jsx'
 import CashFlow from './pages/CashFlow.jsx'
 import Tax from './pages/Tax.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
 
-// Full slide list — kept intact so other sections can be restored later by
-// switching SLIDES back to ALL_SLIDES (currently limited to People & Operations only,
-// per request, while the rest of the app isn't being shown in the sidebar).
-// The finance blueprint's 6 tabs, in its own order, sit right after Overview:
-// Financial Performance, Corporate Budget (= Budget Analysis), Collections & Revenue,
-// Balance Sheet, Cashflow, Tax — the last 3 are new pages, not yet full-featured (see
-// each page's own in-app note on what's pending from Yohannes' account mapping).
-export const ALL_SLIDES = [
-  { id: 'overview',      label: 'Executive Overview',    Page: Overview },
-  { id: 'financial',     label: 'Financial Performance', Page: Financial },
-  { id: 'budget',        label: 'Corporate Budget',      Page: BudgetAnalysis },
-  { id: 'collections',   label: 'Collections & Revenue', Page: Collections },
-  { id: 'balance-sheet', label: 'Balance Sheet',         Page: BalanceSheet },
-  { id: 'cashflow',      label: 'Cashflow',              Page: CashFlow },
-  { id: 'tax',           label: 'Tax',                   Page: Tax },
-  { id: 'lending',    label: 'Lending Ecosystem',     Page: LoanOps },
-  { id: 'risk',       label: 'Risk & Portfolio',      Page: Risk },
-  { id: 'hr',                    label: 'People & Operations Old', Page: HR },
-  { id: 'hr-summary',            label: 'People & Culture',    Page: PeopleHRSummary },
-  { id: 'employee-cost',         label: 'Employee Cost',       Page: EmployeeCost,         parentId: 'hr' },
-  { id: 'employee-cost-detail',  label: 'Cost by BU',          Page: EmployeeCostDetail,   parentId: 'hr' },
-  { id: 'employee-cost-variance',label: 'MoM Comparison',      Page: EmployeeCostVariance, parentId: 'hr' },
-  { id: 'hr-page-review',        label: 'HR Analysis',          Page: HRPageReview },
-  { id: 'department-overrides',  label: 'Organization Mapping', Page: DepartmentOverrides, parentId: 'hr-page-review' },
-]
+// PAGE_REGISTRY (lib/pages.js) holds every page's id/label/parentId — this just pairs
+// each with its actual component. Kept as two separate pieces (rather than one combined
+// list here) so the Admin page's per-user toggles can import the metadata alone without
+// pulling in every page component (and without a circular import back into this file).
+const PAGE_COMPONENTS = {
+  overview: Overview, financial: Financial, budget: BudgetAnalysis, collections: Collections,
+  'balance-sheet': BalanceSheet, cashflow: CashFlow, tax: Tax, lending: LoanOps, risk: Risk,
+  hr: HR, 'hr-summary': PeopleHRSummary, 'employee-cost': EmployeeCost,
+  'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,
+  'hr-page-review': HRPageReview, 'department-overrides': DepartmentOverrides,
+}
 
-// Sidebar shows only People & Culture / HR Analysis / Organization Mapping for now —
-// the finance tabs (Financial Performance, Corporate Budget, Collections & Revenue,
-// Balance Sheet, Cashflow, Tax) stay defined in ALL_SLIDES so they can be switched back
-// on later, just not rendered in the sidebar today. Same for Executive Overview, Lending
-// Ecosystem, Risk & Portfolio, and the old People & Operations page + its children.
-const VISIBLE_IDS = new Set([
-  'hr-summary', 'hr-page-review', 'department-overrides'
-])
-export const SLIDES = ALL_SLIDES.filter(s => VISIBLE_IDS.has(s.id))
+export const ALL_SLIDES = PAGE_REGISTRY.map(p => ({ ...p, Page: PAGE_COMPONENTS[p.id] }))
+
+// Admin access to this one is governed by the is_admin flag, not a per-page grant, so
+// it's appended separately rather than living in the shared PAGE_REGISTRY.
+const ADMIN_SLIDE = { id: 'admin-users', label: 'Admin — Users & Access', Page: AdminUsers }
 
 const SLIDE_MS = 12000
 
@@ -69,6 +54,14 @@ export default function App() {
   const [histDate, setHistDate]     = useState(null)
   const [booting, setBooting]       = useState(true)
   const [sidebarOpen, setSidebar]   = useState(false)
+
+  // Per-user sidebar — replaces the old single hardcoded VISIBLE_IDS global. A user with
+  // no page grants at all sees an empty list (handled below) rather than crashing.
+  const slides = useMemo(() => {
+    if (!user) return []
+    const granted = ALL_SLIDES.filter(s => user.pageIds?.includes(s.id))
+    return user.isAdmin ? [...granted, ADMIN_SLIDE] : granted
+  }, [user])
 
   const loadData = useCallback(async (date) => {
     setStatus('loading')
@@ -94,6 +87,12 @@ export default function App() {
   // Close sidebar when route changes on mobile
   useEffect(() => { setSidebar(false) }, [slide])
 
+  // Keep the active slide in range if the user's own permission set ever shrinks
+  // (e.g. an admin revokes access to the page currently being viewed).
+  useEffect(() => {
+    if (slide >= slides.length && slides.length > 0) setSlide(0)
+  }, [slides, slide])
+
   // No auto-advance — stay on whatever page is selected until the user navigates away.
   const goToSlide = (idx) => setSlide(idx)
 
@@ -102,7 +101,8 @@ export default function App() {
     const j = await r.json()
     if (!r.ok) throw new Error(j.error || 'Incorrect credentials')
     setUser(j)
-    await loadData()
+    setSlide(0)
+    if (!j.mustChangePassword) await loadData()
   }
 
   const handleLogout = async () => {
@@ -110,6 +110,11 @@ export default function App() {
     setUser(null)
     setData(null)
     setStatus('loading')
+  }
+
+  const handlePasswordChanged = async () => {
+    setUser(u => ({ ...u, mustChangePassword: false }))
+    await loadData()
   }
 
   const handleHistDate = async (date) => {
@@ -135,10 +140,14 @@ export default function App() {
 
   if (!user) return <LoginOverlay onLogin={handleLogin} />
 
+  if (user.mustChangePassword) {
+    return <ChangePasswordScreen onDone={handlePasswordChanged} onLogout={handleLogout} />
+  }
+
   return (
     <div className="dark-app flex h-screen overflow-hidden font-sans bg-bg">
       <Sidebar
-        slides={SLIDES}
+        slides={slides}
         current={slide}
         onNav={goToSlide}
         user={user}
@@ -158,7 +167,17 @@ export default function App() {
         />
 
         <main className="flex-1 relative overflow-hidden">
-          {!data && status === 'loading' && (
+          {slides.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center p-6">
+              <div className="text-center max-w-sm">
+                <p className="text-navy font-bold text-sm mb-1">No pages available yet</p>
+                <p className="text-muted text-xs leading-relaxed">
+                  Your account doesn't have access to any dashboard pages yet — ask an admin to grant you access.
+                </p>
+              </div>
+            </div>
+          )}
+          {slides.length > 0 && !data && status === 'loading' && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <div className="w-8 h-8 rounded-full border-4 border-border border-t-gold mx-auto mb-3 animate-spin" />
@@ -166,7 +185,7 @@ export default function App() {
               </div>
             </div>
           )}
-          {!data && status === 'error' && (
+          {slides.length > 0 && !data && status === 'error' && (
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <div className="text-center max-w-sm">
                 <div className="w-12 h-12 rounded-full bg-bg flex items-center justify-center mx-auto mb-3">
@@ -182,9 +201,9 @@ export default function App() {
             </div>
           )}
 
-          {data && (
+          {data && slides.length > 0 && (
             <PeopleOpsFiltersProvider>
-              {SLIDES.map(({ id, Page }, i) => (
+              {slides.map(({ id, Page }, i) => (
                 <div
                   key={id}
                   className={`absolute inset-0 overflow-y-auto transition-opacity duration-500 ${
@@ -192,7 +211,7 @@ export default function App() {
                   }`}
                 >
                   <div className="p-4 md:p-6 pb-10">
-                    <Page data={data} onDataRefresh={() => loadData(histDate || undefined)} />
+                    <Page data={data} onDataRefresh={() => loadData(histDate || undefined)} currentUserId={user.id} />
                   </div>
                 </div>
               ))}
@@ -201,7 +220,7 @@ export default function App() {
         </main>
 
         <SlideProgress
-          slides={SLIDES}
+          slides={slides}
           current={slide}
           duration={SLIDE_MS}
           paused
@@ -209,7 +228,7 @@ export default function App() {
         />
       </div>
 
-      <ChatBot data={data} pageId={SLIDES[slide]?.id} pageLabel={SLIDES[slide]?.label} />
+      <ChatBot data={data} pageId={slides[slide]?.id} pageLabel={slides[slide]?.label} />
     </div>
   )
 }

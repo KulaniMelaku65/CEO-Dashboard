@@ -17,10 +17,37 @@ const upsert = db.prepare(
      title         = excluded.title`
 );
 
+// Pages every pre-existing account could already see before per-user permissions
+// existed (App.jsx's old global VISIBLE_IDS) — backfilled once per user below so
+// nobody's sidebar goes blank the first time this ships.
+const LEGACY_VISIBLE_PAGE_IDS = ['hr-summary', 'hr-page-review', 'department-overrides'];
+const DEFAULT_ADMIN_USERNAMES = new Set(['kulani', 'admin']);
+
+// One-time-per-user backfill: grants the pre-permissions default page set and admin
+// flag to the original seeded accounts, but only for a user who has neither any page
+// grants nor admin rights yet — so it never overwrites choices made later from the
+// Admin page (e.g. someone deliberately revoking a legacy user's access).
+function backfillLegacyAccess() {
+  const hasAccess = db.prepare('SELECT 1 FROM user_page_access WHERE user_id = ?');
+  const grant = db.prepare('INSERT OR IGNORE INTO user_page_access (user_id, page_id) VALUES (?, ?)');
+  const setAdmin = db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?');
+
+  DEFAULT_USERS.forEach(u => {
+    const row = db.prepare('SELECT id, is_admin FROM users WHERE username = ?').get(u.username);
+    if (!row) return;
+    if (!row.is_admin && !hasAccess.get(row.id)) {
+      LEGACY_VISIBLE_PAGE_IDS.forEach(pageId => grant.run(row.id, pageId));
+    }
+    if (DEFAULT_ADMIN_USERNAMES.has(u.username) && !row.is_admin) {
+      setAdmin.run(row.id);
+    }
+  });
+}
+
 /** Create default users when the users table is empty. */
 async function ensureUsers() {
   const { c } = db.prepare('SELECT COUNT(*) as c FROM users').get();
-  if (c > 0) return 0;
+  if (c > 0) { backfillLegacyAccess(); return 0; }
 
   console.log('[startup] Seeding default users…');
   for (const u of DEFAULT_USERS) {
@@ -28,6 +55,7 @@ async function ensureUsers() {
     upsert.run(u.username, hash, u.full_name, u.title);
     console.log('  ✓', u.username);
   }
+  backfillLegacyAccess();
   return DEFAULT_USERS.length;
 }
 

@@ -57,6 +57,25 @@ db.exec(`
     updated_by     TEXT,
     updated_at     TEXT DEFAULT (datetime('now'))
   );
+
+  -- Which sidebar pages (App.jsx's ALL_SLIDES ids) a given user can see. Presence of a
+  -- row is the grant — no row for a page means no access. Managed from the Admin page.
+  CREATE TABLE IF NOT EXISTS user_page_access (
+    user_id  INTEGER NOT NULL,
+    page_id  TEXT NOT NULL,
+    PRIMARY KEY (user_id, page_id)
+  );
 `);
+
+// users predates the email/is_admin/must_change_password columns (four accounts were
+// seeded before this admin feature existed) — ALTER TABLE ADD COLUMN, guarded so it's
+// safe to run on every startup once the columns already exist.
+function addColumnIfMissing(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+addColumnIfMissing('users', 'email',                 'email TEXT');
+addColumnIfMissing('users', 'is_admin',              'is_admin INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'must_change_password',  'must_change_password INTEGER NOT NULL DEFAULT 0');
 
 module.exports = db;

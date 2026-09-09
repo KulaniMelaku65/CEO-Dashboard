@@ -11,6 +11,7 @@ const aiRoutes        = require('./routes/ai');
 const supersetRoutes  = require('./routes/superset');
 const bcRoutes        = require('./routes/bc');
 const deptOverrideRoutes = require('./routes/department-overrides');
+const adminUserRoutes = require('./routes/admin-users');
 const { startScheduler } = require('./services/scheduler');
 const { runStartup }     = require('./services/startup');
 
@@ -34,6 +35,7 @@ app.use('/api/ai',        aiRoutes);
 app.use('/api/superset',  supersetRoutes);
 app.use('/api/bc',        bcRoutes);
 app.use('/api/department-overrides', deptOverrideRoutes);
+app.use('/api/admin/users', adminUserRoutes);
 
 // Serve the built React frontend (run `cd frontend && npm run build` first)
 const distDir = path.join(__dirname, '..', 'frontend', 'dist');

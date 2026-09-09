@@ -16,6 +16,7 @@ const ICONS = {
   cashflow:       <><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></>,
   tax:            <><path d="M4 4h16v4H4z"/><path d="M4 4v16l4-2 4 2 4-2 4 2V4"/></>,
   reports:        <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>,
+  'admin-users':  <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/><circle cx="19" cy="5" r="2.5" fill="currentColor" stroke="none"/></>,
 }
 
 export default function Sidebar({ slides, current, onNav, user, onLogout, mobileOpen, onMobileClose }) {

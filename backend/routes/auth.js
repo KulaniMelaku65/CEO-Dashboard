@@ -12,6 +12,15 @@ const COOKIE = {
   maxAge:   8 * 60 * 60 * 1000   // 8-hour session
 };
 
+const getPageIds = userId =>
+  db.prepare('SELECT page_id FROM user_page_access WHERE user_id = ?').all(userId).map(r => r.page_id);
+
+const signToken = user => jwt.sign(
+  { id: user.id, username: user.username, name: user.full_name, title: user.title, isAdmin: !!user.is_admin },
+  process.env.JWT_SECRET,
+  { expiresIn: '8h' }
+);
+
 // Rate limit login attempts only — not /me (hit on every page load/refresh to check the
 // existing session) or /logout, which would otherwise share the same brute-force budget
 // and get exhausted by normal browsing traffic rather than actual repeated login attempts.
@@ -35,13 +44,15 @@ router.post('/login', loginLimiter, async (req, res) => {
     const valid = user && await bcrypt.compare(String(password), user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Incorrect username or password.' });
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, name: user.full_name, title: user.title },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
-    res.cookie('token', token, COOKIE);
-    res.json({ name: user.full_name, title: user.title });
+    res.cookie('token', signToken(user), COOKIE);
+    res.json({
+      id: user.id,
+      name: user.full_name,
+      title: user.title,
+      isAdmin: !!user.is_admin,
+      mustChangePassword: !!user.must_change_password,
+      pageIds: getPageIds(user.id)
+    });
   } catch (e) {
     console.error('Login error:', e.message);
     res.status(500).json({ error: 'Server error — try again.' });
@@ -54,9 +65,49 @@ router.post('/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/auth/me — check current session (called on every page load)
+// GET /api/auth/me — check current session (called on every page load). isAdmin/
+// mustChangePassword/pageIds are re-read from the DB rather than trusted from the JWT,
+// since an admin can change any of these mid-session and the next reload should reflect
+// it without forcing a re-login.
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ username: req.user.username, name: req.user.name, title: req.user.title });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) { res.clearCookie('token'); return res.status(401).json({ error: 'Account no longer exists.' }); }
+  res.json({
+    id: user.id,
+    username: user.username,
+    name: user.full_name,
+    title: user.title,
+    isAdmin: !!user.is_admin,
+    mustChangePassword: !!user.must_change_password,
+    pageIds: getPageIds(user.id)
+  });
+});
+
+// POST /api/auth/change-password — used both for the forced first-login change and any
+// voluntary later change. Always requires the current password, even on the forced
+// first change (the user was told the default password, so they re-enter it here).
+router.post('/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword)
+    return res.status(400).json({ error: 'Current and new password are required.' });
+  if (String(newPassword).length < 8)
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    if (!user) return res.status(401).json({ error: 'Account no longer exists.' });
+    const valid = await bcrypt.compare(String(currentPassword), user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    const hash = await bcrypt.hash(String(newPassword), 12);
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, user.id);
+
+    const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+    res.cookie('token', signToken(fresh), COOKIE);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Change-password error:', e.message);
+    res.status(500).json({ error: 'Server error — try again.' });
+  }
 });
 
 module.exports = router;

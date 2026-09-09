@@ -9,6 +9,11 @@ export const auth = {
     body: JSON.stringify({ username: u, password: p })
   }),
   logout: ()     => req('/api/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword, newPassword) => req('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword })
+  }),
 }
 
 export const snapshots = {
@@ -48,4 +53,20 @@ export const departmentOverrides = {
     body: JSON.stringify({ employeeNo, employeeName, fromSection, sectionCode })
   }),
   remove: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}`, { method: 'DELETE' }),
+}
+
+export const adminUsers = {
+  list:   () => req('/api/admin/users'),
+  create: (user) => req('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(user)
+  }),
+  update: (id, patch) => req(`/api/admin/users/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  }),
+  resetPassword: (id) => req(`/api/admin/users/${id}/reset-password`, { method: 'POST' }),
+  remove: (id) => req(`/api/admin/users/${id}`, { method: 'DELETE' }),
 }
