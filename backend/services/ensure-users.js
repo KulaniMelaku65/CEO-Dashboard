@@ -23,22 +23,22 @@ const upsert = db.prepare(
 const LEGACY_VISIBLE_PAGE_IDS = ['hr-summary', 'hr-page-review', 'department-overrides'];
 const DEFAULT_ADMIN_USERNAMES = new Set(['kulani', 'admin']);
 
-// One-time-per-user backfill: grants the pre-permissions default page set and admin
-// flag to the original seeded accounts, but only for a user who has neither any page
-// grants nor admin rights yet — so it never overwrites choices made later from the
-// Admin page (e.g. someone deliberately revoking a legacy user's access).
+// One-time-per-user backfill. Runs over EVERY existing account, not just the 4 known
+// seeded ones — a deployment's users table may hold accounts created some other way
+// (e.g. directly on a live instance), and skipping those would silently lock them out
+// of every page the moment per-user permissions ship. Only touches a user who has
+// neither any page grants nor admin rights yet, so it never overwrites a deliberate
+// choice made later from the Admin page (e.g. someone revoking a legacy user's access).
 function backfillLegacyAccess() {
   const hasAccess = db.prepare('SELECT 1 FROM user_page_access WHERE user_id = ?');
   const grant = db.prepare('INSERT OR IGNORE INTO user_page_access (user_id, page_id) VALUES (?, ?)');
   const setAdmin = db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?');
 
-  DEFAULT_USERS.forEach(u => {
-    const row = db.prepare('SELECT id, is_admin FROM users WHERE username = ?').get(u.username);
-    if (!row) return;
+  db.prepare('SELECT id, username, is_admin FROM users').all().forEach(row => {
     if (!row.is_admin && !hasAccess.get(row.id)) {
       LEGACY_VISIBLE_PAGE_IDS.forEach(pageId => grant.run(row.id, pageId));
     }
-    if (DEFAULT_ADMIN_USERNAMES.has(u.username) && !row.is_admin) {
+    if (DEFAULT_ADMIN_USERNAMES.has(row.username) && !row.is_admin) {
       setAdmin.run(row.id);
     }
   });
