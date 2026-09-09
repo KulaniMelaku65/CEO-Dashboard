@@ -16,12 +16,12 @@ const PAGE_DATA_KEYS = {
   'collections':              ['budgetActual'],
   'risk':                     ['risk'],
   'hr':                       ['hr', 'hrReview'],
-  'hr-summary':               ['hr', 'hrReview'],
+  'hr-summary':               ['hr', 'hrReview', 'employeeCost'],
   'employee-cost':            ['employeeCost', 'hr'],
   'employee-cost-detail':     ['employeeCost'],
   'employee-cost-variance':   ['employeeCost'],
-  'hr-page-review':           ['hr', 'hrReview'],
-  'department-overrides':     ['hr', 'hrReview'],
+  'hr-page-review':           ['hr', 'hrReview', 'employeeCost'],
+  'department-overrides':     ['hr', 'hrReview', 'employeeCost'],
   'reports':                  ['reports']
 }
 
