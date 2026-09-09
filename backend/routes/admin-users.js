@@ -5,18 +5,9 @@ const db          = require('../db');
 const requireAuth = require('../middleware/auth');
 const requireAdmin = require('../middleware/requireAdmin');
 
-function usernameFromEmail(email) {
-  const base = String(email).split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'user';
-  let candidate = base, n = 1;
-  while (db.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate)) {
-    n += 1;
-    candidate = `${base}${n}`;
-  }
-  return candidate;
-}
-
-// 12 chars from an unambiguous alphabet (no 0/O/1/l) — shown once on-screen to the
-// admin since email sending isn't wired up yet (pending SMTP details).
+// 12 chars from an unambiguous alphabet (no 0/O/1/l) — used for Reset Password only.
+// User creation takes an admin-chosen username/password directly (see POST / below) —
+// the admin sends both to the person manually, since email sending isn't wired up yet.
 function generatePassword() {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
   const bytes = crypto.randomBytes(12);
@@ -51,33 +42,39 @@ router.get('/', (_req, res) => {
   }
 });
 
-// POST /api/admin/users — create a viewer with a generated default password.
-// Username is derived from the email's local part (uniqued if taken) so the admin only
-// ever has to type one identifier for the person, matching how they'll actually log in.
+// POST /api/admin/users — create a viewer with an admin-chosen username and password.
+// The admin sends both to the person manually (email, Slack, in person) — email sending
+// isn't wired up yet. must_change_password is still forced, so whatever password is set
+// here only works for the one first login.
 router.post('/', async (req, res) => {
-  const { name, email, title, isAdmin, pageIds } = req.body || {};
+  const { name, email, username, password, title, isAdmin, pageIds } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
+  const cleanUsername = String(username || '').toLowerCase().trim();
+  if (!/^[a-z0-9._-]{3,32}$/.test(cleanUsername))
+    return res.status(400).json({ error: 'Username must be 3-32 characters: letters, numbers, dot, underscore, or hyphen.' });
+  if (!password || String(password).length < 8)
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   try {
     // email has no DB-level UNIQUE constraint — it was added via ALTER TABLE onto a
     // table with existing rows, which SQLite can't retrofit a uniqueness constraint
-    // onto directly — so uniqueness is enforced here instead.
+    // onto directly — so uniqueness is enforced here instead (username still has one).
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email))
       return res.status(409).json({ error: 'A user with that email already exists.' });
-    const username = usernameFromEmail(email);
-    const password = generatePassword();
-    const hash = await bcrypt.hash(password, 12);
+    if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(cleanUsername))
+      return res.status(409).json({ error: 'That username is already taken.' });
+    const hash = await bcrypt.hash(String(password), 12);
     const info = db.prepare(
       `INSERT INTO users (username, password_hash, full_name, title, email, is_admin, must_change_password)
        VALUES (?, ?, ?, ?, ?, ?, 1)`
-    ).run(username, hash, name, title || null, email, isAdmin ? 1 : 0);
+    ).run(cleanUsername, hash, name, title || null, email, isAdmin ? 1 : 0);
     setPageIds(info.lastInsertRowid, pageIds || []);
     const created = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-    res.status(201).json({ ...shapeUser(created), generatedPassword: password });
+    res.status(201).json(shapeUser(created));
   } catch (e) {
     console.error('[admin/users create]', e.message);
     const dup = /UNIQUE/.test(e.message);
-    res.status(dup ? 409 : 500).json({ error: dup ? 'A user with that email already exists.' : 'Server error.' });
+    res.status(dup ? 409 : 500).json({ error: dup ? 'That username or email is already in use.' : 'Server error.' });
   }
 });
 

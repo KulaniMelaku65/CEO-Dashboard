@@ -27,11 +27,19 @@ function Toggle({ on, onClick, disabled }) {
 // visual hint for the ones nested under a parent (Employee Cost, Organization Mapping…).
 const TOGGLE_PAGES = PAGE_REGISTRY
 
-function GeneratedPasswordBanner({ info, onDismiss }) {
+// 12-char strong default — just a starting point the admin can overwrite or reuse; the
+// only requirement enforced server-side is 8+ characters.
+function suggestPassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%'
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes).map(b => chars[b % chars.length]).join('')
+}
+
+function CredentialsBanner({ info, onDismiss }) {
   const [copied, setCopied] = useState(false)
   if (!info) return null
   const copy = () => {
-    navigator.clipboard?.writeText(`Username: ${info.username}\nTemporary password: ${info.generatedPassword}`)
+    navigator.clipboard?.writeText(`Username: ${info.username}\nTemporary password: ${info.password}`)
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
       .catch(() => {})
   }
@@ -40,11 +48,11 @@ function GeneratedPasswordBanner({ info, onDismiss }) {
       <span className="text-lg" style={{ color: ORANGE }}>ⓘ</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold text-navy mb-1">
-          Share these credentials with {info.name} — email sending isn't configured yet, so this is shown once and not stored anywhere retrievable.
+          Send these to {info.name} yourself (email, Slack, in person) — email sending isn't configured yet, so this is shown once and not stored anywhere retrievable.
         </p>
         <div className="text-xs font-mono bg-white/60 rounded-lg px-3 py-2 inline-block">
           <div><strong>Username:</strong> {info.username}</div>
-          <div><strong>Temporary password:</strong> {info.generatedPassword}</div>
+          <div><strong>Temporary password:</strong> {info.password}</div>
         </div>
         <p className="text-[10px] text-muted mt-1.5">They'll be required to set their own password the first time they log in.</p>
       </div>
@@ -63,6 +71,9 @@ function GeneratedPasswordBanner({ info, onDismiss }) {
 function AddUserForm({ onCreated }) {
   const [name, setName]   = useState('')
   const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
+  const [usernameTouched, setUsernameTouched] = useState(false)
+  const [password, setPassword] = useState('')
   const [title, setTitle] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [pageIds, setPageIds] = useState([])
@@ -71,15 +82,31 @@ function AddUserForm({ onCreated }) {
 
   const togglePage = (id) => setPageIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
 
+  // Suggest a username from the email as a convenience — only while the admin hasn't
+  // typed their own, so it never overwrites a deliberate choice.
+  const handleEmailChange = (val) => {
+    setEmail(val)
+    if (!usernameTouched) {
+      const suggested = val.split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '')
+      setUsername(suggested)
+    }
+  }
+
   const submit = async () => {
     if (!name.trim() || !email.trim()) { setError('Name and email are required.'); return }
+    if (!/^[a-z0-9._-]{3,32}$/.test(username)) { setError('Username must be 3-32 characters: letters, numbers, dot, underscore, or hyphen.'); return }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setBusy(true); setError('')
     try {
-      const r = await adminUsers.create({ name: name.trim(), email: email.trim(), title: title.trim() || null, isAdmin, pageIds })
+      const r = await adminUsers.create({
+        name: name.trim(), email: email.trim(), username, password,
+        title: title.trim() || null, isAdmin, pageIds
+      })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Failed to create user.')
-      onCreated(j)
-      setName(''); setEmail(''); setTitle(''); setIsAdmin(false); setPageIds([])
+      onCreated({ name: name.trim(), username: j.username, password })
+      setName(''); setEmail(''); setUsername(''); setUsernameTouched(false); setPassword('')
+      setTitle(''); setIsAdmin(false); setPageIds([])
     } catch (e) {
       setError(e.message)
     } finally {
@@ -90,11 +117,35 @@ function AddUserForm({ onCreated }) {
   return (
     <div className="bg-white rounded-2xl border border-border shadow-card p-5">
       <h3 className="text-sm font-bold text-navy mb-4">Add a viewer</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name"
           className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
-        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" type="email"
+        <input value={email} onChange={e => handleEmailChange(e.target.value)} placeholder="Email address" type="email"
           className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <input
+          value={username}
+          onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameTouched(true) }}
+          placeholder="Login username"
+          className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy"
+        />
+        <div className="flex gap-1.5">
+          <input
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Temporary password"
+            className="flex-1 min-w-0 text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy font-mono"
+          />
+          <button
+            type="button"
+            onClick={() => setPassword(suggestPassword())}
+            title="Suggest a strong password"
+            className="text-[11px] font-bold px-2.5 rounded-xl border border-border text-navy hover:border-navy flex-shrink-0"
+          >
+            Generate
+          </button>
+        </div>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Job title"
           className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
       </div>
@@ -171,7 +222,7 @@ function UserRow({ u, currentUserId, onChanged }) {
     try {
       const r = await adminUsers.resetPassword(u.id)
       const j = await r.json()
-      if (r.ok) setResetInfo({ name: u.name, username: u.username, generatedPassword: j.generatedPassword })
+      if (r.ok) setResetInfo({ name: u.name, username: u.username, password: j.generatedPassword })
     } finally {
       setBusy(false)
     }
@@ -225,7 +276,7 @@ function UserRow({ u, currentUserId, onChanged }) {
 
       {resetInfo && (
         <div className="px-5 pb-3.5">
-          <GeneratedPasswordBanner info={resetInfo} onDismiss={() => setResetInfo(null)} />
+          <CredentialsBanner info={resetInfo} onDismiss={() => setResetInfo(null)} />
         </div>
       )}
 
@@ -278,12 +329,13 @@ export default function AdminUsers({ currentUserId }) {
         <h2 className="text-lg font-extrabold text-navy mb-0.5">Admin — Users &amp; Access</h2>
         <p className="text-xs text-muted font-medium">
           Create viewer accounts and control which dashboard pages each person can see.
-          New users get a temporary password shown here once — email delivery isn't
-          configured yet, so share it directly for now.
+          Choose their username and a temporary password here, then send both to them
+          yourself — email delivery isn't configured yet. They'll set their own password
+          the first time they log in.
         </p>
       </div>
 
-      <GeneratedPasswordBanner info={createdInfo} onDismiss={() => setCreatedInfo(null)} />
+      <CredentialsBanner info={createdInfo} onDismiss={() => setCreatedInfo(null)} />
 
       <AddUserForm onCreated={(j) => { setCreatedInfo(j); load() }} />
 
