@@ -871,28 +871,56 @@ async function buildSnapshot(targetDate) {
 
   const taxMonthlyByAcct = {};
   TAX_LINES.forEach(l => { taxMonthlyByAcct[l.account] = Array(12).fill(0); });
+  // Virtual-company split (globalDim1 on the GL actuals — HUB / ETH / blank) for the
+  // "Total Tax By Virtual Company" breakdown, accumulated alongside the per-account
+  // monthly totals above so it's a single pass over `actuals`. Kept both as a global
+  // aggregate (taxMonthlyByVC) AND per-account (taxMonthlyByAcctVC) so the frontend can
+  // show the VC split either across all tax types or scoped to one clicked type.
+  const taxMonthlyByVC = {};
+  const taxMonthlyByAcctVC = {};
+  TAX_LINES.forEach(l => { taxMonthlyByAcctVC[l.account] = {}; });
   actuals.forEach(x => {
     const a = String(x.accountNo);
     if (!(a in taxMonthlyByAcct)) return;
     const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
     if (mi < 0) return;
     taxMonthlyByAcct[a][mi] += num(x.amount);
+    const vc = (x.globalDim1 || '').trim() || 'Unknown';
+    if (!taxMonthlyByVC[vc]) taxMonthlyByVC[vc] = Array(12).fill(0);
+    taxMonthlyByVC[vc][mi] += num(x.amount);
+    if (!taxMonthlyByAcctVC[a][vc]) taxMonthlyByAcctVC[a][vc] = Array(12).fill(0);
+    taxMonthlyByAcctVC[a][vc][mi] += num(x.amount);
   });
 
   const tax = {
     asOf: targetDate,
+    labels,
     byType: TAX_LINES
       .map(l => ({
         type: l.description,
         outstanding: toM(-(taxBalByAcct[l.account] || 0)),
-        monthly: { labels, data: labels.map((_, i) => toM(-taxMonthlyByAcct[l.account][i])) }
+        monthly: { labels, data: labels.map((_, i) => toM(-taxMonthlyByAcct[l.account][i])) },
+        byVirtualCompany: Object.entries(taxMonthlyByAcctVC[l.account] || {})
+          .map(([vc, arr]) => ({
+            vc,
+            monthly: { labels, data: labels.map((_, i) => toM(-arr[i])) },
+            total: toM(-arr.reduce((s, v) => s + v, 0))
+          }))
+          .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
       }))
       .sort((a, b) => Math.abs(b.outstanding) - Math.abs(a.outstanding)),
     totalOutstanding: toM(-TAX_LINES.reduce((s, l) => s + (taxBalByAcct[l.account] || 0), 0)),
     monthlyTotal: {
       labels,
       data: labels.map((_, i) => toM(-TAX_LINES.reduce((s, l) => s + taxMonthlyByAcct[l.account][i], 0)))
-    }
+    },
+    byVirtualCompany: Object.entries(taxMonthlyByVC)
+      .map(([vc, arr]) => ({
+        vc,
+        monthly: { labels, data: labels.map((_, i) => toM(-arr[i])) },
+        total: toM(-arr.reduce((s, v) => s + v, 0))
+      }))
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
   };
 
   const reports = {

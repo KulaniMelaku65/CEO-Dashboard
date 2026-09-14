@@ -3,6 +3,10 @@ import { snapshots } from '../lib/api.js'
 import { fmtDate } from '../lib/fmt.js'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+// Hidden for now — not currently useful day to day. The underlying snapshot-browsing
+// code (histDate state/props, the date picker, snapshots.byDate) is left untouched so
+// flipping this back to true brings the whole feature back with no rework.
+const SHOW_HISTORY = false
 
 export default function Topbar({ data, status, histDate, onRefresh, onHistDate, onMenuToggle }) {
   const [dates, setDates]       = useState([])
@@ -90,6 +94,7 @@ export default function Topbar({ data, status, histDate, onRefresh, onHistDate, 
         </button>
 
         {/* History dropdown */}
+        {SHOW_HISTORY && (
         <div className="relative">
           <button
             onClick={() => setPicker(o => !o)}
@@ -173,6 +178,7 @@ export default function Topbar({ data, status, histDate, onRefresh, onHistDate, 
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Action buttons */}

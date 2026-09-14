@@ -9,12 +9,15 @@ import { renderMarkdown } from '../lib/markdown.jsx'
 // hrReview, and the assistant had no HR data to answer from regardless of what page the
 // user was on.
 const PAGE_DATA_KEYS = {
-  'overview':               ['budgetOverview', 'budgetActual', 'cashflow'],
-  'financial':               ['reports', 'budgetActual'],
-  'budget':                  ['corporateBudget', 'budgetOverview'],
+  'overview':                 ['budgetOverview', 'budgetActual', 'cashflow', 'hr', 'lending', 'loanOps'],
+  'financial':                ['reports', 'budgetActual', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
+  'budget':                   ['corporateBudget', 'budgetOverview'],
+  'collections':              ['budgetOverview', 'financialSS', 'loanOps'],
+  'balance-sheet':            ['balanceSheet'],
+  'cashflow':                 ['cashflow'],
+  'tax':                      ['tax'],
   'lending':                  ['lending', 'loanOps'],
-  'collections':              ['budgetActual'],
-  'risk':                     ['risk'],
+  'risk':                     ['risk', 'cashflow'],
   'hr':                       ['hr', 'hrReview'],
   'hr-summary':               ['hr', 'hrReview', 'employeeCost'],
   'employee-cost':            ['employeeCost', 'hr'],
@@ -22,7 +25,7 @@ const PAGE_DATA_KEYS = {
   'employee-cost-variance':   ['employeeCost'],
   'hr-page-review':           ['hr', 'hrReview', 'employeeCost'],
   'department-overrides':     ['hr', 'hrReview', 'employeeCost'],
-  'reports':                  ['reports']
+  'admin-users':              []
 }
 
 // Per-employee/per-transaction detail and raw lookup maps the model doesn't need to

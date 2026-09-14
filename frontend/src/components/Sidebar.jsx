@@ -27,10 +27,14 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
     onMobileClose?.()
   }
 
-  // Build map of parentId → child slides with their index
+  // Build map of parentId → child slides with their index. A child is only nested
+  // under its parent when that parent is itself in this user's granted slides —
+  // otherwise there'd be nowhere to render it and it would silently disappear, so
+  // it falls through and renders as its own top-level item instead (see below).
+  const topLevelIds = new Set(slides.filter(s => !s.parentId).map(s => s.id))
   const childMap = {}
   slides.forEach((s, i) => {
-    if (s.parentId) {
+    if (s.parentId && topLevelIds.has(s.parentId)) {
       if (!childMap[s.parentId]) childMap[s.parentId] = []
       childMap[s.parentId].push({ ...s, idx: i })
     }
@@ -80,8 +84,9 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
           <p className="px-4 pt-3 pb-1 text-[9px] uppercase tracking-widest text-white/30 font-bold">Analytics</p>
           <ul className="space-y-0.5 px-2">
             {slides.map(({ id, label, parentId }, i) => {
-              // Child slides are rendered nested under their parent — skip top-level rendering
-              if (parentId) return null
+              // Child slides are rendered nested under their parent — skip top-level
+              // rendering only when that parent is actually present (orphans fall through).
+              if (parentId && topLevelIds.has(parentId)) return null
 
               const active   = i === current
               const children = childMap[id] || []
