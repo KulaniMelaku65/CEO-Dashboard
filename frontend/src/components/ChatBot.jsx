@@ -62,6 +62,25 @@ function buildContext(data, pageId) {
   return JSON.stringify(relevant).slice(0, 20000)
 }
 
+// Common question words stripped out before name-matching — without this, asking
+// "what does John cost" treats "what"/"does"/"cost" as name fragments too, which
+// (a) is noisy and (b) defeats the all-tokens-must-match narrowing below, since none
+// of those words appear in anyone's actual name.
+const NAME_STOPWORDS = new Set([
+  'what', 'who', 'when', 'where', 'why', 'how', 'is', 'are', 'was', 'were', 'does', 'did',
+  'do', 'the', 'has', 'have', 'had', 'and', 'for', 'with', 'about', 'tell', 'me', 'please',
+  'employee', 'staff', 'person', 'department', 'section', 'business', 'unit', 'cost',
+  'salary', 'pay', 'payroll', 'total', 'monthly', 'job', 'title', 'type', 'status',
+  'company', 'virtual', 'changed', 'change', 'transfer', 'transferred', 'moved', 'move',
+  'from', 'which', 'info', 'information', 'details', 'show', 'find', 'search', 'give'
+])
+
+const extractNameTokens = (query) => query
+  .toLowerCase()
+  .replace(/[^a-z\s]/g, ' ') // strip punctuation/digits, e.g. "Abebe's" or "Abebe?"
+  .split(/\s+/)
+  .filter(w => w.length > 2 && !NAME_STOPWORDS.has(w))
+
 // Single-employee lookup — activeRoster/employeePayroll are deliberately in HEAVY_KEYS
 // (stripped from the general context) to keep the char budget for aggregates, so a
 // name or employee number the user actually typed is searched locally here and, if
@@ -70,17 +89,32 @@ function buildContext(data, pageId) {
 // it the assistant only ever sees totals, never individuals. Includes any active
 // dashboard-only department override automatically, since it's already baked into
 // activeRoster's buCode/sectionCode at sync time.
+//
+// Name matching prefers an ALL-tokens match over an ANY-tokens one — with Ethiopian
+// naming (own name + father's name + grandfather's name, no family surname), a first
+// name alone is often shared by several people, so "Abebe Kebede" or a full three-part
+// name should narrow down to one person rather than returning everyone named Abebe.
+// Falls back to ANY-token matching only when no one matches every token, so a genuine
+// first-name-only search (or a typo in one token) still returns candidates.
 function findEmployeeMatches(query, data) {
   const roster = data?.hr?.activeRoster || []
   if (!roster.length) return []
   const q = query.toLowerCase()
-  const words = q.split(/\s+/).filter(w => w.length > 2)
-  return roster.filter(r => {
+
+  const byNo = roster.filter(r => {
     const no = (r.employeeNo || '').toLowerCase()
-    if (no && q.includes(no)) return true
-    const name = (r.name || '').toLowerCase()
-    return name && words.some(w => name.includes(w))
-  }).slice(0, 5)
+    return no && q.includes(no)
+  })
+  if (byNo.length) return byNo.slice(0, 5)
+
+  const tokens = extractNameTokens(query)
+  if (!tokens.length) return []
+
+  const nameOf = (r) => (r.name || '').toLowerCase()
+  const allMatch = roster.filter(r => tokens.every(t => nameOf(r).includes(t)))
+  if (allMatch.length) return allMatch.slice(0, 5)
+
+  return roster.filter(r => tokens.some(t => nameOf(r).includes(t))).slice(0, 5)
 }
 
 function buildEmployeeBlock(matches, data) {
