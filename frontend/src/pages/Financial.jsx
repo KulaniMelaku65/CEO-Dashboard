@@ -152,6 +152,71 @@ function PeriodTree({ mData, selected, onChange }) {
   )
 }
 
+// Explicit MoM/QoQ baseline picker — only rendered once the period filter has
+// narrowed to a single month or a single full quarter (see `compareMode` in the
+// main component), since that's the only case where "compare to" has one
+// consistent granularity of options to offer. Picking nothing keeps the default
+// of comparing against the immediately preceding month/quarter.
+function ComparePicker({ mode, mData, current, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  const options = mode === 'month'
+    ? mData.map((m, i) => ({ value: i, label: m.label })).filter(o => o.value !== current)
+    : [0, 1, 2, 3]
+        .map(q => ({ value: q, label: `Qtr ${q + 1}`, months: [q * 3, q * 3 + 1, q * 3 + 2].filter(i => i < mData.length) }))
+        .filter(o => o.months.length === 3 && o.value !== current)
+
+  const autoLabel = mode === 'month'
+    ? (current > 0 ? mData[current - 1]?.label : null)
+    : (current > 0 ? `Qtr ${current}` : null)
+
+  const summary = value != null
+    ? (mode === 'month' ? mData[value]?.label : `Qtr ${value + 1}`)
+    : autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'
+
+  return (
+    <div ref={ref} className="relative flex flex-col gap-1" style={{ minWidth: 150 }}>
+      <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Compare To</span>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+      >
+        <span className="truncate">{summary}</span>
+        <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
+          <button
+            onClick={() => { onChange(null); setOpen(false) }}
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+          >
+            <span className="truncate">{autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'}</span>
+            {value == null && <span>✓</span>}
+          </button>
+          <div className="border-t border-border my-1" />
+          {options.map(o => (
+            <button
+              key={o.value}
+              onClick={() => { onChange(o.value); setOpen(false) }}
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6]"
+            >
+              <span className="truncate">{o.label}</span>
+              {value === o.value && <span>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const LINE_COLORS = {
   Revenue:        '#02404F',
   'Cost of Sales':'#E5544B',
@@ -369,6 +434,11 @@ export default function Financial({ data }) {
                                                        // clicks read from and write to
   const [selVCs,      setSelVCs]      = useState([]) // [] = all virtual companies
   const [selBUs,      setSelBUs]      = useState([]) // [] = all business units
+  const [compareIdx,  setCompareIdx]  = useState(null) // explicit MoM/QoQ baseline the user
+                                                       // picked (month or quarter index,
+                                                       // matching whichever is currently
+                                                       // selected) — null = auto (immediately
+                                                       // prior period)
   const [selLine,     setSelLine]     = useState(null)
   const [period,      setPeriod]      = useState('monthly') // chart aggregation only now
   const [expandedRow, setExpandedRow] = useState(null)
@@ -566,13 +636,30 @@ export default function Financial({ data }) {
   })()
   const fullQuarterLabel = singleQuarterIdx != null ? `Qtr ${singleQuarterIdx + 1}` : null
 
+  // "Compare To" only makes sense at the same granularity as the current selection
+  // (month vs month, quarter vs quarter) — reset the explicit choice whenever that
+  // granularity changes (or the filter no longer has one at all) so a stale index
+  // from a previous mode can't be misread as e.g. a quarter when it meant a month.
+  const compareMode = singleMonth != null ? 'month' : singleQuarterIdx != null ? 'quarter' : null
+  useEffect(() => { setCompareIdx(null) }, [compareMode])
+  // Comparing a period to itself is a no-op (always 0%) — treat it the same as not
+  // having picked anything, rather than showing a degenerate "vs itself" result.
+  const effectiveCompareIdx =
+    compareMode === 'month' && compareIdx !== singleMonth ? compareIdx
+    : compareMode === 'quarter' && compareIdx !== singleQuarterIdx ? compareIdx
+    : null
+
   const priorMonths =
-    singleMonth != null ? (singleMonth > 0 ? [singleMonth - 1] : null)
+    compareMode === 'month' && effectiveCompareIdx != null ? [effectiveCompareIdx]
+    : compareMode === 'quarter' && effectiveCompareIdx != null ? [effectiveCompareIdx * 3, effectiveCompareIdx * 3 + 1, effectiveCompareIdx * 3 + 2].filter(i => i < mData.length)
+    : singleMonth != null ? (singleMonth > 0 ? [singleMonth - 1] : null)
     : singleQuarterIdx != null ? (singleQuarterIdx > 0 ? [singleQuarterIdx * 3 - 3, singleQuarterIdx * 3 - 2, singleQuarterIdx * 3 - 1] : null)
     : null
 
   const priorPeriodLabel =
-    singleMonth != null ? (priorMonths ? mData[priorMonths[0]]?.label : null)
+    compareMode === 'month' && effectiveCompareIdx != null ? mData[effectiveCompareIdx]?.label
+    : compareMode === 'quarter' && effectiveCompareIdx != null ? `Q${effectiveCompareIdx + 1}`
+    : singleMonth != null ? (priorMonths ? mData[priorMonths[0]]?.label : null)
     : singleQuarterIdx != null ? (priorMonths ? `Q${singleQuarterIdx}` : null)
     : null
 
@@ -600,6 +687,15 @@ export default function Financial({ data }) {
 
         <div className="flex flex-wrap items-end gap-2.5">
           <PeriodTree mData={mData} selected={selMonths} onChange={setSelMonths} />
+          {compareMode && (
+            <ComparePicker
+              mode={compareMode}
+              mData={mData}
+              current={compareMode === 'month' ? singleMonth : singleQuarterIdx}
+              value={effectiveCompareIdx}
+              onChange={setCompareIdx}
+            />
+          )}
           <MultiSelect
             label="Virtual Company"
             selected={selVCs}
