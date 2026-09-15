@@ -12,6 +12,7 @@ export const PAGE_REGISTRY = [
   { id: 'balance-sheet', label: 'Balance Sheet' },
   { id: 'cashflow',      label: 'Cashflow' },
   { id: 'tax',           label: 'Tax' },
+  { id: 'aging',         label: 'Aging (AR/AP)' },
   { id: 'lending',       label: 'Lending Ecosystem' },
   { id: 'risk',          label: 'Risk & Portfolio' },
   { id: 'hr',                     label: 'People & Operations Old' },

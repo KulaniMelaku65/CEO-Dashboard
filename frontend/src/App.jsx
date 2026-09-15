@@ -24,6 +24,7 @@ import Risk from './pages/Risk.jsx'
 import BalanceSheet from './pages/BalanceSheet.jsx'
 import CashFlow from './pages/CashFlow.jsx'
 import Tax from './pages/Tax.jsx'
+import Aging from './pages/Aging.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 
 // PAGE_REGISTRY (lib/pages.js) holds every page's id/label/parentId — this just pairs
@@ -32,7 +33,7 @@ import AdminUsers from './pages/AdminUsers.jsx'
 // pulling in every page component (and without a circular import back into this file).
 const PAGE_COMPONENTS = {
   overview: Overview, financial: Financial, budget: BudgetAnalysis, collections: Collections,
-  'balance-sheet': BalanceSheet, cashflow: CashFlow, tax: Tax, lending: LoanOps, risk: Risk,
+  'balance-sheet': BalanceSheet, cashflow: CashFlow, tax: Tax, aging: Aging, lending: LoanOps, risk: Risk,
   hr: HR, 'hr-summary': PeopleHRSummary, 'employee-cost': EmployeeCost,
   'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,
   'hr-page-review': HRPageReview, 'department-overrides': DepartmentOverrides,
