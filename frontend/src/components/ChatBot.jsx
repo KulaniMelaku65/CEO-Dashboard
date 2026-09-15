@@ -16,6 +16,7 @@ const PAGE_DATA_KEYS = {
   'balance-sheet':            ['balanceSheet'],
   'cashflow':                 ['cashflow'],
   'tax':                      ['tax'],
+  'aging':                    ['arAging', 'apAging'],
   'lending':                  ['lending', 'loanOps'],
   'risk':                     ['risk', 'cashflow'],
   'hr':                       ['hr', 'hrReview'],
@@ -119,18 +120,31 @@ function findEmployeeMatches(query, data) {
 
 function buildEmployeeBlock(matches, data) {
   if (!matches.length) return ''
+  // Some employees (dual-hatted staff) have a payroll record under BOTH the Corporate
+  // (KIFIYA) and Programme (SAFEE) books simultaneously — keyed on employeeNo alone,
+  // an object map would silently keep only the last one seen and drop the other's
+  // cost entirely. Collected as arrays instead, and every source's monthly figures
+  // are summed below, so the reported monthly cost is the employee's real total.
   const payrollByNo = {}
-  ;(data?.hrReview?.employeePayroll || []).forEach(p => { payrollByNo[p.employeeNo] = p })
+  ;(data?.hrReview?.employeePayroll || []).forEach(p => { (payrollByNo[p.employeeNo] ||= []).push(p) })
   const enriched = matches.map(m => {
-    const pay = payrollByNo[m.employeeNo]
+    const recs = payrollByNo[m.employeeNo] || []
+    const sumMonths = (key) => recs.reduce((acc, r) => {
+      Object.entries(r[key] || {}).forEach(([month, v]) => { acc[month] = (acc[month] || 0) + (v || 0) })
+      return acc
+    }, {})
     return {
       employeeNo: m.employeeNo, name: m.name, jobTitle: m.jobTitle,
       businessUnit: m.buCode, section: m.sectionName || m.sectionCode,
       virtualCompany: m.vc, employeeType: m.type, status: m.status,
-      ...(pay ? { monthlyCost: pay.monthTotals, pensionMonthlyCost: pay.pensionMonthTotals, payrollSource: pay.payrollSource } : {})
+      ...(recs.length ? {
+        monthlyCost: sumMonths('monthTotals'),
+        pensionMonthlyCost: sumMonths('pensionMonthTotals'),
+        payrollSources: recs.map(r => r.payrollSource)
+      } : {})
     }
   })
-  return `\nEmployee record(s) matching the user's message, from the live active roster (department already reflects any dashboard override): ${JSON.stringify(enriched)}`
+  return `\nEmployee record(s) matching the user's message, from the live active roster (department already reflects any dashboard override). When payrollSources lists more than one source, monthlyCost/pensionMonthlyCost are already the combined total across all of them — report that total, not just one source's figure: ${JSON.stringify(enriched)}`
 }
 
 export default function ChatBot({ data, pageId, pageLabel }) {
