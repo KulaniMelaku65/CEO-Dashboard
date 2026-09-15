@@ -100,13 +100,21 @@ async function buildSnapshot(targetDate) {
 
   const bcAvail = isBcConfigured();
 
-  let actuals = [], budgets = [];
+  let actuals = [], budgets = [], arAgingRows = [], apAgingRows = [];
   if (bcAvail) {
     actuals = await bc('KFT_GL_Actuals', fy);
     budgets = await bc('KFT_GL_Budget', budF);
     console.log(`  BC: actuals ${actuals.length} rows, budget ${budgets.length} rows`);
     if (actuals.length === 0) console.warn('  WARNING: 0 actual rows — check FY_START / postingDate filter.');
     if (budgets.length === 0) console.warn(`  WARNING: 0 budget rows — check BUDGET_NAME='${CONFIG.BUDGET_NAME}'.`);
+    // Open AR/AP line items (one row per outstanding customer/vendor ledger entry) —
+    // aging buckets are computed below from postingDate/dueDate, not stored on these
+    // rows. Best-effort: older BC instances/companies without these two custom API
+    // pages yet shouldn't break the rest of the snapshot.
+    [arAgingRows, apAgingRows] = await Promise.all([
+      bc('KFT_AR_Aging').catch(() => []),
+      bc('KFT_AP_Aging').catch(() => [])
+    ]);
   } else {
     console.warn('  BC not configured — skipping BC data, Superset-only snapshot');
   }
@@ -173,6 +181,23 @@ async function buildSnapshot(targetDate) {
     { account: '6051', description: 'Financial and Market Linkage solutions' }
   ];
   let MGT_SAL  = new Set(['8101','8102','8103','8104','8105','8106']);
+  // Salaries broken out by department — one schedule row per account, same pattern as
+  // Revenue/Cost of Sales lines. Used for the "HR related Expenses" drilldown.
+  let MGT_SAL_LINES = [
+    { account: '8101', description: 'CEO Office' },
+    { account: '8102', description: 'MSP' },
+    { account: '8103', description: 'Finance' },
+    { account: '8104', description: 'HR' },
+    { account: '8105', description: 'Operations' },
+    { account: '8106', description: 'Interns' }
+  ];
+  // OPEX broken into the same categories the M-MGT-RPT "Total OPEX" (30000) formula
+  // itself defines — each term of that formula (Office Rent, Vehicle Rentals, Total
+  // Insurance, Total Selling & Distribution, ...) becomes its own drilldown row, rather
+  // than the flat 41-account MGT_OPEX set collapsing them all into one number. Populated
+  // below once the live schedule is resolved; empty here since accounts still need
+  // resolving via resolveRow (defined further down) to know which fall in which category.
+  let MGT_OPEX_CATEGORIES = [];
   let MGT_OPEX = new Set([
     '7011','7014',                                    // → 7099 Selling & Distribution
     '8112',                                           // → 8199 Insurance
@@ -279,12 +304,32 @@ async function buildSnapshot(targetDate) {
           description: (rowMap[acct]?.Description || acct).trim()
         }));
       }
-      if (rowMap['1']?.Totaling)     MGT_SAL = extractAccts(rowMap['1'].Totaling);
+      if (rowMap['1']?.Totaling) {
+        MGT_SAL = extractAccts(rowMap['1'].Totaling);
+        MGT_SAL_LINES = [...MGT_SAL].map(acct => ({
+          account: acct,
+          description: (rowMap[acct]?.Description || acct).trim().replace(/^Opex-/i, '')
+        }));
+      }
 
       // OPEX (RowNo 30000): all tokens in the Totaling are RowNos — resolve via rowMap
       if (rowMap['30000']?.Totaling) {
         const expanded = resolveRow('30000', MGT_SAL);
         if (expanded.size > 5) MGT_OPEX = expanded;
+
+        // Same formula, but keep each top-level term as its own category (Office Rent,
+        // Vehicle Rentals, Total Insurance, Total Selling & Distribution, ...) instead of
+        // flattening everything into the one 41-account MGT_OPEX set above — this is what
+        // lets "OPEX by Category" show a real breakdown rather than one lump sum.
+        const terms = rowMap['30000'].Totaling.replace(/[()]/g, '').split('+').map(s => s.trim()).filter(Boolean);
+        const categories = terms
+          .filter(t => t !== '1') // Salaries — shown separately via MGT_SAL_LINES
+          .map(t => ({
+            accounts: resolveRow(t, MGT_SAL),
+            description: (rowMap[t]?.Description || t).trim().replace(/^Total\s+/i, '')
+          }))
+          .filter(c => c.accounts.size > 0);
+        if (categories.length > 3) MGT_OPEX_CATEGORIES = categories;
       }
 
       console.log(`  M-MGT-RPT: Rev=${MGT_REV.size} accts, COS=${MGT_COS.size} accts, Sal=${MGT_SAL.size} accts, OPEX=${MGT_OPEX.size} accts`);
@@ -377,38 +422,51 @@ async function buildSnapshot(targetDate) {
   // Department display names aren't resolved yet at this point in the snapshot build —
   // the frontend resolves 'unit' codes via dimensionNames/hr.deptDisplayNames, same as
   // the existing "Budget Utilization by Business Unit" section does.
-  const byDeptFromAccts = (rows, accts, negate = false) => {
+  // Budget rows use the same globalDim2/accountNo fields as actuals (just budgetDate
+  // instead of postingDate, and amounts that need Math.abs since BC's budget entries
+  // aren't credit/debit-signed the same way GL postings are) — every drilldown helper
+  // below takes an optional parallel `budgetRows` array and emits `.budget` alongside
+  // `.actual` on each row so the panel can show both instead of actual only.
+  const byDeptFromAccts = (rows, accts, negate = false, budgetRows = null) => {
     const m = {};
     rows.forEach(x => {
       if (!accts.has(String(x.accountNo))) return;
       const u = x.globalDim2 || 'Unassigned';
       m[u] = (m[u] || 0) + num(x.amount);
     });
-    return Object.entries(m)
-      .map(([unit, amt]) => ({ unit, actual: toM(negate ? -amt : amt) }))
-      .filter(r => r.actual !== 0)
+    const bm = {};
+    (budgetRows || []).forEach(x => {
+      if (!accts.has(String(x.accountNo))) return;
+      const u = x.globalDim2 || 'Unassigned';
+      bm[u] = (bm[u] || 0) + Math.abs(num(x.amount));
+    });
+    const units = new Set([...Object.keys(m), ...Object.keys(bm)]);
+    return [...units]
+      .map(unit => ({ unit, actual: toM(negate ? -(m[unit] || 0) : (m[unit] || 0)), budget: toM(bm[unit] || 0) }))
+      .filter(r => r.actual !== 0 || r.budget !== 0)
       .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
   };
   // Sum actuals per schedule line's account (raw, un-rounded, un-negated). Pre-seeds
   // every line at 0 — including accounts with zero postings this period — so the
   // drilldown always mirrors the full schedule, not just the accounts that happened
   // to post this period.
-  const sumByScheduleLine = (rows, lines) => {
+  const sumByScheduleLine = (rows, lines, useAbs = false) => {
     const m = {};
     lines.forEach(l => { m[l.account] = 0; });
     rows.forEach(x => {
       const a = String(x.accountNo);
-      if (a in m) m[a] += num(x.amount);
+      if (a in m) m[a] += useAbs ? Math.abs(num(x.amount)) : num(x.amount);
     });
     return m;
   };
 
   // Generic schedule-line drilldown (Cost of Sales, and anything else without special
   // grouping): one row per schedule line, zero-balance lines included.
-  const byScheduleLine = (rows, lines, negate = false) => {
+  const byScheduleLine = (rows, lines, negate = false, budgetRows = null) => {
     const m = sumByScheduleLine(rows, lines);
+    const bm = budgetRows ? sumByScheduleLine(budgetRows, lines, true) : {};
     return lines
-      .map(l => ({ unit: l.description, actual: toM(negate ? -m[l.account] : m[l.account]) }))
+      .map(l => ({ unit: l.description, actual: toM(negate ? -m[l.account] : m[l.account]), budget: toM(bm[l.account] || 0) }))
       .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
   };
 
@@ -417,34 +475,63 @@ async function buildSnapshot(targetDate) {
   // schedule's own revenue breakdown instead of a globalDim2 regrouping of it. The 6
   // BPASS-by-bank-partner lines collapse into one "BPASS" row at the top level; its own
   // drilldown (children) breaks back out to the individual bank partners.
-  const byRevenueLine = (rows, lines) => {
+  const byRevenueLine = (rows, lines, budgetRows = null) => {
     const m = sumByScheduleLine(rows, lines);
+    const bm = budgetRows ? sumByScheduleLine(budgetRows, lines, true) : {};
 
     const isBpass = l => /^BPASS/i.test(l.description);
     const bpassLines = lines.filter(isBpass);
     const otherLines = lines.filter(l => !isBpass(l));
 
     const bpassChildren = bpassLines
-      .map(l => ({ unit: l.description, actual: toM(-m[l.account]) }))
+      .map(l => ({ unit: l.description, actual: toM(-m[l.account]), budget: toM(bm[l.account] || 0) }))
       .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
     const bpassRawTotal = bpassLines.reduce((s, l) => s - m[l.account], 0);
-    const bpassRow = { unit: 'BPASS (by bank partner)', actual: toM(bpassRawTotal), children: bpassChildren };
+    const bpassBudgetTotal = bpassLines.reduce((s, l) => s + (bm[l.account] || 0), 0);
+    const bpassRow = { unit: 'BPASS (by bank partner)', actual: toM(bpassRawTotal), budget: toM(bpassBudgetTotal), children: bpassChildren };
 
-    const otherRows = otherLines.map(l => ({ unit: l.description, actual: toM(-m[l.account]) }));
+    const otherRows = otherLines.map(l => ({ unit: l.description, actual: toM(-m[l.account]), budget: toM(bm[l.account] || 0) }));
 
     return [bpassRow, ...otherRows].sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
   };
 
   const MGT_EXP = new Set([...MGT_SAL, ...MGT_OPEX]);
+
+  // Sums actual/budget rows into arbitrary account-set "categories" — used for OPEX by
+  // Category, where each category is a whole set of accounts (e.g. Total Insurance's 4
+  // sub-accounts) rather than one account per row the way schedule-line drilldowns work.
+  const byAcctCategory = (rows, categories, budgetRows = null) => {
+    const am = {}, bm = {};
+    categories.forEach(c => { am[c.description] = 0; bm[c.description] = 0; });
+    rows.forEach(x => {
+      const a = String(x.accountNo);
+      const cat = categories.find(c => c.accounts.has(a));
+      if (cat) am[cat.description] += num(x.amount);
+    });
+    (budgetRows || []).forEach(x => {
+      const a = String(x.accountNo);
+      const cat = categories.find(c => c.accounts.has(a));
+      if (cat) bm[cat.description] += Math.abs(num(x.amount));
+    });
+    return categories
+      .map(c => ({ unit: c.description, actual: toM(am[c.description] || 0), budget: toM(bm[c.description] || 0) }))
+      .filter(r => r.actual !== 0 || r.budget !== 0)
+      .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual));
+  };
+
   const lineDrilldowns = {
-    'Revenue':       byRevenueLine(actuals, MGT_REV_LINES),
-    'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES),
-    'Expenses':      byDeptFromAccts(actuals, MGT_EXP),
+    'Revenue':       byRevenueLine(actuals, MGT_REV_LINES, budgets),
+    'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES, false, budgets),
+    'Expenses':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
     // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
     'Gross Profit': [
-      { unit: 'Revenue',       actual: toM(mgtRevA) },
-      { unit: 'Cost of Sales', actual: toM(-mgtCosA) }
-    ]
+      { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(revB)  },
+      { unit: 'Cost of Sales', actual: toM(-mgtCosA), budget: toM(-cosB) }
+    ],
+    // Two more ways to slice "Expenses" the KPI card doesn't split out on its own —
+    // Salaries by department and OPEX by the schedule's own categories.
+    'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES, false, budgets),
+    'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES, budgets)
   };
 
   const budgetActual = { lineDrilldowns, lines: [
@@ -514,15 +601,100 @@ async function buildSnapshot(targetDate) {
     if (inRange(a, CONFIG.ranges.finCosts)) { finM[mi] += num(x.amount); return; }
     if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opM[mi] += num(x.amount);
   });
+
+  // Per (month, virtual company, business unit) breakdown of each raw P&L metric — both
+  // actuals (GL globalDim1/globalDim2, same fields HR/Tax already key off) and budget
+  // (same dims on KFT_GL_Budget) — so Financial Performance's headline KPIs can be
+  // filtered by Virtual Company and/or Business Unit without precomputing every
+  // combination server-side. Sign flips applied here (Revenue negated to read positive)
+  // so the client only ever needs to sum whichever rows match its selected filters.
+  const bumpDimMap = (map, mi, vc, bu, metric, amt) => {
+    const k = `${mi}|${vc}|${bu}|${metric}`;
+    map[k] = (map[k] || 0) + amt;
+  };
+  const dimActualMap = {};
+  actuals.forEach(x => {
+    const a = String(x.accountNo);
+    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    if (mi < 0) return;
+    const vc = (x.globalDim1 || '').trim() || 'Unknown';
+    const bu = (x.globalDim2 || '').trim() || 'Unassigned';
+    const amt = num(x.amount);
+    if (MGT_REV.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'rev', -amt); return; }
+    if (MGT_COS.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'cos', amt); return; }
+    if (MGT_SAL.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'sal', amt); return; }
+    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimActualMap, mi, vc, bu, 'opex', amt);
+  });
+  const dimBudgetMap = {};
+  budgets.forEach(x => {
+    const a = String(x.accountNo);
+    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    if (mi < 0) return;
+    const vc = (x.globalDim1 || '').trim() || 'Unknown';
+    const bu = (x.globalDim2 || '').trim() || 'Unassigned';
+    const amt = Math.abs(num(x.amount));
+    if (inRange(a, CONFIG.ranges.revenue)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'rev', amt); return; }
+    if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'cos', amt); return; }
+    if (inRange(a, CONFIG.ranges.salaries)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'sal', amt); return; }
+    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimBudgetMap, mi, vc, bu, 'opex', amt);
+  });
+  const mapToDimRows = (map) => Object.entries(map).map(([k, amt]) => {
+    const [mi, vc, bu, metric] = k.split('|');
+    return { mi: Number(mi), vc, bu, metric, amount: toM(amt) };
+  });
+  budgetActual.dimActual = mapToDimRows(dimActualMap);
+  budgetActual.dimBudget = mapToDimRows(dimBudgetMap);
+
+  // Same (month, VC, BU) dimensioning, one level finer — per individual schedule-line
+  // account rather than collapsed into a single 'rev'/'cos' total — so Revenue by Line
+  // and Cost of Sales by Line can also be filtered by Virtual Company/Business Unit,
+  // not just the headline KPI cards. Every GL actuals row already carries accountNo,
+  // globalDim1 (VC), globalDim2 (BU) and postingDate, so this is the same source data,
+  // just grouped one dimension deeper.
+  const dimLineRows = (rows, dateField, lines, negate, isBudget) => {
+    const acctToDesc = {};
+    lines.forEach(l => { acctToDesc[l.account] = l.description; });
+    const map = {};
+    rows.forEach(x => {
+      const a = String(x.accountNo);
+      if (!(a in acctToDesc)) return;
+      const mi = x[dateField] ? new Date(x[dateField]).getMonth() : -1;
+      if (mi < 0) return;
+      const vc = (x.globalDim1 || '').trim() || 'Unknown';
+      const bu = (x.globalDim2 || '').trim() || 'Unassigned';
+      const amt = isBudget ? Math.abs(num(x.amount)) : num(x.amount);
+      const k = `${mi}|${vc}|${bu}|${a}`;
+      map[k] = (map[k] || 0) + amt;
+    });
+    return Object.entries(map).map(([k, amt]) => {
+      const [mi, vc, bu, account] = k.split('|');
+      return { mi: Number(mi), vc, bu, unit: acctToDesc[account], amount: toM(negate ? -amt : amt) };
+    });
+  };
+  budgetActual.dimRevenueLines = dimLineRows(actuals, 'postingDate', MGT_REV_LINES, true, false);
+  budgetActual.dimCosLines     = dimLineRows(actuals, 'postingDate', MGT_COS_LINES, false, false);
+  // Budget equivalents, same (month, VC, BU, account) shape — lets the frontend show
+  // Budget alongside Actual in the Revenue/Cost of Sales by Line drilldowns even when
+  // filtered by VC/BU (the same reason dimActual has a dimBudget counterpart above).
+  budgetActual.dimRevenueLinesBudget = dimLineRows(budgets, 'budgetDate', MGT_REV_LINES, true, true);
+  budgetActual.dimCosLinesBudget     = dimLineRows(budgets, 'budgetDate', MGT_COS_LINES, false, true);
+
   const curM = lm;
   const prvM = curM > 0 ? curM - 1 : null;
 
-  // Monthly metric helpers — null when no revenue data for that month (guards against old archives)
+  // Monthly metric helpers — null when no revenue data for that month (guards against
+  // old archives, and against Revenue/Cost of Sales/Gross Profit/EBITDA being
+  // meaningless without revenue). Expenses gets its own independent check: Revenue is
+  // recognized with a real posting lag behind Salaries/Opex in this ERP (payroll posts
+  // at month-end, revenue reconciliation with partner banks takes longer), so a recent
+  // month can have real Expense postings weeks before Revenue catches up — hiding
+  // Expenses too in that window was hiding real, already-posted data for no reason.
   const hasData = i => revM[i] !== 0;
+  const hasExpData = i => salM[i] !== 0 || opM[i] !== 0;
   const mRev  = i => hasData(i) ? toM(-revM[i]) : null;
   const mCos  = i => hasData(i) ? toM(cosM[i]) : null;
   const mGP   = i => hasData(i) ? toM(-revM[i] - cosM[i]) : null;
-  const mOpex = i => hasData(i) ? toM(salM[i] + opM[i]) : null;
+  const mOpex = i => hasExpData(i) ? toM(salM[i] + opM[i]) : null;
   const mEB   = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i]) : null;
   const mNet  = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]) : null;
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
@@ -552,6 +724,27 @@ async function buildSnapshot(targetDate) {
     { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  }
   ]);
+
+  // Per-month line-item drilldowns (Revenue by Line, Cost of Sales by Line, Expenses by
+  // Department, Gross Profit bridge) — same aggregation helpers as the YTD lineDrilldowns
+  // above, just given only that one calendar month's postings, so Financial Performance's
+  // drilldown panel can follow the Monthly/Quarterly month-or-quarter selection instead of
+  // always showing the full-year breakdown regardless of what's selected up top.
+  budgetActual.monthlyLineDrilldowns = Array(12).fill(null).map((_, mi) => {
+    const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getMonth() === mi);
+    const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getMonth() === mi);
+    return {
+      'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES, monthBudgets),
+      'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES, false, monthBudgets),
+      'Expenses':      byDeptFromAccts(monthActuals, MGT_EXP, false, monthBudgets),
+      'Gross Profit': [
+        { unit: 'Revenue',       actual: mRev(mi), budget: toM(revBMonth[mi]) },
+        { unit: 'Cost of Sales', actual: mCos(mi) != null ? -mCos(mi) : null, budget: toM(-cosBMonth[mi]) }
+      ],
+      'HR Related Expenses': byScheduleLine(monthActuals, MGT_SAL_LINES, false, monthBudgets),
+      'OPEX by Category':    byAcctCategory(monthActuals, MGT_OPEX_CATEGORIES, monthBudgets)
+    };
+  });
 
   const budgetOverview = {
     byUnit,
@@ -2823,6 +3016,81 @@ async function buildSnapshot(targetDate) {
     provisionPct,
   };
 
+  // ── AR/AP Aging ──────────────────────────────────────────────────────────────
+  // Each row is one open (unpaid) customer/vendor ledger entry — the bucket itself
+  // isn't on the row, it's computed here from how many days past its due date the
+  // snapshot's "as of" date is, same convention every standard aging report uses.
+  const AGING_BUCKETS = ['Current', '1-30 Days', '31-60 Days', '61-90 Days', '90+ Days'];
+  const agingBucket = (dueDate) => {
+    if (!dueDate) return 'Current';
+    const days = Math.floor((new Date(targetDate) - new Date(dueDate)) / 86400000);
+    if (days <= 0) return 'Current';
+    if (days <= 30) return '1-30 Days';
+    if (days <= 60) return '31-60 Days';
+    if (days <= 90) return '61-90 Days';
+    return '90+ Days';
+  };
+  const buildAging = (rows, noField, nameField, topN = 8) => {
+    if (!rows.length) return null;
+    const partyTotal = {}, partyName = {}, byBucket = {}, partyBucket = {};
+    const buTotal = {}, buBucket = {};
+    AGING_BUCKETS.forEach(b => { byBucket[b] = 0; });
+    rows.forEach(x => {
+      const key = (x[noField] || 'Unknown').trim();
+      const amt = num(x.remainingAmount);
+      const bucket = agingBucket(x.dueDate);
+      const bu = (x.globalDim2 || '').trim() || 'Unassigned';
+      partyTotal[key] = (partyTotal[key] || 0) + amt;
+      partyName[key] = (x[nameField] || key).trim();
+      byBucket[bucket] += amt;
+      if (!partyBucket[key]) partyBucket[key] = {};
+      partyBucket[key][bucket] = (partyBucket[key][bucket] || 0) + amt;
+      buTotal[bu] = (buTotal[bu] || 0) + amt;
+      if (!buBucket[bu]) buBucket[bu] = {};
+      buBucket[bu][bucket] = (buBucket[bu][bucket] || 0) + amt;
+    });
+    const sortedKeys = Object.keys(partyTotal).sort((a, b) => Math.abs(partyTotal[b]) - Math.abs(partyTotal[a]));
+    const topKeys = sortedKeys.slice(0, topN);
+    const otherKeys = sortedKeys.slice(topN);
+    const seriesNames = [...topKeys.map(k => partyName[k]), ...(otherKeys.length ? ['Other'] : [])];
+    // Per-bucket, per-party amounts (not just each party's grand total) — lets the
+    // frontend click a bucket bar and show exactly who makes it up, not just an
+    // unscoped "top parties overall" list.
+    const stackedByBucket = AGING_BUCKETS.map(bucket => {
+      const row = { bucket }
+      topKeys.forEach(k => { row[partyName[k]] = toM(partyBucket[k]?.[bucket] || 0); });
+      if (otherKeys.length) row['Other'] = toM(otherKeys.reduce((s, k) => s + (partyBucket[k]?.[bucket] || 0), 0));
+      return row;
+    });
+    const partiesByBucket = {};
+    AGING_BUCKETS.forEach(bucket => {
+      partiesByBucket[bucket] = sortedKeys
+        .map(k => ({ name: partyName[k], amount: toM(partyBucket[k]?.[bucket] || 0) }))
+        .filter(p => p.amount !== 0)
+        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    });
+    const sortedBUs = Object.keys(buTotal).sort((a, b) => Math.abs(buTotal[b]) - Math.abs(buTotal[a]));
+    const buByBucket = {};
+    AGING_BUCKETS.forEach(bucket => {
+      buByBucket[bucket] = sortedBUs
+        .map(u => ({ unit: u, amount: toM(buBucket[u]?.[bucket] || 0) }))
+        .filter(b => b.amount !== 0)
+        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    });
+    return {
+      totalOutstanding: toM(Object.values(partyTotal).reduce((s, v) => s + v, 0)),
+      byBucket: AGING_BUCKETS.map(b => ({ bucket: b, amount: toM(byBucket[b]) })),
+      stackedByBucket,
+      seriesNames,
+      topParties: topKeys.map(k => ({ name: partyName[k], total: toM(partyTotal[k]) })),
+      partiesByBucket,
+      byBU: sortedBUs.slice(0, topN).map(u => ({ unit: u, total: toM(buTotal[u]) })),
+      buByBucket
+    };
+  };
+  const arAging = buildAging(arAgingRows, 'customerNo', 'customerName');
+  const apAging = buildAging(apAgingRows, 'vendorNo', 'vendorName');
+
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
@@ -2839,7 +3107,9 @@ async function buildSnapshot(targetDate) {
     loanOps,
     risk,
     dimensionNames,
-    financialSS: { revenueByBank }
+    financialSS: { revenueByBank },
+    arAging,
+    apAging
   };
 }
 
