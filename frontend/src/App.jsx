@@ -25,6 +25,8 @@ import BalanceSheet from './pages/BalanceSheet.jsx'
 import CashFlow from './pages/CashFlow.jsx'
 import Tax from './pages/Tax.jsx'
 import Aging from './pages/Aging.jsx'
+import Procurement from './pages/Procurement.jsx'
+import { PROCUREMENT_PAGE_COMPONENTS } from './pages/procurement/index.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 
 // PAGE_REGISTRY (lib/pages.js) holds every page's id/label/parentId — this just pairs
@@ -37,6 +39,7 @@ const PAGE_COMPONENTS = {
   hr: HR, 'hr-summary': PeopleHRSummary, 'employee-cost': EmployeeCost,
   'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,
   'hr-page-review': HRPageReview, 'department-overrides': DepartmentOverrides,
+  procurement: Procurement, ...PROCUREMENT_PAGE_COMPONENTS,
 }
 
 export const ALL_SLIDES = PAGE_REGISTRY.map(p => ({ ...p, Page: PAGE_COMPONENTS[p.id] }))

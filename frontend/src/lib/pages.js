@@ -1,3 +1,5 @@
+import { PROCUREMENT_REPORTS } from '../pages/procurement/reportConfig.js'
+
 // Central id/label/parentId registry for every dashboard page — the single source of
 // truth shared by App.jsx (which pairs each entry with its actual Page component) and
 // the Admin page's per-user page-access toggles (which only need id+label, not the
@@ -13,6 +15,8 @@ export const PAGE_REGISTRY = [
   { id: 'cashflow',      label: 'Cashflow' },
   { id: 'tax',           label: 'Tax' },
   { id: 'aging',         label: 'Aging (AR/AP)' },
+  { id: 'procurement',   label: 'Procurement' },
+  ...PROCUREMENT_REPORTS.map(r => ({ id: r.id, label: r.title, parentId: 'procurement' })),
   { id: 'lending',       label: 'Lending Ecosystem' },
   { id: 'risk',          label: 'Risk & Portfolio' },
   { id: 'hr',                     label: 'People & Operations Old' },
