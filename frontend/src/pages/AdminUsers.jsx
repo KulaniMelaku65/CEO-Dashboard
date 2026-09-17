@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react'
 import { adminUsers } from '../lib/api.js'
 import { PAGE_REGISTRY } from '../lib/pages.js'
+import { KPI_DEPARTMENTS } from './kpi/departments.js'
+
+const KPI_ROLE_OPTIONS = [
+  { value: '',              label: 'No KPI access' },
+  { value: 'dept_head',     label: 'Department Head' },
+  { value: 'approver',      label: 'Approver (CFO / Chief of Staff)' },
+  { value: 'exec_viewer',   label: 'Exec Viewer (CEO / ExCo)' },
+  { value: 'finance_admin', label: 'Finance / Core Analytics Admin' },
+  { value: 'auditor',       label: 'Read-only / Audit' },
+]
 
 const NAVY  = '#02404F'
 const TEAL  = '#1FB6A6'
@@ -68,6 +78,34 @@ function CredentialsBanner({ info, onDismiss }) {
   )
 }
 
+// KPI Role + (when Department Head) Department dropdown pair, shared by the create form
+// and each existing user's row.
+function KpiRoleFields({ kpiRole, kpiDepartmentId, onRoleChange, onDeptChange, disabled }) {
+  return (
+    <div className="flex gap-2">
+      <select
+        value={kpiRole}
+        onChange={e => onRoleChange(e.target.value)}
+        disabled={disabled}
+        className="text-xs border border-border rounded-xl px-2.5 py-2 text-navy outline-none focus:border-navy disabled:opacity-40"
+      >
+        {KPI_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {kpiRole === 'dept_head' && (
+        <select
+          value={kpiDepartmentId || ''}
+          onChange={e => onDeptChange(e.target.value)}
+          disabled={disabled}
+          className="text-xs border border-border rounded-xl px-2.5 py-2 text-navy outline-none focus:border-navy disabled:opacity-40"
+        >
+          <option value="">Which department?</option>
+          {KPI_DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      )}
+    </div>
+  )
+}
+
 function AddUserForm({ onCreated }) {
   const [name, setName]   = useState('')
   const [email, setEmail] = useState('')
@@ -77,6 +115,8 @@ function AddUserForm({ onCreated }) {
   const [title, setTitle] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [pageIds, setPageIds] = useState([])
+  const [kpiRole, setKpiRole] = useState('')
+  const [kpiDepartmentId, setKpiDepartmentId] = useState('')
   const [busy, setBusy]   = useState(false)
   const [error, setError] = useState('')
 
@@ -100,13 +140,14 @@ function AddUserForm({ onCreated }) {
     try {
       const r = await adminUsers.create({
         name: name.trim(), email: email.trim(), username, password,
-        title: title.trim() || null, isAdmin, pageIds
+        title: title.trim() || null, isAdmin, pageIds,
+        kpiRole: kpiRole || null, kpiDepartmentId: kpiRole === 'dept_head' ? (kpiDepartmentId || null) : null
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Failed to create user.')
       onCreated({ name: name.trim(), username: j.username, password })
       setName(''); setEmail(''); setUsername(''); setUsernameTouched(false); setPassword('')
-      setTitle(''); setIsAdmin(false); setPageIds([])
+      setTitle(''); setIsAdmin(false); setPageIds([]); setKpiRole(''); setKpiDepartmentId('')
     } catch (e) {
       setError(e.message)
     } finally {
@@ -154,6 +195,16 @@ function AddUserForm({ onCreated }) {
         <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="w-3.5 h-3.5" />
         <span className="text-xs font-semibold text-navy">Grant admin access (can manage users and permissions)</span>
       </label>
+
+      <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Group KPI Dashboard role</p>
+      <div className="mb-4">
+        <KpiRoleFields
+          kpiRole={kpiRole}
+          kpiDepartmentId={kpiDepartmentId}
+          onRoleChange={r => { setKpiRole(r); if (r !== 'dept_head') setKpiDepartmentId('') }}
+          onDeptChange={setKpiDepartmentId}
+        />
+      </div>
 
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Visible pages</p>
       <div className="flex flex-wrap gap-1.5 mb-4">
@@ -217,6 +268,28 @@ function UserRow({ u, currentUserId, onChanged }) {
     }
   }
 
+  const updateKpiRole = async (kpiRole) => {
+    setBusy(true)
+    try {
+      const r = await adminUsers.update(u.id, { kpiRole: kpiRole || null, kpiDepartmentId: kpiRole === 'dept_head' ? u.kpiDepartmentId : null })
+      const j = await r.json()
+      if (r.ok) onChanged(j)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const updateKpiDepartment = async (kpiDepartmentId) => {
+    setBusy(true)
+    try {
+      const r = await adminUsers.update(u.id, { kpiRole: u.kpiRole, kpiDepartmentId: kpiDepartmentId || null })
+      const j = await r.json()
+      if (r.ok) onChanged(j)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const resetPassword = async () => {
     setBusy(true)
     try {
@@ -259,6 +332,14 @@ function UserRow({ u, currentUserId, onChanged }) {
           <span className="text-[10px] font-bold text-muted">Admin</span>
           <Toggle on={u.isAdmin} onClick={toggleAdmin} disabled={busy || isSelf} />
         </div>
+
+        <KpiRoleFields
+          kpiRole={u.kpiRole || ''}
+          kpiDepartmentId={u.kpiDepartmentId}
+          onRoleChange={updateKpiRole}
+          onDeptChange={updateKpiDepartment}
+          disabled={busy}
+        />
 
         <button
           onClick={() => setExpanded(e => !e)}

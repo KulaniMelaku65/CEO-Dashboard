@@ -23,10 +23,13 @@ const setPageIds = db.transaction((userId, pageIds) => {
   (pageIds || []).forEach(id => ins.run(userId, id));
 });
 
+const KPI_ROLES = ['dept_head', 'approver', 'exec_viewer', 'finance_admin', 'auditor'];
+
 const shapeUser = (u) => ({
   id: u.id, username: u.username, email: u.email, name: u.full_name, title: u.title,
   isAdmin: !!u.is_admin, mustChangePassword: !!u.must_change_password, createdAt: u.created_at,
-  pageIds: getPageIds(u.id)
+  pageIds: getPageIds(u.id),
+  kpiRole: u.kpi_role || null, kpiDepartmentId: u.kpi_department_id || null,
 });
 
 router.use(requireAuth, requireAdmin);
@@ -47,7 +50,7 @@ router.get('/', (_req, res) => {
 // isn't wired up yet. must_change_password is still forced, so whatever password is set
 // here only works for the one first login.
 router.post('/', async (req, res) => {
-  const { name, email, username, password, title, isAdmin, pageIds } = req.body || {};
+  const { name, email, username, password, title, isAdmin, pageIds, kpiRole, kpiDepartmentId } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'Name and email are required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
   const cleanUsername = String(username || '').toLowerCase().trim();
@@ -55,6 +58,8 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Username must be 3-32 characters: letters, numbers, dot, underscore, or hyphen.' });
   if (!password || String(password).length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  if (kpiRole != null && !KPI_ROLES.includes(kpiRole))
+    return res.status(400).json({ error: 'Invalid KPI role.' });
   try {
     // email has no DB-level UNIQUE constraint — it was added via ALTER TABLE onto a
     // table with existing rows, which SQLite can't retrofit a uniqueness constraint
@@ -65,9 +70,9 @@ router.post('/', async (req, res) => {
       return res.status(409).json({ error: 'That username is already taken.' });
     const hash = await bcrypt.hash(String(password), 12);
     const info = db.prepare(
-      `INSERT INTO users (username, password_hash, full_name, title, email, is_admin, must_change_password)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`
-    ).run(cleanUsername, hash, name, title || null, email, isAdmin ? 1 : 0);
+      `INSERT INTO users (username, password_hash, full_name, title, email, is_admin, must_change_password, kpi_role, kpi_department_id)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    ).run(cleanUsername, hash, name, title || null, email, isAdmin ? 1 : 0, kpiRole || null, kpiRole === 'dept_head' ? (kpiDepartmentId || null) : null);
     setPageIds(info.lastInsertRowid, pageIds || []);
     const created = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(shapeUser(created));
@@ -83,7 +88,9 @@ router.post('/', async (req, res) => {
 // is provided (this is what each toggle click in the admin UI sends).
 router.put('/:id', (req, res) => {
   const id = Number(req.params.id);
-  const { name, email, title, isAdmin, pageIds } = req.body || {};
+  const { name, email, title, isAdmin, pageIds, kpiRole, kpiDepartmentId } = req.body || {};
+  if (kpiRole !== undefined && kpiRole != null && !KPI_ROLES.includes(kpiRole))
+    return res.status(400).json({ error: 'Invalid KPI role.' });
   try {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -91,11 +98,14 @@ router.put('/:id', (req, res) => {
       const dup = db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, id);
       if (dup) return res.status(409).json({ error: 'A user with that email already exists.' });
     }
-    db.prepare('UPDATE users SET full_name = ?, email = ?, title = ?, is_admin = ? WHERE id = ?').run(
+    const nextKpiRole = kpiRole !== undefined ? kpiRole : user.kpi_role;
+    db.prepare('UPDATE users SET full_name = ?, email = ?, title = ?, is_admin = ?, kpi_role = ?, kpi_department_id = ? WHERE id = ?').run(
       name  != null ? name  : user.full_name,
       email != null ? email : user.email,
       title != null ? title : user.title,
       isAdmin != null ? (isAdmin ? 1 : 0) : user.is_admin,
+      nextKpiRole || null,
+      nextKpiRole === 'dept_head' ? (kpiDepartmentId !== undefined ? kpiDepartmentId : user.kpi_department_id) : null,
       id
     );
     if (pageIds != null) setPageIds(id, pageIds);

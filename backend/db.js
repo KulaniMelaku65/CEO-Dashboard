@@ -65,6 +65,89 @@ db.exec(`
     page_id  TEXT NOT NULL,
     PRIMARY KEY (user_id, page_id)
   );
+
+  -- Group KPI Dashboard — the 12 functions from the Appendix A metric inventory. IDs are
+  -- 'kpi-'-prefixed since a plain 'hr' page id already exists (People & Operations).
+  CREATE TABLE IF NOT EXISTS kpi_departments (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    accountable_exec  TEXT,
+    sort_order        INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- The KPI dictionary — "single source of definition" (PRD 4.1). Nothing appears on the
+  -- KPI dashboard that isn't a row here. target_value is nullable: 13 rows in the source
+  -- inventory are flagged as still needing a target, and this must show as "pending" rather
+  -- than a fabricated number until the CFO fills it in through the dictionary editor.
+  CREATE TABLE IF NOT EXISTS kpi_dictionary (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id  TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    type           TEXT NOT NULL,
+    unit           TEXT,
+    target_value   REAL,
+    target_note    TEXT,
+    rag_rule_json  TEXT,
+    source         TEXT,
+    method         TEXT,
+    weight         REAL NOT NULL DEFAULT 1,
+    shared_key     TEXT,
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Phased monthly targets. A row here only exists once the CFO overrides a specific
+  -- month — absent months fall back to a straight-line split of kpi_dictionary.target_value,
+  -- computed at read time (PRD 4.4).
+  CREATE TABLE IF NOT EXISTS kpi_monthly_targets (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kpi_id        INTEGER NOT NULL,
+    period        TEXT NOT NULL,
+    target_value  REAL,
+    UNIQUE(kpi_id, period)
+  );
+
+  -- One row per KPI per month — both the input-form backing store and the approval record.
+  CREATE TABLE IF NOT EXISTS kpi_submissions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kpi_id         INTEGER NOT NULL,
+    period         TEXT NOT NULL,
+    department_id  TEXT NOT NULL,
+    actual_value   REAL,
+    status         TEXT NOT NULL DEFAULT 'draft',
+    reason_note    TEXT,
+    action_note    TEXT,
+    rag_status     TEXT,
+    submitted_by   INTEGER,
+    submitted_at   TEXT,
+    approved_by    INTEGER,
+    approved_at    TEXT,
+    updated_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(kpi_id, period)
+  );
+
+  -- Append-only audit trail for every dictionary edit, submission, and approval/rejection —
+  -- the first real audit log in this codebase (PRD calls for dated, kept changes throughout).
+  CREATE TABLE IF NOT EXISTS kpi_audit_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type    TEXT NOT NULL,
+    entity_id      TEXT,
+    action         TEXT NOT NULL,
+    actor_user_id  INTEGER,
+    detail_json    TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Small key/value store for CFO-editable global config that doesn't warrant its own table
+  -- (roll-up mode/thresholds, default RAG bands per KPI type).
+  CREATE TABLE IF NOT EXISTS kpi_settings (
+    key         TEXT PRIMARY KEY,
+    value_json  TEXT NOT NULL,
+    updated_at  TEXT DEFAULT (datetime('now')),
+    updated_by  INTEGER
+  );
 `);
 
 // users predates the email/is_admin/must_change_password columns (four accounts were
@@ -77,5 +160,12 @@ function addColumnIfMissing(table, column, ddl) {
 addColumnIfMissing('users', 'email',                 'email TEXT');
 addColumnIfMissing('users', 'is_admin',              'is_admin INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'must_change_password',  'must_change_password INTEGER NOT NULL DEFAULT 0');
+
+// Group KPI Dashboard role — deliberately separate from is_admin (site administration and
+// KPI approval are different concerns). null = no KPI module access. kpi_department_id only
+// means anything when kpi_role = 'dept_head'. Sidebar visibility still goes through the
+// existing user_page_access grants, same as every other page.
+addColumnIfMissing('users', 'kpi_role',              'kpi_role TEXT');
+addColumnIfMissing('users', 'kpi_department_id',     'kpi_department_id TEXT');
 
 module.exports = db;

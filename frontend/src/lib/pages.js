@@ -1,4 +1,5 @@
 import { PROCUREMENT_REPORTS } from '../pages/procurement/reportConfig.js'
+import { KPI_DEPARTMENTS } from '../pages/kpi/departments.js'
 
 // Central id/label/parentId registry for every dashboard page — the single source of
 // truth shared by App.jsx (which pairs each entry with its actual Page component) and
@@ -17,6 +18,8 @@ export const PAGE_REGISTRY = [
   { id: 'aging',         label: 'Aging (AR/AP)' },
   { id: 'procurement',   label: 'Procurement' },
   ...PROCUREMENT_REPORTS.map(r => ({ id: r.id, label: r.title, parentId: 'procurement' })),
+  { id: 'kpi-dashboard', label: 'Group KPI Dashboard' },
+  ...KPI_DEPARTMENTS.map(d => ({ id: d.id, label: d.name, parentId: 'kpi-dashboard' })),
   { id: 'lending',       label: 'Lending Ecosystem' },
   { id: 'risk',          label: 'Risk & Portfolio' },
   { id: 'hr',                     label: 'People & Operations Old' },

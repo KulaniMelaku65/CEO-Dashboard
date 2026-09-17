@@ -51,7 +51,9 @@ router.post('/login', loginLimiter, async (req, res) => {
       title: user.title,
       isAdmin: !!user.is_admin,
       mustChangePassword: !!user.must_change_password,
-      pageIds: getPageIds(user.id)
+      pageIds: getPageIds(user.id),
+      kpiRole: user.kpi_role || null,
+      kpiDepartmentId: user.kpi_department_id || null
     });
   } catch (e) {
     console.error('Login error:', e.message);
@@ -79,7 +81,9 @@ router.get('/me', requireAuth, (req, res) => {
     title: user.title,
     isAdmin: !!user.is_admin,
     mustChangePassword: !!user.must_change_password,
-    pageIds: getPageIds(user.id)
+    pageIds: getPageIds(user.id),
+    kpiRole: user.kpi_role || null,
+    kpiDepartmentId: user.kpi_department_id || null
   });
 });
 

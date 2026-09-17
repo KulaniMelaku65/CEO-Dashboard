@@ -1,4 +1,5 @@
 const { ensureUsers } = require('./ensure-users');
+const { ensureKpiDictionary } = require('./ensure-kpi-dictionary');
 const { importArchives, snapshotCount } = require('./import-archives');
 const { syncSnapshot } = require('./snapshot-sync');
 const { isBcConfigured, missingBcVars } = require('./bc-client');
@@ -16,6 +17,12 @@ async function runStartup() {
     if (seeded) console.log(`[startup] Created ${seeded} default user(s).`);
   } catch (e) {
     console.error('[startup] User seed failed:', e.message);
+  }
+
+  try {
+    ensureKpiDictionary();
+  } catch (e) {
+    console.error('[startup] KPI dictionary seed failed:', e.message);
   }
 
   const hadSnapshots = snapshotCount() > 0;

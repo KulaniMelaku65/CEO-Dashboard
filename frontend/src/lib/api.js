@@ -55,6 +55,33 @@ export const departmentOverrides = {
   remove: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}`, { method: 'DELETE' }),
 }
 
+export const kpi = {
+  departments: () => req('/api/kpi/departments'),
+  dictionary:  (department) => req(`/api/kpi/dictionary${department ? `?department=${encodeURIComponent(department)}` : ''}`),
+  updateDictionaryRow: (id, patch) => req(`/api/kpi/dictionary/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  }),
+  submissions: (department, period) => req(`/api/kpi/submissions?department=${encodeURIComponent(department)}&period=${period}`),
+  saveDraft: (departmentId, period, values) => req('/api/kpi/submissions', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ departmentId, period, values })
+  }),
+  submit: (departmentId, period) => req('/api/kpi/submissions/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ departmentId, period })
+  }),
+  approve: (id) => req(`/api/kpi/submissions/${id}/approve`, { method: 'POST' }),
+  reject:  (id) => req(`/api/kpi/submissions/${id}/reject`, { method: 'POST' }),
+  overview:  (period) => req(`/api/kpi/overview${period ? `?period=${period}` : ''}`),
+  department: (id, period) => req(`/api/kpi/department/${id}${period ? `?period=${period}` : ''}`),
+  reminders: (period) => req(`/api/kpi/reminders${period ? `?period=${period}` : ''}`),
+  audit: (entity, id) => req(`/api/kpi/audit${entity ? `?entity=${entity}&id=${id}` : ''}`),
+}
+
 export const adminUsers = {
   list:   () => req('/api/admin/users'),
   create: (user) => req('/api/admin/users', {

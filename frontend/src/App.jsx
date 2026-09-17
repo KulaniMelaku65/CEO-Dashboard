@@ -27,6 +27,8 @@ import Tax from './pages/Tax.jsx'
 import Aging from './pages/Aging.jsx'
 import Procurement from './pages/Procurement.jsx'
 import { PROCUREMENT_PAGE_COMPONENTS } from './pages/procurement/index.jsx'
+import KpiOverview from './pages/KpiOverview.jsx'
+import { KPI_PAGE_COMPONENTS } from './pages/kpi/index.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 
 // PAGE_REGISTRY (lib/pages.js) holds every page's id/label/parentId — this just pairs
@@ -40,6 +42,7 @@ const PAGE_COMPONENTS = {
   'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,
   'hr-page-review': HRPageReview, 'department-overrides': DepartmentOverrides,
   procurement: Procurement, ...PROCUREMENT_PAGE_COMPONENTS,
+  'kpi-dashboard': KpiOverview, ...KPI_PAGE_COMPONENTS,
 }
 
 export const ALL_SLIDES = PAGE_REGISTRY.map(p => ({ ...p, Page: PAGE_COMPONENTS[p.id] }))
@@ -215,7 +218,16 @@ export default function App() {
                   }`}
                 >
                   <div className="p-4 md:p-6 pb-10">
-                    <Page data={data} onDataRefresh={() => loadData(histDate || undefined)} currentUserId={user.id} />
+                    <Page
+                      data={data}
+                      onDataRefresh={() => loadData(histDate || undefined)}
+                      currentUserId={user.id}
+                      currentUser={user}
+                      onNavigate={(pageId) => {
+                        const idx = slides.findIndex(s => s.id === pageId)
+                        if (idx >= 0) goToSlide(idx)
+                      }}
+                    />
                   </div>
                 </div>
               ))}
