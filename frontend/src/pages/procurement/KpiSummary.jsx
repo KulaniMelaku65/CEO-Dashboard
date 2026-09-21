@@ -15,6 +15,10 @@ function Body({ proc }) {
   const spendThisYear = sumBy(proc.spend.rows.filter(r => r.d.startsWith(asOf.slice(0, 4))), r => r.amt)
   const c = proc.commitments
   const latestProg = [...proc.budget.budgets].filter(b => b.currency === 'USD').sort((a, b) => b.name.localeCompare(a.name))[0]
+  const prs = proc.requisitions.rows
+  const openPrs = prs.filter(r => r.st === 'Open' && r.d)
+  const openPrAge = openPrs.length ? sumBy(openPrs, r => daysBetween(r.d, asOf)) / openPrs.length : 0
+  const oc = proc.offContract
   const approvers = new Set(etb.map(r => r.ap))
   const withLimit = new Set(etb.filter(r => r.unl || r.lim > 0).map(r => r.ap))
 
@@ -39,15 +43,32 @@ function Body({ proc }) {
           accent={proc.variance.totals.received === 0 ? RED : DTEAL}
         />
         <Kpi label="Approvers with a limit set" value={`${withLimit.size} of ${approvers.size}`} sub={withLimit.size === 0 ? 'DOA limits missing in Business Central' : 'Limit set or unlimited'} accent={withLimit.size === 0 ? ORANGE : DTEAL} />
+        <Kpi label="Purchase requisitions" value={fmtInt(prs.length)} sub={`${fmtMoney(sumBy(prs.filter(r => r.cur === 'ETB'), r => r.amt))}`} accent={NAVY} />
+        <Kpi label="Pending PR approvals" value={fmtInt(proc.pendingPr.count)} sub={`${fmtMoney(sumBy(proc.pendingPr.rows.filter(r => r.cur === 'ETB'), r => r.amt))}`} accent={ORANGE} />
+        <Kpi label="Open PRs — average age" value={`${Math.round(openPrAge)} days`} sub={`${fmtInt(openPrs.length)} open`} accent={BLUE} />
+        <Kpi
+          label="Outside contract"
+          value={oc.totals.offContractPct == null ? '—' : `${oc.totals.offContractPct.toFixed(0)}%`}
+          sub={oc.onContractLines === 0 ? 'No PO line references a contract' : `${fmtMoney(oc.totals.offContract)}`}
+          accent={oc.totals.offContractPct > 50 ? RED : DTEAL}
+        />
       </div>
 
-      {(proc.requisitions.rows === 0 || proc.variance.totals.linesWithReceipt === 0) && (
-        <Notice tone="info" title="Two of the headline KPIs in the brief can't be calculated yet">
-          <strong>PO cycle time</strong> and <strong>PR-to-PO conversion</strong> need purchase-requisition and goods-receipt records.
-          Requisitions returned by Business Central: <strong>{fmtInt(proc.requisitions.rows)}</strong>. PO lines with a receipt posted: <strong>{fmtInt(proc.variance.totals.linesWithReceipt)}</strong>.
-          Until both exist there is nothing to time or convert.
-        </Notice>
-      )}
+      <Notice tone="info" title="PO cycle time and PR-to-PO conversion can't be calculated yet">
+        <ul className="list-disc pl-4 space-y-0.5">
+          {proc.endpoints.cycleTime?.ok && proc.endpoints.cycleTime.rows === 0 && (
+            <li>The cycle-time feed (<strong>{proc.endpoints.cycleTime.name}</strong>) is connected but returns 0 rows.</li>
+          )}
+          {proc.endpoints.cycleTime && !proc.endpoints.cycleTime.ok && (
+            <li>The cycle-time feed (<strong>{proc.endpoints.cycleTime.name}</strong>) could not be read: {proc.endpoints.cycleTime.error}</li>
+          )}
+          <li>
+            None of the PO feeds carries a requisition reference, so a requisition can't be matched to the purchase order it became
+            ({fmtInt(proc.requisitions.count)} requisitions and {fmtInt(proc.po.rows.length)} POs exist, but nothing joins them).
+          </li>
+          {proc.variance.totals.linesWithReceipt === 0 && <li>No receipts are posted against any PO, so there's no receipt date to measure the end of the cycle.</li>}
+        </ul>
+      </Notice>
 
       <Panel title="Data connections" subtitle="Live status of every Procurement report's Business Central feed">
         <DrillTable

@@ -15,6 +15,11 @@ const ENDPOINT_NAMES = {
   budget:       'KFT_Procrument_Budget',
   doa:          'KFT_Procrument_DOA_Breach',
   auditTrail:   'KFT_Procrument_Audit_Trail',
+  // Spelled exactly as published in Business Central ("Contact", not "Contract"; and
+  // "Procurement" here vs "Procrument" on the older feeds) — a mismatch is a 404.
+  offContract:  'KFT_Off_Contact_Purchases',
+  cycleTime:    'KFT_Procurement_Cycle_Time',
+  vendorDelivery: 'KFT_Vendor_Delivery_Performance',
 };
 
 const BC_BLANK_DATE = /^0001-/;
@@ -179,16 +184,91 @@ async function buildProcurement(asOfDate) {
     };
   });
 
+  // Purchase requisitions. These are Business Central purchase *quotes* (the feed's document
+  // type is "Quote"), used here as requisitions. Compact rows — a couple of hundred — so the
+  // page can filter client-side. The pending-approval feed has no currency field of its own,
+  // so it's looked up from the matching requisition.
+  const trim = s => (s || '').trim();
+  const prRows = fetched.requisitions.map(r => ({
+    no: r.prNo, d: cleanDate(r.documentDate), od: cleanDate(r.orderDate), st: r.status,
+    u: r.assignedUserId || '', v: trim(r.payToName), bu: r.globalDim2 || '', dim1: r.globalDim1 || '',
+    cur: normCur(r.currencyCode), amt: round2(r.amount), desc: trim(r.postingDescription),
+  }));
+  const prCurrency = new Map(prRows.map(r => [r.no, r.cur]));
+  const pendingRows = fetched.pendingPr.map(r => ({
+    no: r.prNo, d: cleanDate(r.documentDate), u: r.assignedUserId || '', v: trim(r.payToName),
+    bu: r.globalDim2 || '', dim1: r.globalDim1 || '', cur: prCurrency.get(r.prNo) || 'ETB',
+    amt: round2(r.amount), desc: trim(r.postingDescription),
+  }));
+
+  // Purchases outside contract. A PO line counts as "on contract" only if it references a
+  // blanket order (the framework-agreement document in Business Central); every other line is
+  // off-contract. Aggregated here (2k lines) rather than shipped raw. Order date and vendor
+  // name come from the parent PO. Foreign-currency lines are reported separately, never summed.
+  const poInfo = new Map(poSummary.map(r => [r.poNo, r]));
+  const offLines = fetched.offContract;
+  const offEtb = offLines.filter(l => normCur(l.currencyCode) === 'ETB');
+  const onContract = l => !!(l.blanketOrderNo && l.blanketOrderNo.trim());
+  const offOnly = offEtb.filter(l => !onContract(l));
+  const vendorAgg = new Map();
+  offOnly.forEach(l => {
+    const a = vendorAgg.get(l.vendorNo) || { vn: l.vendorNo, v: vendorName.get(l.vendorNo) || l.vendorNo, poSet: new Set(), lines: 0, value: 0 };
+    a.poSet.add(l.poNo); a.lines++; a.value += l.lineAmount || 0;
+    vendorAgg.set(l.vendorNo, a);
+  });
+  const offValue = offOnly.reduce((s, l) => s + (l.lineAmount || 0), 0);
+  const onValue = offEtb.filter(onContract).reduce((s, l) => s + (l.lineAmount || 0), 0);
+  const offContract = {
+    lines: offLines.length,
+    pos: new Set(offLines.map(l => l.poNo)).size,
+    etbLines: offEtb.length,
+    etbPos: new Set(offEtb.map(l => l.poNo)).size,
+    onContractLines: offEtb.filter(onContract).length,
+    zeroValueLines: offEtb.filter(l => !l.lineAmount).length,
+    totals: {
+      value: round2(offValue + onValue),
+      offContract: round2(offValue),
+      onContract: round2(onValue),
+      offContractPct: offValue + onValue > 0 ? round2((offValue / (offValue + onValue)) * 100) : null,
+    },
+    foreign: groupSum(offLines.filter(l => normCur(l.currencyCode) !== 'ETB'), l => normCur(l.currencyCode), { value: l => l.lineAmount })
+      .map(g => ({ currency: g.key, lines: g.n, value: round2(g.value) })),
+    byVendor: [...vendorAgg.values()].map(a => ({ vn: a.vn, v: a.v, pos: a.poSet.size, lines: a.lines, value: round2(a.value) }))
+      .sort((a, b) => b.value - a.value).slice(0, 25),
+    vendors: vendorAgg.size,
+    byBU: groupSum(offOnly, l => l.globalDim2 || '', { value: l => l.lineAmount })
+      .map(g => ({ bu: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => b.value - a.value).slice(0, 15),
+    byMonth: groupSum(offOnly.filter(l => poInfo.get(l.poNo)?.orderDate), l => monthOf(poInfo.get(l.poNo).orderDate), { value: l => l.lineAmount })
+      .map(g => ({ m: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => a.m.localeCompare(b.m)),
+  };
+
+  // Vendor delivery: one row per posted purchase receipt. Promised/requested receipt dates
+  // exist on the feed but are blank on every row today, so only the expected date can be
+  // compared with the posting date — counted here so the page can say so rather than assume.
+  const receipts = fetched.vendorDelivery;
+  const vendorDelivery = {
+    count: receipts.length,
+    withPromisedDate: receipts.filter(r => cleanDate(r.promisedReceiptDate)).length,
+    withRequestedDate: receipts.filter(r => cleanDate(r.requestedReceiptDate)).length,
+    withOrderNo: receipts.filter(r => r.orderNo && r.orderNo.trim()).length,
+    rows: receipts.map(r => ({
+      no: r.receiptNo, vn: r.vendorNo, v: trim(r.vendorName), pd: cleanDate(r.postingDate),
+      od: cleanDate(r.orderDate), exp: cleanDate(r.expectedReceiptDate), bu: r.globalDim2 || '',
+    })),
+  };
+
   return {
     asOfDate,
     endpoints,
+    vendorDelivery,
     po: { rows: pos },
     variance,
     commitments,
     spend: { rows: spendRows },
     budget: { budgets },
-    requisitions: { rows: fetched.requisitions.length },
-    pendingPr: { rows: fetched.pendingPr.length },
+    requisitions: { count: prRows.length, rows: prRows },
+    pendingPr: { count: pendingRows.length, rows: pendingRows },
+    offContract,
   };
 }
 

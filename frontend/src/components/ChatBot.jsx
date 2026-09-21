@@ -75,6 +75,9 @@ function summarizeProcurement(p) {
   if (foreign.length) caveats.push('ETB totals exclude foreign-currency POs (no FX rate available); those are listed separately in their own currency.')
   if (p.variance.totals.linesWithReceipt === 0 && p.variance.totals.linesWithInvoice === 0) caveats.push('Nothing is received or invoiced against any PO in Business Central, so every PO counts as open.')
   if (!etb.some(r => r.unl || r.lim > 0)) caveats.push('No approver has a purchase approval limit set in Business Central, so DOA "breaches" are a setup gap, not confirmed breaches.')
+  if (p.offContract?.onContractLines === 0) caveats.push('No PO line references a blanket order (contract), so 100% of spend counts as outside contract — a coverage gap in the data as much as a buying-behaviour finding.')
+  if (p.vendorDelivery?.count) caveats.push('Vendor on-time delivery compares the receipt posting date with the expected receipt date only (promised/requested dates are blank); many receipts are booked at purchase time, so the overall on-time rate is optimistic — the late receipts are the reliable signal. No quality/returns data exists.')
+  caveats.push('Purchase requisitions are Business Central purchase quotes; no PO feed carries a requisition reference, so PR-to-PO conversion cannot be calculated.')
   Object.values(p.endpoints).forEach(e => {
     if (!e.ok) caveats.push(`${e.name} is unavailable: ${e.error}`)
     else if (e.rows === 0) caveats.push(`${e.name} is connected but returns 0 rows.`)
@@ -98,6 +101,33 @@ function summarizeProcurement(p) {
       byMonth: group(spend, r => r.d.slice(0, 7), r => r.amt, 24),
       byCategory: group(spend, r => r.t, r => r.amt),
       topVendors: group(spend, r => r.v?.trim() || r.vn, r => r.amt),
+    },
+    requisitions: {
+      count: p.requisitions.count,
+      valueETB: sum(p.requisitions.rows.filter(r => r.cur === 'ETB'), r => r.amt),
+      byStatus: group(p.requisitions.rows, r => r.st, r => (r.cur === 'ETB' ? r.amt : 0)),
+      withNoAmount: p.requisitions.rows.filter(r => !r.amt).length,
+      byRequester: group(p.requisitions.rows, r => r.u, r => (r.cur === 'ETB' ? r.amt : 0), 10),
+      largest: [...p.requisitions.rows].filter(r => r.cur === 'ETB').sort((a, b) => b.amt - a.amt).slice(0, 5).map(r => ({ no: r.no, payee: r.v, status: r.st, amount: r.amt })),
+      pendingApproval: { count: p.pendingPr.count, valueETB: sum(p.pendingPr.rows.filter(r => r.cur === 'ETB'), r => r.amt), byRequester: group(p.pendingPr.rows, r => r.u, () => 0, 10) },
+    },
+    vendorDelivery: p.vendorDelivery && (() => {
+      const day = d => Math.round(new Date(d + 'T12:00:00').getTime() / 86400000)
+      const rs = p.vendorDelivery.rows.filter(r => r.pd && r.exp).map(r => ({ ...r, late: day(r.pd) - day(r.exp) }))
+      const late = rs.filter(r => r.late > 0)
+      return {
+        receipts: rs.length,
+        postedOnOrBeforeExpectedPct: rs.length ? Math.round(((rs.length - late.length) / rs.length) * 1000) / 10 : null,
+        lateReceipts: late.length,
+        avgDaysLate: late.length ? Math.round((late.reduce((s, r) => s + r.late, 0) / late.length) * 10) / 10 : null,
+        receiptsPostedBeforeOrderDate: rs.filter(r => r.od && day(r.pd) < day(r.od)).length,
+        promisedDatesFilled: p.vendorDelivery.withPromisedDate,
+        vendorsWithMostLateReceipts: group(late, r => r.v || r.vn, () => 1, 8).map(g => ({ vendor: g.name, lateReceipts: g.count })),
+      }
+    })(),
+    outsideContract: p.offContract && {
+      totals: p.offContract.totals, onContractLines: p.offContract.onContractLines, vendors: p.offContract.vendors,
+      topVendors: p.offContract.byVendor.slice(0, 10).map(({ v, vn, pos, value }) => ({ vendor: v, vendorNo: vn, pos, value })),
     },
     budgets: p.budget.budgets.map(({ byDim, monthly, ...b }) => b),
     approvers: group(etb, r => r.ap, r => r.amt, 15),

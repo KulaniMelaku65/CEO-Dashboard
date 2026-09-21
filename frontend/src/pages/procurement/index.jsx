@@ -8,11 +8,15 @@ import PoVariance from './PoVariance.jsx'
 import ProcBudget from './ProcBudget.jsx'
 import Commitments from './Commitments.jsx'
 import DoaBreach from './DoaBreach.jsx'
+import PrSummary from './PrSummary.jsx'
+import PrPending from './PrPending.jsx'
+import OffContract from './OffContract.jsx'
+import VendorPerformance from './VendorPerformance.jsx'
 import { PROCUREMENT_REPORTS } from './reportConfig.js'
 
-// Report id → its real page. Reports with a live feed get their own component; the two
-// purchase-requisition feeds (connected, 0 rows) and the audit trail (endpoint not
-// published) get the status page; anything with no feed at all is still a placeholder.
+// Report id → its real page. Reports with a live feed get their own component; the
+// cycle-time feed (connected, 0 rows) and the audit trail (endpoint not published) get
+// the status page; anything with no feed at all is still a placeholder.
 const REAL_PAGES = {
   'procurement-kpis':           KpiSummary,
   'procurement-spend-total':    SpendTotal,
@@ -22,8 +26,12 @@ const REAL_PAGES = {
   'procurement-budget':         ProcBudget,
   'procurement-commitments':    Commitments,
   'procurement-compliance-doa': DoaBreach,
+  'procurement-pr-summary':     PrSummary,
+  'procurement-pr-pending':     PrPending,
+  'procurement-vendor-performance': VendorPerformance,
+  'procurement-compliance-outside-contract': OffContract,
 }
-const STATUS_PAGES = new Set(['procurement-pr-summary', 'procurement-pr-pending', 'procurement-audit-trail'])
+const STATUS_PAGES = new Set(['procurement-audit-trail', 'procurement-cycle-time'])
 
 // One page component per report id — spread into App.jsx's PAGE_COMPONENTS map instead of
 // 15 individual imports there.

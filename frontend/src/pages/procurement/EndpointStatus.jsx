@@ -31,11 +31,11 @@ export default function EndpointStatus({ data, report }) {
           <div className="space-y-2 text-xs text-muted leading-relaxed">
             <p>
               The <strong className="text-navy">{ep.name}</strong> endpoint is published and answering, but Business Central returned <strong className="text-navy">0 rows</strong> for it.
-              Most likely no purchase requisitions have been raised in Business Central yet, or the endpoint's page filters every record out.
+              Either there are no records behind it yet, or the endpoint's source filters every record out.
             </p>
             <p>
-              Because no rows came back, the field names aren't visible yet, so this report can't be laid out honestly ({report.chartType.toLowerCase()} of {report.metric.toLowerCase()}).
-              Once at least one requisition exists, the feed will be picked up automatically on the next sync and this page can be built from the real fields.
+              Because no rows came back, the field names aren't visible, so this report can't be laid out honestly ({report.chartType.toLowerCase()} of {report.metric.toLowerCase()}).
+              Once the feed returns data, the next sync will pick it up and this page can be built from the real fields.
             </p>
           </div>
         )}
