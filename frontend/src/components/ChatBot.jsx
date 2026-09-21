@@ -56,7 +56,58 @@ function stripHeavy(val) {
   return val
 }
 
+// The procurement block carries raw PO/spend rows for the pages' own client-side filtering
+// (~600 KB) — far too large for chat context, and unnecessary for headline questions. This
+// boils it down to the aggregates a person would actually ask about, plus the data-quality
+// caveats (all POs open, DOA limits unset, ETB-only totals) so answers don't overstate.
+function summarizeProcurement(p) {
+  if (!p) return null
+  const sum = (rows, f) => Math.round(rows.reduce((s, r) => s + (f(r) || 0), 0))
+  const group = (rows, keyFn, valFn, n = 10) => {
+    const m = new Map()
+    rows.forEach(r => { const k = keyFn(r); const g = m.get(k) || { name: k, count: 0, total: 0 }; g.count++; g.total += valFn(r) || 0; m.set(k, g) })
+    return [...m.values()].sort((a, b) => b.total - a.total).slice(0, n).map(g => ({ ...g, total: Math.round(g.total) }))
+  }
+  const etb = p.po.rows.filter(r => r.cur === 'ETB')
+  const foreign = p.po.rows.filter(r => r.cur !== 'ETB')
+  const spend = p.spend.rows
+  const caveats = []
+  if (foreign.length) caveats.push('ETB totals exclude foreign-currency POs (no FX rate available); those are listed separately in their own currency.')
+  if (p.variance.totals.linesWithReceipt === 0 && p.variance.totals.linesWithInvoice === 0) caveats.push('Nothing is received or invoiced against any PO in Business Central, so every PO counts as open.')
+  if (!etb.some(r => r.unl || r.lim > 0)) caveats.push('No approver has a purchase approval limit set in Business Central, so DOA "breaches" are a setup gap, not confirmed breaches.')
+  Object.values(p.endpoints).forEach(e => {
+    if (!e.ok) caveats.push(`${e.name} is unavailable: ${e.error}`)
+    else if (e.rows === 0) caveats.push(`${e.name} is connected but returns 0 rows.`)
+  })
+  return {
+    caveats,
+    endpoints: p.endpoints,
+    purchaseOrders: {
+      countETB: etb.length,
+      valueETB: sum(etb, r => r.amt),
+      valueInclVatETB: sum(etb, r => r.vat),
+      byStatus: group(etb, r => r.st, r => r.amt),
+      topVendors: group(etb, r => r.v || r.vn, r => r.amt),
+      pendingApproval: group(etb.filter(r => r.st === 'Pending Approval'), r => r.ap, r => r.amt),
+      foreignCurrency: group(foreign, r => r.cur, r => r.amt),
+    },
+    variance: p.variance.totals,
+    commitments: { totals: p.commitments.totals, byBudget: p.commitments.byBudget, byMonth: p.commitments.byMonth },
+    spend: {
+      totalETB: sum(spend, r => r.amt),
+      byMonth: group(spend, r => r.d.slice(0, 7), r => r.amt, 24),
+      byCategory: group(spend, r => r.t, r => r.amt),
+      topVendors: group(spend, r => r.v?.trim() || r.vn, r => r.amt),
+    },
+    budgets: p.budget.budgets.map(({ byDim, monthly, ...b }) => b),
+    approvers: group(etb, r => r.ap, r => r.amt, 15),
+  }
+}
+
 function buildContext(data, pageId) {
+  if (pageId?.startsWith('procurement')) {
+    return JSON.stringify({ asOf: data?.asOf, procurement: summarizeProcurement(data?.procurement) }).slice(0, 20000)
+  }
   const keys = PAGE_DATA_KEYS[pageId] || Object.keys(data || {})
   const relevant = { asOf: data?.asOf }
   keys.forEach(k => { if (data?.[k] !== undefined) relevant[k] = stripHeavy(data[k]) })

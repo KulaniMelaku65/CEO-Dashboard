@@ -1,4 +1,4 @@
-import { PROCUREMENT_REPORTS } from './procurement/reportConfig.js'
+import { PROCUREMENT_REPORTS, getReportStatus, STATUS_TONE_COLORS } from './procurement/reportConfig.js'
 
 // Explicit dark-theme colors rather than relying on light Tailwind classes (bg-bg,
 // text-muted, etc.) getting repainted for dark mode — that repaint doesn't reach
@@ -8,18 +8,24 @@ import { PROCUREMENT_REPORTS } from './procurement/reportConfig.js'
 const NAVY = '#02404F'
 const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
 
-// Landing page for the Procurement module — the 15 actual reports live one level
-// down in the sidebar (see pages.js/Sidebar.jsx's parentId nesting), each currently
-// a placeholder until its BC data source is confirmed. This page is just a status
-// board so it's obvious at a glance what's planned and what each one needs.
-export default function Procurement() {
+// Landing page for the Procurement module — the 15 reports live one level down in the
+// sidebar (see lib/pages.js's parentId nesting). The Status column is read live from the
+// snapshot's per-endpoint status, so it always reflects what Business Central actually
+// returned on the last sync: live, connected-but-empty, missing, or no feed yet.
+export default function Procurement({ data }) {
+  const proc = data?.procurement
+  const statuses = PROCUREMENT_REPORTS.map(r => getReportStatus(r, proc))
+  const live = statuses.filter(s => s.tone === 'green').length
+
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-extrabold text-navy mb-0.5">Procurement</h2>
         <p className="text-xs text-muted font-medium">
-          {PROCUREMENT_REPORTS.length} reports planned for this module, listed below and in the sidebar. None are
-          connected to live Business Central data yet — pending confirmation of the underlying OData sources.
+          {proc
+            ? `${live} of ${PROCUREMENT_REPORTS.length} reports are live from Business Central; the rest are waiting on a feed, or the feed is empty.`
+            : `${PROCUREMENT_REPORTS.length} reports planned. Live status is only available on the latest snapshot.`}
+          {' '}Each report is listed in the sidebar under Procurement.
         </p>
       </div>
 
@@ -35,19 +41,22 @@ export default function Procurement() {
             </tr>
           </thead>
           <tbody>
-            {PROCUREMENT_REPORTS.map((r, i) => (
-              <tr key={r.id} style={{ background: i % 2 ? ROW_BG.odd : ROW_BG.even }}>
-                <td className="px-4 py-2.5 text-white/60 font-semibold whitespace-nowrap">{r.category}</td>
-                <td className="px-4 py-2.5 text-white font-bold whitespace-nowrap">{r.title}</td>
-                <td className="px-4 py-2.5 text-white/60 whitespace-nowrap">{r.chartType}</td>
-                <td className="px-4 py-2.5 text-white/60 whitespace-nowrap">{r.source}</td>
-                <td className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(235,125,35,.2)', color: '#EB7D23' }}>
-                    Not connected
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {PROCUREMENT_REPORTS.map((r, i) => {
+              const tone = STATUS_TONE_COLORS[statuses[i].tone]
+              return (
+                <tr key={r.id} style={{ background: i % 2 ? ROW_BG.odd : ROW_BG.even }}>
+                  <td className="px-4 py-2.5 text-white/60 font-semibold whitespace-nowrap">{r.category}</td>
+                  <td className="px-4 py-2.5 text-white font-bold whitespace-nowrap">{r.title}</td>
+                  <td className="px-4 py-2.5 text-white/60 whitespace-nowrap">{r.chartType}</td>
+                  <td className="px-4 py-2.5 text-white/60 whitespace-nowrap">{r.source}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap" style={{ background: tone.bg, color: tone.fg }}>
+                      {statuses[i].label}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

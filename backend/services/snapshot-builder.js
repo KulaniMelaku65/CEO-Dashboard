@@ -1,4 +1,5 @@
 const { bc, isBcConfigured } = require('./bc-client');
+const { buildProcurement } = require('./procurement-builder');
 const db = require('../db');
 
 const _jobTitleUpsert = db.prepare(
@@ -3091,6 +3092,21 @@ async function buildSnapshot(targetDate) {
   const arAging = buildAging(arAgingRows, 'customerNo', 'customerName');
   const apAging = buildAging(apAgingRows, 'vendorNo', 'vendorName');
 
+  // Procurement pages read live PO/spend/commitment endpoints that have no point-in-time
+  // filter, so a historical rebuild would just stamp today's data onto an old date —
+  // skipped there (the pages show "latest snapshot only"). A failure here never breaks the
+  // rest of the snapshot.
+  let procurement = null;
+  if (bcAvail && !IS_HISTORICAL) {
+    try {
+      procurement = await buildProcurement(targetDate);
+      const ep = procurement.endpoints;
+      console.log(`  Procurement: ${procurement.po.rows.length} POs, ${procurement.spend.rows.length} spend lines, ${procurement.commitments.entries} commitments; endpoints ok ${Object.values(ep).filter(e => e.ok).length}/${Object.keys(ep).length}`);
+    } catch (e) {
+      console.warn('  Procurement build failed:', e.message);
+    }
+  }
+
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
@@ -3109,7 +3125,8 @@ async function buildSnapshot(targetDate) {
     dimensionNames,
     financialSS: { revenueByBank },
     arAging,
-    apAging
+    apAging,
+    procurement
   };
 }
 
