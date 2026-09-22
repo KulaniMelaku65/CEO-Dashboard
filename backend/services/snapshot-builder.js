@@ -223,9 +223,18 @@ async function buildSnapshot(targetDate) {
       // Load schedule + CoA from cache (fetched once per process, not per snapshot)
       const { mgtLines, bsLines, coaEndTotals, coaPostingRows } = await getBcStatic();
 
-      // Index rows by RowNo for fast lookup (BC returns PascalCase field names)
+      // Index rows by RowNo for fast lookup (BC returns PascalCase field names). Scoped to
+      // the M-MGT-RPT schedule specifically — KFT_MGT_RPT_Lines now also carries a second
+      // schedule (FS-IFRS 18, added for the new IFRS 18 income-statement presentation), and
+      // the two share many identical RowNo values (5010, 6019, 30000, ...) with a handful of
+      // deliberately different formulas (IFRS 18's Total OPEX folds in Office Shared
+      // Services Fees (8341) and Depreciation (9299), which M-MGT-RPT instead subtracts
+      // separately in Net Profit). Without this filter the two schedules' rows land in one
+      // shared object keyed by RowNo and whichever schedule the API happens to return last
+      // silently wins — same risk this file already guards against for M-BALANCE below.
+      const mgtLinesSched = mgtLines.filter(r => r.ScheduleName === 'M-MGT-RPT');
       const rowMap = {};
-      mgtLines.forEach(r => { if (r.RowNo) rowMap[r.RowNo] = r; });
+      mgtLinesSched.forEach(r => { if (r.RowNo) rowMap[r.RowNo] = r; });
 
       // Extract 4-6 digit account numbers from a Totaling string.
       // Used for Formula rows that list GL accounts directly (Revenue, COS, Salaries).
