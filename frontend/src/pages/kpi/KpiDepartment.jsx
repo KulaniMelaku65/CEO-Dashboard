@@ -3,7 +3,7 @@ import { kpi } from '../../lib/api.js'
 import { NAVY, ROW_BG, ragColor, ragLabel, currentPeriod } from './ragColors.js'
 import { KPI_DEPARTMENTS } from './departments.js'
 
-const FREQUENCIES = ['Monthly', 'Quarterly', 'Yearly']
+const FREQUENCIES = ['Monthly', 'Quarterly', 'H1/H2', 'Yearly']
 const KPI_TYPES = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 const METHODS = [['A', 'Automated'], ['S', 'Semi-automated'], ['M', 'Manual']]
 

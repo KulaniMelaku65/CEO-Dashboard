@@ -47,7 +47,7 @@ router.get('/dictionary', (req, res) => {
   res.json(rows)
 })
 
-const FREQUENCIES = new Set(['Monthly', 'Quarterly', 'Yearly'])
+const FREQUENCIES = new Set(['Monthly', 'Quarterly', 'H1/H2', 'Yearly'])
 
 // A department head manages their own department's KPI *list* (add/remove, description,
 // how often it's reported) — but per the PRD, "Set the rules. Define targets, RAG
