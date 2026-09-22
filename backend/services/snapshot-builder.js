@@ -214,6 +214,18 @@ async function buildSnapshot(targetDate) {
     '9013','9016','9017','9025'                       // Parking, Stamp Duty, Penalties, Loading
   ]);
 
+  // FS-IFRS 18 equivalents — a second account schedule added alongside M-MGT-RPT for the
+  // new IFRS 18 income-statement presentation (its Total OPEX folds in Office Shared
+  // Services Fees and Depreciation, which M-MGT-RPT instead subtracts separately after
+  // EBITDA; see "Financial Performance 2"). No hardcoded fallback here — unlike MGT_REV
+  // etc. above, this schedule has no pre-existing dashboard depending on it, so if it
+  // can't be resolved these just stay empty and budgetActualIfrs18 is skipped entirely
+  // further down, rather than guessing at fallback account numbers.
+  let MGT_REV_I18 = new Set(), MGT_REV_LINES_I18 = [];
+  let MGT_COS_I18 = new Set(), MGT_COS_LINES_I18 = [];
+  let MGT_SAL_I18 = new Set(), MGT_SAL_LINES_I18 = [];
+  let MGT_OPEX_I18 = new Set(), MGT_OPEX_CATEGORIES_I18 = [];
+
   // Balance Sheet account sets, resolved from the real M-BALANCE schedule below.
   // Stay null (→ CONFIG.ranges fallback further down) if the schedule can't be reached.
   let BS_FIXED = null, BS_CURRENT = null, BS_LIAB = null, BS_EQUITY = null;
@@ -273,10 +285,12 @@ async function buildSnapshot(targetDate) {
 
       // Resolve a RowNo to the set of actual GL accounts it represents, minus salSet.
       // Every token in a Formula row's Totaling is a RowNo (not a GL account number).
-      const resolveRow = (rowNo, salSet, visited = new Set()) => {
+      // Takes `rowMap` explicitly (rather than closing over the one below) so the same
+      // resolver can be reused for the FS-IFRS 18 schedule further down with its own rowMap.
+      const resolveRow = (rowMapArg, rowNo, salSet, visited = new Set()) => {
         if (visited.has(rowNo)) return new Set();
         const visit = new Set(visited); visit.add(rowNo);
-        const row = rowMap[rowNo];
+        const row = rowMapArg[rowNo];
         if (!row) return new Set();
         const result = new Set();
         const tt = row.TotalingType;
@@ -291,7 +305,7 @@ async function buildSnapshot(targetDate) {
         } else {
           // Formula (or unknown) — each digit token is a RowNo; resolve recursively
           totaling.split(/[+\-*/,]/).map(s => s.trim()).filter(s => /^\d+$/.test(s))
-            .forEach(p => resolveRow(p, salSet, visit).forEach(a => result.add(a)));
+            .forEach(p => resolveRow(rowMapArg, p, salSet, visit).forEach(a => result.add(a)));
         }
         return result;
       };
@@ -324,7 +338,7 @@ async function buildSnapshot(targetDate) {
 
       // OPEX (RowNo 30000): all tokens in the Totaling are RowNos — resolve via rowMap
       if (rowMap['30000']?.Totaling) {
-        const expanded = resolveRow('30000', MGT_SAL);
+        const expanded = resolveRow(rowMap, '30000', MGT_SAL);
         if (expanded.size > 5) MGT_OPEX = expanded;
 
         // Same formula, but keep each top-level term as its own category (Office Rent,
@@ -335,7 +349,7 @@ async function buildSnapshot(targetDate) {
         const categories = terms
           .filter(t => t !== '1') // Salaries — shown separately via MGT_SAL_LINES
           .map(t => ({
-            accounts: resolveRow(t, MGT_SAL),
+            accounts: resolveRow(rowMap, t, MGT_SAL),
             description: (rowMap[t]?.Description || t).trim().replace(/^Total\s+/i, '')
           }))
           .filter(c => c.accounts.size > 0);
@@ -343,6 +357,51 @@ async function buildSnapshot(targetDate) {
       }
 
       console.log(`  M-MGT-RPT: Rev=${MGT_REV.size} accts, COS=${MGT_COS.size} accts, Sal=${MGT_SAL.size} accts, OPEX=${MGT_OPEX.size} accts`);
+
+      // ── FS-IFRS 18 — same resolution mechanism, a different schedule name ──
+      // resolveRow/extractAccts/findSubAccounts/coaPostingAccts are schedule-agnostic
+      // (they only take a rowMap + row numbers), so this is the exact same logic as the
+      // M-MGT-RPT block just above, pointed at a rowMap built from the other schedule.
+      const rowMapI18 = {};
+      mgtLines.filter(r => r.ScheduleName === 'FS-IFRS 18').forEach(r => { if (r.RowNo) rowMapI18[r.RowNo] = r; });
+
+      if (rowMapI18['10000']?.Totaling) {
+        MGT_REV_I18 = extractAccts(rowMapI18['10000'].Totaling);
+        MGT_REV_LINES_I18 = [...MGT_REV_I18].map(acct => ({
+          account: acct,
+          description: (rowMapI18[acct]?.Description || acct).trim()
+        }));
+      }
+      if (rowMapI18['6019']?.Totaling) {
+        MGT_COS_I18 = extractAccts(rowMapI18['6019'].Totaling);
+        MGT_COS_LINES_I18 = [...MGT_COS_I18].map(acct => ({
+          account: acct,
+          description: (rowMapI18[acct]?.Description || acct).trim()
+        }));
+      }
+      if (rowMapI18['1']?.Totaling) {
+        MGT_SAL_I18 = extractAccts(rowMapI18['1'].Totaling);
+        MGT_SAL_LINES_I18 = [...MGT_SAL_I18].map(acct => ({
+          account: acct,
+          description: (rowMapI18[acct]?.Description || acct).trim().replace(/^Opex-/i, '')
+        }));
+      }
+      if (rowMapI18['30000']?.Totaling) {
+        const expandedI18 = resolveRow(rowMapI18, '30000', MGT_SAL_I18);
+        if (expandedI18.size > 5) MGT_OPEX_I18 = expandedI18;
+
+        const termsI18 = rowMapI18['30000'].Totaling.replace(/[()]/g, '').split('+').map(s => s.trim()).filter(Boolean);
+        const categoriesI18 = termsI18
+          .filter(t => t !== '1')
+          .map(t => ({
+            accounts: resolveRow(rowMapI18, t, MGT_SAL_I18),
+            description: (rowMapI18[t]?.Description || t).trim().replace(/^Total\s+/i, '')
+          }))
+          .filter(c => c.accounts.size > 0);
+        if (categoriesI18.length > 3) MGT_OPEX_CATEGORIES_I18 = categoriesI18;
+      }
+
+      console.log(`  FS-IFRS 18: Rev=${MGT_REV_I18.size} accts, COS=${MGT_COS_I18.size} accts, Sal=${MGT_SAL_I18.size} accts, OPEX=${MGT_OPEX_I18.size} accts`);
 
       // ── Balance Sheet (M-BALANCE) — resolve the real schedule into account sets ──
       // This is the same schedule Report 151 "Balance Sheet" runs via
@@ -766,6 +825,133 @@ async function buildSnapshot(targetDate) {
     utilizationYTD
   };
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // FS-IFRS 18 — "Financial Performance 2"'s data, parallel to budgetActual above
+  // but resolved from the FS-IFRS 18 schedule instead of M-MGT-RPT. Reuses the same
+  // pure aggregation helpers (byRevenueLine, byScheduleLine, byDeptFromAccts,
+  // byAcctCategory, dimLineRows, bumpDimMap, mapToDimRows) and the same budget-side
+  // figures (revB/cosB/gpB/totOpexB/ebB and their monthly arrays, dimBudgetMap) —
+  // those are crude CoA-range sums already, not M-MGT-RPT-specific, so nothing about
+  // them needs to change for a second schedule. Only the actual-side account sets
+  // differ. Left null if the schedule didn't resolve (see MGT_REV_I18 declaration).
+  // ══════════════════════════════════════════════════════════════════════════
+  let budgetActualIfrs18 = null;
+  if (MGT_REV_I18.size > 0) {
+    const mgtRevA18     = -sumAccts(actuals, MGT_REV_I18);
+    const mgtCosA18     =  sumAccts(actuals, MGT_COS_I18);
+    const mgtGpA18      = mgtRevA18 - mgtCosA18;
+    const mgtSalA18     =  sumAccts(actuals, MGT_SAL_I18);
+    const mgtOpexA18    =  sumAccts(actuals, MGT_OPEX_I18);
+    const mgtTotOpexA18 = mgtSalA18 + mgtOpexA18;
+    const mgtEbA18      = mgtGpA18 - mgtTotOpexA18;
+    const MGT_EXP_I18   = new Set([...MGT_SAL_I18, ...MGT_OPEX_I18]);
+
+    const lineDrilldowns18 = {
+      'Revenue':       byRevenueLine(actuals, MGT_REV_LINES_I18, budgets),
+      'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES_I18, false, budgets),
+      'Expenses':      byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
+      'Gross Profit': [
+        { unit: 'Revenue',       actual: toM(mgtRevA18),  budget: toM(revB)  },
+        { unit: 'Cost of Sales', actual: toM(-mgtCosA18), budget: toM(-cosB) }
+      ],
+      'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES_I18, false, budgets),
+      'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES_I18, budgets)
+    };
+
+    budgetActualIfrs18 = { lineDrilldowns: lineDrilldowns18, lines: [
+      { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  }
+    ]};
+
+    // Actual-side monthly buckets for this schedule's account sets — the budget-side
+    // monthly arrays (revBMonth/cosBMonth/gpBMonth/totOpexBMonth/ebBMonth) are reused
+    // unchanged from the M-MGT-RPT computation above (schedule-independent).
+    const revM18 = Array(12).fill(0), cosM18 = Array(12).fill(0);
+    const salM18 = Array(12).fill(0), opM18  = Array(12).fill(0);
+    actuals.forEach(x => {
+      const a = String(x.accountNo);
+      const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+      if (mi < 0) return;
+      if (MGT_REV_I18.has(a)) { revM18[mi] += num(x.amount); return; }
+      if (MGT_COS_I18.has(a)) { cosM18[mi] += num(x.amount); return; }
+      if (MGT_SAL_I18.has(a)) { salM18[mi] += num(x.amount); return; }
+      if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opM18[mi] += num(x.amount);
+    });
+    const hasData18    = i => revM18[i] !== 0;
+    const hasExpData18 = i => salM18[i] !== 0 || opM18[i] !== 0;
+    const mRev18  = i => hasData18(i) ? toM(-revM18[i]) : null;
+    const mCos18  = i => hasData18(i) ? toM(cosM18[i]) : null;
+    const mGP18   = i => hasData18(i) ? toM(-revM18[i] - cosM18[i]) : null;
+    const mOpex18 = i => hasExpData18(i) ? toM(salM18[i] + opM18[i]) : null;
+    const mEB18   = i => hasData18(i) ? toM(-revM18[i] - cosM18[i] - salM18[i] - opM18[i]) : null;
+
+    const lastDataM18 = Array.from({ length: 12 }, (_, i) => i).reverse().find(i => hasData18(i)) ?? lm;
+    const ytdSum18 = arr => arr.slice(0, lastDataM18 + 1).reduce((s, v) => s + v, 0);
+    const revBYTD18 = ytdSum18(revBMonth), cosBYTD18 = ytdSum18(cosBMonth), totOpexBYTD18 = ytdSum18(totOpexBMonth);
+    const gpBYTD18 = revBYTD18 - cosBYTD18, ebBYTD18 = gpBYTD18 - totOpexBYTD18;
+    budgetActualIfrs18.lines = [
+      { name: 'Revenue',       budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales', budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',  budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Expenses',      budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'EBITDA',        budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  }
+    ];
+
+    budgetActualIfrs18.monthlyLines = Array(12).fill(null).map((_, i) => [
+      { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev18(i),  higherIsBetter: true  },
+      { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos18(i),  higherIsBetter: false },
+      { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP18(i),   higherIsBetter: true  },
+      { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex18(i), higherIsBetter: false },
+      { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB18(i),   higherIsBetter: true  }
+    ]);
+
+    budgetActualIfrs18.monthlyLineDrilldowns = Array(12).fill(null).map((_, mi) => {
+      const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getMonth() === mi);
+      const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getMonth() === mi);
+      return {
+        'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES_I18, monthBudgets),
+        'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES_I18, false, monthBudgets),
+        'Expenses':      byDeptFromAccts(monthActuals, MGT_EXP_I18, false, monthBudgets),
+        'Gross Profit': [
+          { unit: 'Revenue',       actual: mRev18(mi), budget: toM(revBMonth[mi]) },
+          { unit: 'Cost of Sales', actual: mCos18(mi) != null ? -mCos18(mi) : null, budget: toM(-cosBMonth[mi]) }
+        ],
+        'HR Related Expenses': byScheduleLine(monthActuals, MGT_SAL_LINES_I18, false, monthBudgets),
+        'OPEX by Category':    byAcctCategory(monthActuals, MGT_OPEX_CATEGORIES_I18, monthBudgets)
+      };
+    });
+
+    // dimActual: fresh rev/cos/sal buckets for this schedule; the 'opex' bucket uses the
+    // same crude account-range test M-MGT-RPT's own dimActualMap already uses (it isn't
+    // MGT_OPEX-specific there either), so it's identical either way. dimBudget is fully
+    // schedule-independent — reused unchanged from the M-MGT-RPT computation above.
+    const dimActualMap18 = {};
+    actuals.forEach(x => {
+      const a = String(x.accountNo);
+      const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+      if (mi < 0) return;
+      const vc = (x.globalDim1 || '').trim() || 'Unknown';
+      const bu = (x.globalDim2 || '').trim() || 'Unassigned';
+      const amt = num(x.amount);
+      if (MGT_REV_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'rev', -amt); return; }
+      if (MGT_COS_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'cos', amt); return; }
+      if (MGT_SAL_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'sal', amt); return; }
+      if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimActualMap18, mi, vc, bu, 'opex', amt);
+    });
+    budgetActualIfrs18.dimActual = mapToDimRows(dimActualMap18);
+    budgetActualIfrs18.dimBudget = mapToDimRows(dimBudgetMap);
+
+    budgetActualIfrs18.dimRevenueLines       = dimLineRows(actuals, 'postingDate', MGT_REV_LINES_I18, true, false);
+    budgetActualIfrs18.dimCosLines           = dimLineRows(actuals, 'postingDate', MGT_COS_LINES_I18, false, false);
+    budgetActualIfrs18.dimRevenueLinesBudget = dimLineRows(budgets, 'budgetDate', MGT_REV_LINES_I18, true, true);
+    budgetActualIfrs18.dimCosLinesBudget     = dimLineRows(budgets, 'budgetDate', MGT_COS_LINES_I18, false, true);
+
+    console.log(`  FS-IFRS 18 P&L: Revenue ${toM(mgtRevA18)}M, Cost of Sales ${toM(mgtCosA18)}M, Expenses ${toM(mgtTotOpexA18)}M, EBITDA ${toM(mgtEbA18)}M`);
+  }
+
   // ── Corporate Budget Analysis ──────────────────────────────────────────────
   const CB_ACCT_LABELS = {
     '501': 'Revenue',            '603': 'COS - Salaries',
@@ -1147,6 +1333,29 @@ async function buildSnapshot(targetDate) {
       { metric: 'Net Profit',      month: mNet(curM),      last: prvM !== null ? mNet(prvM)      : null, ytd: toM(mgtNetA),     vsBudget: netB      ? +((mgtNetA     - netB)      / netB      * 100).toFixed(1) : null },
     ]
   };
+
+  // FS-IFRS 18's own margin ratios — Financial Performance 2 must NOT reuse
+  // reports.ratios above unchanged: those margins are computed from the M-MGT-RPT-
+  // scoped figures, and once FS-IFRS 18 folds Depreciation + Office Shared Services
+  // into OPEX (making EBITDA go negative here — see budgetActualIfrs18.lines), showing
+  // the old schedule's still-positive EBITDA Margin % next to it would read as a bug.
+  // Current/Quick/Debt-Equity are balance-sheet ratios, schedule-independent — reused
+  // as-is. Net Margin only subtracts financial costs (not depreciation again — IFRS
+  // 18's own Net Profit formula is Operating Profit − Financial Costs, and Depreciation
+  // is already inside Operating Profit's OPEX).
+  if (budgetActualIfrs18) {
+    const lineVal = n => budgetActualIfrs18.lines.find(l => l.name === n)?.actual || 0;
+    const rev18 = lineVal('Revenue'), gp18 = lineVal('Gross Profit'), eb18 = lineVal('EBITDA');
+    const net18 = eb18 - toM(finA);
+    budgetActualIfrs18.ratios = [
+      { label: 'Gross Margin',  value: pct(gp18, rev18),  trend: 0 },
+      { label: 'EBITDA Margin', value: pct(eb18, rev18),  trend: 0 },
+      { label: 'Net Margin',    value: pct(net18, rev18), trend: 0 },
+      { label: 'Current Ratio', value: rat(ca, cl),       trend: 0 },
+      { label: 'Quick Ratio',   value: rat(ca - inv, cl), trend: 0 },
+      { label: 'Debt / Equity', value: rat(liab, eq),     trend: 0 }
+    ];
+  }
 
   let [employees, headcountRows, rawDimVals, empHist] = await Promise.all([
     bcAvail ? bc('GetEmployee').catch(() => [])                                           : Promise.resolve([]),
@@ -3119,6 +3328,7 @@ async function buildSnapshot(targetDate) {
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
+    budgetActualIfrs18,
     budgetOverview,
     corporateBudget,
     cashflow,

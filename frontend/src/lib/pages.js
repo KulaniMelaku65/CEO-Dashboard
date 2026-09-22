@@ -10,6 +10,7 @@ import { KPI_DEPARTMENTS } from '../pages/kpi/departments.js'
 export const PAGE_REGISTRY = [
   { id: 'overview',      label: 'Executive Overview' },
   { id: 'financial',     label: 'Financial Performance' },
+  { id: 'financial-2',   label: 'Financial Performance 2' },
   { id: 'budget',        label: 'Corporate Budget' },
   { id: 'collections',   label: 'Collections & Revenue' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
