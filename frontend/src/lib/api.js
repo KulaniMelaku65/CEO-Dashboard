@@ -58,11 +58,19 @@ export const departmentOverrides = {
 export const kpi = {
   departments: () => req('/api/kpi/departments'),
   dictionary:  (department) => req(`/api/kpi/dictionary${department ? `?department=${encodeURIComponent(department)}` : ''}`),
+  createDictionaryRow: (fields) => req('/api/kpi/dictionary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields)
+  }),
   updateDictionaryRow: (id, patch) => req(`/api/kpi/dictionary/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch)
   }),
+  removeDictionaryRow: (id) => req(`/api/kpi/dictionary/${id}`, { method: 'DELETE' }),
+  approveDictionaryChange: (id) => req(`/api/kpi/dictionary/${id}/approve-change`, { method: 'POST' }),
+  rejectDictionaryChange:  (id) => req(`/api/kpi/dictionary/${id}/reject-change`, { method: 'POST' }),
   submissions: (department, period) => req(`/api/kpi/submissions?department=${encodeURIComponent(department)}&period=${period}`),
   saveDraft: (departmentId, period, values) => req('/api/kpi/submissions', {
     method: 'PUT',
@@ -76,6 +84,7 @@ export const kpi = {
   }),
   approve: (id) => req(`/api/kpi/submissions/${id}/approve`, { method: 'POST' }),
   reject:  (id) => req(`/api/kpi/submissions/${id}/reject`, { method: 'POST' }),
+  reopen:  (id) => req(`/api/kpi/submissions/${id}/reopen`, { method: 'POST' }),
   overview:  (period) => req(`/api/kpi/overview${period ? `?period=${period}` : ''}`),
   department: (id, period) => req(`/api/kpi/department/${id}${period ? `?period=${period}` : ''}`),
   reminders: (period) => req(`/api/kpi/reminders${period ? `?period=${period}` : ''}`),

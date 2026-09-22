@@ -32,6 +32,26 @@ function departmentsMissingSubmission(period) {
   return departments.filter(d => !submitted.has(d.id))
 }
 
+// End of the current reporting cycle (PRD: "H2 2026 (Jul-Dec), extensible to future
+// periods") — configurable the same way other cycle-boundary env vars in this codebase
+// are (e.g. BC_FY_START), rather than hardcoding a date with no way to roll it forward.
+const CYCLE_END = process.env.KPI_CYCLE_END || '2026-12-31'
+
+// Due date for one KPI's current period, based on its reporting frequency. Monthly KPIs
+// are due the same WD5 as the whole department's submission; Quarterly ones are due at
+// the WD5 following the quarter that contains `period`; Yearly ones are due at the end
+// of the reporting cycle regardless of which month is currently selected.
+function nextDeadlineForFrequency(frequency, period) {
+  if (frequency === 'Yearly') return CYCLE_END
+  if (frequency === 'Quarterly') {
+    const [y, m] = period.split('-').map(Number) // m is 1-indexed
+    const quarterEndMonth = Math.ceil(m / 3) * 3 // 3, 6, 9, or 12
+    const quarterEndPeriod = `${y}-${String(quarterEndMonth).padStart(2, '0')}`
+    return workingDay5(quarterEndPeriod).toISOString().slice(0, 10)
+  }
+  return workingDay5(period).toISOString().slice(0, 10) // Monthly (default)
+}
+
 function reminderState(period) {
   const deadline = workingDay5(period)
   const now = new Date()
@@ -45,4 +65,4 @@ function reminderState(period) {
   }
 }
 
-module.exports = { reminderState, departmentsMissingSubmission, workingDay5 }
+module.exports = { reminderState, departmentsMissingSubmission, workingDay5, nextDeadlineForFrequency }

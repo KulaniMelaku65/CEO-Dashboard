@@ -168,4 +168,21 @@ addColumnIfMissing('users', 'must_change_password',  'must_change_password INTEG
 addColumnIfMissing('users', 'kpi_role',              'kpi_role TEXT');
 addColumnIfMissing('users', 'kpi_department_id',     'kpi_department_id TEXT');
 
+// How often a KPI is expected to be reported — 'Monthly' | 'Quarterly' | 'Yearly'.
+// Purely a display/filter/deadline attribute: every KPI still lives in the same
+// per-month kpi_submissions row (that mechanism doesn't change), this just tells a
+// department head how often they're really expected to have something new to say.
+// Defaults every existing row to 'Monthly' (the current de facto behavior) rather than
+// guessing which of the 90 seeded KPIs are "really" quarterly/yearly.
+addColumnIfMissing('kpi_dictionary', 'frequency',      "frequency TEXT NOT NULL DEFAULT 'Monthly'");
+
+// A department head can propose adding or removing a KPI, but — same as their monthly
+// actuals — it isn't final until an approver (Group CFO / Chief of Staff) signs off.
+// pending_action is null once resolved either way: an approved 'add' just becomes an
+// ordinary active row, an approved 'remove' goes back to the same is_active=0 soft-delete
+// every other removal uses. requested_by is who proposed the change, for the approver's
+// own reference and the audit trail.
+addColumnIfMissing('kpi_dictionary', 'pending_action',  'pending_action TEXT');
+addColumnIfMissing('kpi_dictionary', 'requested_by',    'requested_by INTEGER');
+
 module.exports = db;
