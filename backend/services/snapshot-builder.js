@@ -1312,11 +1312,17 @@ async function buildSnapshot(targetDate) {
       .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
   };
 
+  // Margins use the M-MGT-RPT schedule-resolved P&L (mgtRevA/mgtGpA/mgtEbA/mgtNetA — same
+  // figures behind the Revenue/Gross Profit/EBITDA cards further down this page and the
+  // `management` YTD rows above), NOT the crude revA/gpA/ebA/netA CoA-range sums. Those
+  // crude ranges sweep non-operating accounts (e.g. 5105 Grant & Program Income) into
+  // "Revenue" that the schedule's own Total Revenue formula excludes, which was inflating
+  // Gross Margin from ~53% to a misleading ~82%.
   const reports = {
     ratios: [
-      { label: 'Gross Margin',  value: pct(gpA, revA),  trend: 0 },
-      { label: 'EBITDA Margin', value: pct(ebA, revA),  trend: 0 },
-      { label: 'Net Margin',    value: pct(netA, revA), trend: 0 },
+      { label: 'Gross Margin',  value: pct(mgtGpA, mgtRevA),  trend: 0 },
+      { label: 'EBITDA Margin', value: pct(mgtEbA, mgtRevA),  trend: 0 },
+      { label: 'Net Margin',    value: pct(mgtNetA, mgtRevA), trend: 0 },
       { label: 'Current Ratio', value: rat(ca, cl),     trend: 0 },
       { label: 'Quick Ratio',   value: rat(ca - inv, cl), trend: 0 },
       { label: 'Debt / Equity', value: rat(liab, eq),   trend: 0 }
