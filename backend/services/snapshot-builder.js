@@ -591,7 +591,7 @@ async function buildSnapshot(targetDate) {
   const lineDrilldowns = {
     'Revenue':       byRevenueLine(actuals, MGT_REV_LINES, budgets),
     'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES, false, budgets),
-    'Expenses':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
+    'OPEX':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
     // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
     'Gross Profit': [
       { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(revB)  },
@@ -607,7 +607,7 @@ async function buildSnapshot(targetDate) {
     { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
-    { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'OPEX',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  }
   ]};
 
@@ -782,7 +782,7 @@ async function buildSnapshot(targetDate) {
     { name: 'Revenue',       budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpBYTD),      actual: toM(mgtGpA),      higherIsBetter: true  },
-    { name: 'Expenses',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'OPEX',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebBYTD),      actual: toM(mgtEbA),      higherIsBetter: true  }
   ];
 
@@ -790,7 +790,7 @@ async function buildSnapshot(targetDate) {
     { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev(i),  higherIsBetter: true  },
     { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos(i),  higherIsBetter: false },
     { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP(i),   higherIsBetter: true  },
-    { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
+    { name: 'OPEX',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
     { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  }
   ]);
 
@@ -805,7 +805,7 @@ async function buildSnapshot(targetDate) {
     return {
       'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES, monthBudgets),
       'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES, false, monthBudgets),
-      'Expenses':      byDeptFromAccts(monthActuals, MGT_EXP, false, monthBudgets),
+      'OPEX':      byDeptFromAccts(monthActuals, MGT_EXP, false, monthBudgets),
       'Gross Profit': [
         { unit: 'Revenue',       actual: mRev(mi), budget: toM(revBMonth[mi]) },
         { unit: 'Cost of Sales', actual: mCos(mi) != null ? -mCos(mi) : null, budget: toM(-cosBMonth[mi]) }
@@ -849,7 +849,7 @@ async function buildSnapshot(targetDate) {
     const lineDrilldowns18 = {
       'Revenue':       byRevenueLine(actuals, MGT_REV_LINES_I18, budgets),
       'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES_I18, false, budgets),
-      'Expenses':      byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
+      'OPEX':      byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
       'Gross Profit': [
         { unit: 'Revenue',       actual: toM(mgtRevA18),  budget: toM(revB)  },
         { unit: 'Cost of Sales', actual: toM(-mgtCosA18), budget: toM(-cosB) }
@@ -862,7 +862,7 @@ async function buildSnapshot(targetDate) {
       { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
       { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
       { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'Expenses',      budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'OPEX',      budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
       { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  }
     ]};
 
@@ -896,7 +896,7 @@ async function buildSnapshot(targetDate) {
       { name: 'Revenue',       budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
       { name: 'Cost of Sales', budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
       { name: 'Gross Profit',  budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'Expenses',      budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'OPEX',      budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
       { name: 'EBITDA',        budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  }
     ];
 
@@ -904,7 +904,7 @@ async function buildSnapshot(targetDate) {
       { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev18(i),  higherIsBetter: true  },
       { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos18(i),  higherIsBetter: false },
       { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP18(i),   higherIsBetter: true  },
-      { name: 'Expenses',      budget: toM(totOpexBMonth[i]),  actual: mOpex18(i), higherIsBetter: false },
+      { name: 'OPEX',      budget: toM(totOpexBMonth[i]),  actual: mOpex18(i), higherIsBetter: false },
       { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB18(i),   higherIsBetter: true  }
     ]);
 
@@ -914,7 +914,7 @@ async function buildSnapshot(targetDate) {
       return {
         'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES_I18, monthBudgets),
         'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES_I18, false, monthBudgets),
-        'Expenses':      byDeptFromAccts(monthActuals, MGT_EXP_I18, false, monthBudgets),
+        'OPEX':      byDeptFromAccts(monthActuals, MGT_EXP_I18, false, monthBudgets),
         'Gross Profit': [
           { unit: 'Revenue',       actual: mRev18(mi), budget: toM(revBMonth[mi]) },
           { unit: 'Cost of Sales', actual: mCos18(mi) != null ? -mCos18(mi) : null, budget: toM(-cosBMonth[mi]) }

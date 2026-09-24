@@ -231,7 +231,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
 const LINE_COLORS = {
   Revenue:        '#02404F',
   'Cost of Sales':'#E5544B',
-  Expenses:       '#EB7D23',
+  OPEX:           '#EB7D23',
   'Gross Profit': '#1FB6A6',
   EBITDA:         '#2EBD85',
 }
@@ -253,7 +253,7 @@ const NAVY = '#02404F'
 // over an inline light-gray background the theme repaint can't reach).
 const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
 
-// One Budget/Actual/Variance/% table, reused for every drilldown section — "Expenses"
+// One Budget/Actual/Variance/% table, reused for every drilldown section — "OPEX"
 // shows three of these stacked (by Business Unit, HR salaries by department, OPEX by
 // category) since that one KPI covers three genuinely different breakdowns, while
 // Revenue/Cost of Sales/Gross Profit only ever need one. `priorRows`/`priorLabel` add a
@@ -535,7 +535,7 @@ export default function Financial2({ data }) {
       { name: 'Revenue',       actual: rev, budget: revB, higherIsBetter: true  },
       { name: 'Cost of Sales', actual: cos, budget: cosB, higherIsBetter: false },
       { name: 'Gross Profit',  actual: gp,  budget: gpB,  higherIsBetter: true  },
-      { name: 'Expenses',      actual: exp, budget: expB, higherIsBetter: false },
+      { name: 'OPEX',      actual: exp, budget: expB, higherIsBetter: false },
       { name: 'EBITDA',        actual: eb,  budget: ebB,  higherIsBetter: true  },
     ]
   }
@@ -636,7 +636,7 @@ export default function Financial2({ data }) {
       return {
         'Revenue':       groupBpass(revRows),
         'Cost of Sales': cosRows,
-        'Expenses':      expRows,
+        'OPEX':      expRows,
         'Gross Profit':  [
           { unit: 'Revenue',       actual: revTotal,  budget: revBudgetTotal },
           { unit: 'Cost of Sales', actual: -cosTotal, budget: -cosBudgetTotal }
@@ -648,7 +648,7 @@ export default function Financial2({ data }) {
     return {
       'Revenue':             mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Revenue'] || [])),
       'Cost of Sales':       mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Cost of Sales'] || [])),
-      'Expenses':            mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Expenses'] || [])),
+      'OPEX':            mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['OPEX'] || [])),
       'Gross Profit':        mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Gross Profit'] || [])),
       'HR Related Expenses': mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['HR Related Expenses'] || [])),
       'OPEX by Category':    mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['OPEX by Category'] || []))
@@ -774,13 +774,13 @@ export default function Financial2({ data }) {
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
               <h3 className="text-sm font-bold text-navy">
-                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'Expenses' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
+                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'OPEX' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
                 {' · '}{periodLabel}
               </h3>
               <p className="text-[10px] text-muted mt-0.5">
                 {selLine === 'Gross Profit' ? 'Revenue minus Cost of Sales'
                   : selLine === 'Revenue' ? 'Per FS-IFRS 18 account schedule — click BPASS to see it by bank partner'
-                  : selLine === 'Expenses' ? 'Per FS-IFRS 18 account schedule — Salaries and OPEX split out below, alongside the existing by-department view'
+                  : selLine === 'OPEX' ? 'Per FS-IFRS 18 account schedule — Salaries and OPEX split out below, alongside the existing by-department view'
                   : isScheduleLineView ? 'Per FS-IFRS 18 account schedule — click the card again to close'
                   : 'Click the card again to close'}
               </p>
@@ -792,20 +792,20 @@ export default function Financial2({ data }) {
               bg-bg/#F4F6FA classes — those depend on the dark theme repainting them,
               which an inline background on the row itself blocks, leaving light text
               on a light background. Explicit colors here are visible either way.
-              "Expenses" gets three stacked tables (by Business Unit / HR salaries by
+              "OPEX" gets three stacked tables (by Business Unit / HR salaries by
               department / OPEX by category) since that one KPI genuinely covers three
               different breakdowns; every other line just gets the one table. */}
-          {selLine === 'Expenses' ? (
+          {selLine === 'OPEX' ? (
             <div className="space-y-5">
               <div>
                 <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">By Business Unit</p>
                 <DrilldownTable
-                  rows={activeLineDrilldowns['Expenses']}
+                  rows={activeLineDrilldowns['OPEX']}
                   higherIsBetterHere={false}
                   getName={getName}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
-                  priorRows={priorLineDrilldowns?.['Expenses']}
+                  priorRows={priorLineDrilldowns?.['OPEX']}
                   priorLabel={priorPeriodLabel}
                 />
               </div>
