@@ -908,16 +908,20 @@ async function buildSnapshot(targetDate) {
       'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES_I18, budgets)
     };
 
+    // `label` carries the FS-IFRS 18 schedule's own row description — Financial
+    // Performance 2's cards show these instead of the generic M-MGT-RPT-style names
+    // (`name` stays the internal key used for drilldown lookups/selLine matching/colors,
+    // shared with the M-MGT-RPT page, so nothing else needs to change).
     budgetActualIfrs18 = { lineDrilldowns: lineDrilldowns18, lines: [
-      { name: 'Revenue',         budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
-      { name: 'Cost of Sales',   budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
-      { name: 'Gross Profit',    budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'Gross Margin %',  budget: revB ? +(gpB / revB * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
-      { name: 'OPEX',            budget: toM(salB),     actual: toM(mgtSalA18),     higherIsBetter: false },
-      { name: 'Expenses',        budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
-      { name: 'Financial Costs', budget: toM(finB),     actual: toM(mgtFinA18),     higherIsBetter: false },
-      { name: 'EBITDA',          budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  },
-      { name: 'EBITDA Margin %', budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
+      { name: 'Revenue',         label: 'Total Revenue',                       budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales',   label: 'KFT-Total Cost of Sales',             budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',    label: 'Gross Profit',                        budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Gross Margin %',  label: 'Gross Margin %',                      budget: revB ? +(gpB / revB * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            label: 'Total-Salaries Operating Expenses',   budget: toM(salB),     actual: toM(mgtSalA18),     higherIsBetter: false },
+      { name: 'Expenses',        label: 'Total OPEX',                         budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'Financial Costs', label: 'Total Other Financial Costs',         budget: toM(finB),     actual: toM(mgtFinA18),     higherIsBetter: false },
+      { name: 'EBITDA',          label: 'EBITDA',                              budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  },
+      { name: 'EBITDA Margin %', label: 'EBITDA Margin %',                     budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
     ]};
 
     // Actual-side monthly buckets for this schedule's account sets — the budget-side
@@ -952,15 +956,15 @@ async function buildSnapshot(targetDate) {
     const revBYTD18 = ytdSum18(revBMonth), cosBYTD18 = ytdSum18(cosBMonth), totOpexBYTD18 = ytdSum18(totOpexBMonth);
     const gpBYTD18 = revBYTD18 - cosBYTD18, ebBYTD18 = gpBYTD18 - totOpexBYTD18;
     budgetActualIfrs18.lines = [
-      { name: 'Revenue',         budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
-      { name: 'Cost of Sales',   budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
-      { name: 'Gross Profit',    budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'Gross Margin %',  budget: revBYTD18 ? +(gpBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
-      { name: 'OPEX',            budget: toM(salB),          actual: toM(mgtSalA18),     higherIsBetter: false },
-      { name: 'Expenses',        budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
-      { name: 'Financial Costs', budget: toM(finB),          actual: toM(mgtFinA18),     higherIsBetter: false },
-      { name: 'EBITDA',          budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  },
-      { name: 'EBITDA Margin %', budget: revBYTD18 ? +(ebBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
+      { name: 'Revenue',         label: 'Total Revenue',                     budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales',   label: 'KFT-Total Cost of Sales',           budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',    label: 'Gross Profit',                      budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Gross Margin %',  label: 'Gross Margin %',                    budget: revBYTD18 ? +(gpBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            label: 'Total-Salaries Operating Expenses', budget: toM(salB),          actual: toM(mgtSalA18),     higherIsBetter: false },
+      { name: 'Expenses',        label: 'Total OPEX',                        budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'Financial Costs', label: 'Total Other Financial Costs',       budget: toM(finB),          actual: toM(mgtFinA18),     higherIsBetter: false },
+      { name: 'EBITDA',          label: 'EBITDA',                            budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  },
+      { name: 'EBITDA Margin %', label: 'EBITDA Margin %',                   budget: revBYTD18 ? +(ebBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
     ];
 
     budgetActualIfrs18.monthlyLines = Array(12).fill(null).map((_, i) => [

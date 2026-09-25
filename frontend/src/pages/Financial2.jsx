@@ -394,7 +394,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
 
       <div className="pl-2">
         <div className="flex items-start justify-between mb-2 gap-1">
-          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted leading-tight">{line.name}</p>
+          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted leading-tight">{line.label || line.name}</p>
           <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full flex-shrink-0"
             style={{ background: `${color}18`, color }}>
             {fmtPct(pct, 0)}
@@ -485,6 +485,9 @@ export default function Financial2({ data }) {
   // These two drilldowns are broken out by the account schedule's own line items
   // (FS-IFRS 18), not by department, unlike the rest of the KPI cards.
   const isScheduleLineView = selLine === 'Revenue' || selLine === 'Cost of Sales'
+  // The drilldown panel title shows the FS-IFRS 18 schedule's own row description
+  // (line.label) rather than the internal key (selLine) the card is tracked by.
+  const selLineLabel = lines.find(l => l.name === selLine)?.label || selLine
 
   const mData = (monthly?.labels || []).map((label, i) => ({
     label,
@@ -538,15 +541,15 @@ export default function Financial2({ data }) {
     const gpB = revB - cosB, expB = salB + opexB, ebB = gpB - expB
     const round1 = n => Math.round(n * 10) / 10
     return [
-      { name: 'Revenue',         actual: rev, budget: revB, higherIsBetter: true  },
-      { name: 'Cost of Sales',   actual: cos, budget: cosB, higherIsBetter: false },
-      { name: 'Gross Profit',    actual: gp,  budget: gpB,  higherIsBetter: true  },
-      { name: 'Gross Margin %',  actual: rev ? round1(gp / rev * 100) : 0, budget: revB ? round1(gpB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
-      { name: 'OPEX',            actual: sal, budget: salB, higherIsBetter: false },
-      { name: 'Expenses',        actual: exp, budget: expB, higherIsBetter: false },
-      { name: 'Financial Costs', actual: fin, budget: finB, higherIsBetter: false },
-      { name: 'EBITDA',          actual: eb,  budget: ebB,  higherIsBetter: true  },
-      { name: 'EBITDA Margin %', actual: rev ? round1(eb / rev * 100) : 0, budget: revB ? round1(ebB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
+      { name: 'Revenue',         label: 'Total Revenue',                     actual: rev, budget: revB, higherIsBetter: true  },
+      { name: 'Cost of Sales',   label: 'KFT-Total Cost of Sales',           actual: cos, budget: cosB, higherIsBetter: false },
+      { name: 'Gross Profit',    label: 'Gross Profit',                      actual: gp,  budget: gpB,  higherIsBetter: true  },
+      { name: 'Gross Margin %',  label: 'Gross Margin %',                    actual: rev ? round1(gp / rev * 100) : 0, budget: revB ? round1(gpB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            label: 'Total-Salaries Operating Expenses', actual: sal, budget: salB, higherIsBetter: false },
+      { name: 'Expenses',        label: 'Total OPEX',                       actual: exp, budget: expB, higherIsBetter: false },
+      { name: 'Financial Costs', label: 'Total Other Financial Costs',       actual: fin, budget: finB, higherIsBetter: false },
+      { name: 'EBITDA',          label: 'EBITDA',                            actual: eb,  budget: ebB,  higherIsBetter: true  },
+      { name: 'EBITDA Margin %', label: 'EBITDA Margin %', actual: rev ? round1(eb / rev * 100) : 0, budget: revB ? round1(ebB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
     ]
   }
 
@@ -800,7 +803,7 @@ export default function Financial2({ data }) {
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
               <h3 className="text-sm font-bold text-navy">
-                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'Expenses' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
+                {selLineLabel} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'Expenses' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
                 {' · '}{periodLabel}
               </h3>
               <p className="text-[10px] text-muted mt-0.5">
