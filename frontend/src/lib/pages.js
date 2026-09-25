@@ -9,8 +9,9 @@ import { KPI_DEPARTMENTS } from '../pages/kpi/departments.js'
 // governed by the is_admin flag, not a per-page grant.
 export const PAGE_REGISTRY = [
   { id: 'overview',      label: 'Executive Overview' },
-  { id: 'financial',     label: 'Financial Performance' },
-  { id: 'financial-2',   label: 'Financial Performance 2' },
+  { id: 'finance',       label: 'Finance' },
+  { id: 'financial',     label: 'Financial Performance',          parentId: 'finance' },
+  { id: 'financial-2',   label: 'Detailed Financial Performance', parentId: 'finance' },
   { id: 'budget',        label: 'Corporate Budget' },
   { id: 'collections',   label: 'Collections & Revenue' },
   { id: 'balance-sheet', label: 'Balance Sheet' },

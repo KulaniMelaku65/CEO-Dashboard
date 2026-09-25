@@ -1,5 +1,8 @@
+import { useState } from 'react'
+
 const ICONS = {
   overview:       <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
+  finance:        <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></>,
   financial:      <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></>,
   'financial-2':  <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></>,
   budget:         <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>,
@@ -30,6 +33,12 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
     onNav(i)
     onMobileClose?.()
   }
+
+  // A group (parent with sub-items) is collapsed by default — clicking it navigates to
+  // its own page AND reveals its sub-items ("drilling in"), clicking again collapses it.
+  // Explicit clicks (manualExpand) override the auto-expand-when-active default below,
+  // so a group can still be collapsed even while its own page is the active one.
+  const [manualExpand, setManualExpand] = useState({})
 
   // Build map of parentId → child slides with their index. A child is only nested
   // under its parent when that parent is itself in this user's granted slides —
@@ -94,12 +103,19 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
 
               const active   = i === current
               const children = childMap[id] || []
+              const childActive = children.some(c => c.idx === current)
+              const autoExpanded = active || childActive
+              const isExpanded = manualExpand[id] !== undefined ? manualExpand[id] : autoExpanded
 
               return (
                 <li key={id}>
-                  {/* Parent / top-level item */}
+                  {/* Parent / top-level item — clicking navigates to it AND toggles its
+                      sub-items open/closed (a group with children "drills in" on click). */}
                   <button
-                    onClick={() => handleNav(i)}
+                    onClick={() => {
+                      handleNav(i)
+                      if (children.length > 0) setManualExpand(cur => ({ ...cur, [id]: !isExpanded }))
+                    }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-[12.5px] font-semibold transition-all duration-150 ${
                       active ? 'text-white' : 'text-white/60 hover:text-white hover:bg-white/5'
                     }`}
@@ -120,10 +136,20 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
                         LIVE
                       </span>
                     )}
+                    {children.length > 0 && (
+                      <svg
+                        width="11" height="11" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                        className={active ? '' : 'ml-auto'}
+                        style={{ opacity: 0.6, flexShrink: 0, transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }}
+                      >
+                        <polyline points="9 6 15 12 9 18" />
+                      </svg>
+                    )}
                   </button>
 
                   {/* Sub-items */}
-                  {children.length > 0 && (
+                  {children.length > 0 && isExpanded && (
                     <ul className="mt-0.5 space-y-0.5 pl-4">
                       {children.map(child => {
                         const childActive = child.idx === current

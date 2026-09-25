@@ -10,6 +10,7 @@ import { renderMarkdown } from '../lib/markdown.jsx'
 // user was on.
 const PAGE_DATA_KEYS = {
   'overview':                 ['budgetOverview', 'budgetActual', 'cashflow', 'hr', 'lending', 'loanOps'],
+  'finance':                  ['reports', 'budgetActual', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'financial':                ['reports', 'budgetActual', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'financial-2':              ['reports', 'budgetActualIfrs18', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'budget':                   ['corporateBudget', 'budgetOverview'],

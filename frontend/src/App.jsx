@@ -37,7 +37,7 @@ import AdminUsers from './pages/AdminUsers.jsx'
 // list here) so the Admin page's per-user toggles can import the metadata alone without
 // pulling in every page component (and without a circular import back into this file).
 const PAGE_COMPONENTS = {
-  overview: Overview, financial: Financial, 'financial-2': Financial2, budget: BudgetAnalysis, collections: Collections,
+  overview: Overview, finance: Financial, financial: Financial, 'financial-2': Financial2, budget: BudgetAnalysis, collections: Collections,
   'balance-sheet': BalanceSheet, cashflow: CashFlow, tax: Tax, aging: Aging, lending: LoanOps, risk: Risk,
   hr: HR, 'hr-summary': PeopleHRSummary, 'employee-cost': EmployeeCost,
   'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,
