@@ -213,6 +213,10 @@ async function buildSnapshot(targetDate) {
     '8401','8402','8403','8404','8405','8406',        // Other Staff Costs
     '9013','9016','9017','9025'                       // Parking, Stamp Duty, Penalties, Loading
   ]);
+  // Financial Costs (schedule row 9598 "Total Other Financial Costs") — resolved below via
+  // the CoA Total-Accounts account 9598 itself (resolveRow's 'Total Accounts' branch).
+  // Empty here; falls back to the crude finCosts range (finA/finB) if unresolved.
+  let MGT_FIN = new Set();
 
   // FS-IFRS 18 equivalents — a second account schedule added alongside M-MGT-RPT for the
   // new IFRS 18 income-statement presentation (its Total OPEX folds in Office Shared
@@ -225,6 +229,7 @@ async function buildSnapshot(targetDate) {
   let MGT_COS_I18 = new Set(), MGT_COS_LINES_I18 = [];
   let MGT_SAL_I18 = new Set(), MGT_SAL_LINES_I18 = [];
   let MGT_OPEX_I18 = new Set(), MGT_OPEX_CATEGORIES_I18 = [];
+  let MGT_FIN_I18 = new Set();
 
   // Balance Sheet account sets, resolved from the real M-BALANCE schedule below.
   // Stay null (→ CONFIG.ranges fallback further down) if the schedule can't be reached.
@@ -336,6 +341,13 @@ async function buildSnapshot(targetDate) {
         }));
       }
 
+      // Financial Costs (RowNo 9598): a "Total Accounts" row whose Totaling is the CoA
+      // Total-Accounts marker 9598 itself — resolveRow expands it via findSubAccounts.
+      if (rowMap['9598']?.Totaling) {
+        const finExpanded = resolveRow(rowMap, '9598', new Set());
+        if (finExpanded.size > 0) MGT_FIN = finExpanded;
+      }
+
       // OPEX (RowNo 30000): all tokens in the Totaling are RowNos — resolve via rowMap
       if (rowMap['30000']?.Totaling) {
         const expanded = resolveRow(rowMap, '30000', MGT_SAL);
@@ -386,6 +398,11 @@ async function buildSnapshot(targetDate) {
           description: (rowMapI18[acct]?.Description || acct).trim().replace(/^Opex-/i, '')
         }));
       }
+      if (rowMapI18['9598']?.Totaling) {
+        const finExpandedI18 = resolveRow(rowMapI18, '9598', new Set());
+        if (finExpandedI18.size > 0) MGT_FIN_I18 = finExpandedI18;
+      }
+
       if (rowMapI18['30000']?.Totaling) {
         const expandedI18 = resolveRow(rowMapI18, '30000', MGT_SAL_I18);
         if (expandedI18.size > 5) MGT_OPEX_I18 = expandedI18;
@@ -480,8 +497,9 @@ async function buildSnapshot(targetDate) {
   const mgtSalA     =  sumAccts(actuals, MGT_SAL);
   const mgtOpexA    =  sumAccts(actuals, MGT_OPEX);  // non-salary OPEX, matching M-MGT-RPT
   const mgtTotOpexA = mgtSalA + mgtOpexA;            // = M-MGT-RPT "Total OPEX"
+  const mgtFinA     = MGT_FIN.size > 0 ? sumAccts(actuals, MGT_FIN) : finA; // row 9598 "Total Other Financial Costs"
   const mgtEbA = mgtGpA - mgtTotOpexA;
-  const mgtNetA     = mgtEbA - daA - finA;
+  const mgtNetA     = mgtEbA - daA - mgtFinA;
   const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
   const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
 
@@ -591,7 +609,13 @@ async function buildSnapshot(targetDate) {
   const lineDrilldowns = {
     'Revenue':       byRevenueLine(actuals, MGT_REV_LINES, budgets),
     'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES, false, budgets),
-    'OPEX':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
+    // "OPEX" (schedule row 1, salaries only) and "Expenses" (schedule row 30000, Total
+    // OPEX = salaries + everything else) are two distinct cards — OPEX's own drilldown
+    // is the same salaries-by-department data as the "HR Related Expenses" table nested
+    // inside Expenses' breakdown, just surfaced as its own top-level card too.
+    'OPEX':          byScheduleLine(actuals, MGT_SAL_LINES, false, budgets),
+    'Expenses':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
+    'Financial Costs': byDeptFromAccts(actuals, MGT_FIN, false, budgets),
     // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
     'Gross Profit': [
       { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(revB)  },
@@ -604,11 +628,15 @@ async function buildSnapshot(targetDate) {
   };
 
   const budgetActual = { lineDrilldowns, lines: [
-    { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
-    { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
-    { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
-    { name: 'OPEX',      budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
-    { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  }
+    { name: 'Revenue',         budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
+    { name: 'Cost of Sales',   budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
+    { name: 'Gross Profit',    budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'Gross Margin %',  budget: revB ? +(gpB / revB * 100).toFixed(1) : null, actual: +(mgtGpA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true },
+    { name: 'OPEX',            budget: toM(salB),     actual: toM(mgtSalA),     higherIsBetter: false },
+    { name: 'Expenses',        budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'Financial Costs', budget: toM(finB),     actual: toM(mgtFinA),     higherIsBetter: false },
+    { name: 'EBITDA',          budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  },
+    { name: 'EBITDA Margin %', budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: +(mgtEbA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true }
   ]};
 
   const bm = {}, um = {};
@@ -639,6 +667,7 @@ async function buildSnapshot(targetDate) {
   const cosBMonth = Array(12).fill(0);
   const salBMonth = Array(12).fill(0);
   const opBMonth  = Array(12).fill(0);
+  const finBMonth = Array(12).fill(0);
   budgets.forEach(x => {
     const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
     if (mi < 0) return;
@@ -647,6 +676,7 @@ async function buildSnapshot(targetDate) {
     if (inRange(a, CONFIG.ranges.revenue)) { revBMonth[mi] += amt; return; }
     if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { cosBMonth[mi] += amt; return; }
     if (inRange(a, CONFIG.ranges.salaries)) { salBMonth[mi] += amt; return; }
+    if (inRange(a, CONFIG.ranges.finCosts)) { finBMonth[mi] += amt; return; }
     if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opBMonth[mi] += amt;
   });
   const gpBMonth      = revBMonth.map((v, i) => v - cosBMonth[i]);
@@ -692,6 +722,7 @@ async function buildSnapshot(targetDate) {
     if (MGT_REV.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'rev', -amt); return; }
     if (MGT_COS.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'cos', amt); return; }
     if (MGT_SAL.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'sal', amt); return; }
+    if (MGT_FIN.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'fin', amt); return; }
     if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimActualMap, mi, vc, bu, 'opex', amt);
   });
   const dimBudgetMap = {};
@@ -705,6 +736,7 @@ async function buildSnapshot(targetDate) {
     if (inRange(a, CONFIG.ranges.revenue)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'rev', amt); return; }
     if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'cos', amt); return; }
     if (inRange(a, CONFIG.ranges.salaries)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'sal', amt); return; }
+    if (inRange(a, CONFIG.ranges.finCosts)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'fin', amt); return; }
     if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimBudgetMap, mi, vc, bu, 'opex', amt);
   });
   const mapToDimRows = (map) => Object.entries(map).map(([k, amt]) => {
@@ -766,6 +798,8 @@ async function buildSnapshot(targetDate) {
   const mOpex = i => hasExpData(i) ? toM(salM[i] + opM[i]) : null;
   const mEB   = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i]) : null;
   const mNet  = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]) : null;
+  const mSal  = i => hasExpData(i) ? toM(salM[i]) : null
+  const mFin  = i => hasData(i) ? toM(finM[i]) : null
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
   const mEBMgn = i => mRev(i) ? parseFloat((mEB(i) / mRev(i) * 100).toFixed(1)) : null;
 
@@ -779,19 +813,27 @@ async function buildSnapshot(targetDate) {
   const gpBYTD      = revBYTD - cosBYTD;
   const ebBYTD      = gpBYTD - totOpexBYTD;
   budgetActual.lines = [
-    { name: 'Revenue',       budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
-    { name: 'Cost of Sales', budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
-    { name: 'Gross Profit',  budget: toM(gpBYTD),      actual: toM(mgtGpA),      higherIsBetter: true  },
-    { name: 'OPEX',      budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
-    { name: 'EBITDA',        budget: toM(ebBYTD),      actual: toM(mgtEbA),      higherIsBetter: true  }
+    { name: 'Revenue',         budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
+    { name: 'Cost of Sales',   budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
+    { name: 'Gross Profit',    budget: toM(gpBYTD),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'Gross Margin %',  budget: revBYTD ? +(gpBYTD / revBYTD * 100).toFixed(1) : null, actual: ytdGPMgn, higherIsBetter: true, isPercent: true },
+    { name: 'OPEX',            budget: toM(salB),        actual: toM(mgtSalA),     higherIsBetter: false },
+    { name: 'Expenses',        budget: toM(totOpexBYTD), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'Financial Costs', budget: toM(finB),        actual: toM(mgtFinA),     higherIsBetter: false },
+    { name: 'EBITDA',          budget: toM(ebBYTD),      actual: toM(mgtEbA),      higherIsBetter: true  },
+    { name: 'EBITDA Margin %', budget: revBYTD ? +(ebBYTD / revBYTD * 100).toFixed(1) : null, actual: ytdEBMgn, higherIsBetter: true, isPercent: true }
   ];
 
   budgetActual.monthlyLines = Array(12).fill(null).map((_, i) => [
-    { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev(i),  higherIsBetter: true  },
-    { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos(i),  higherIsBetter: false },
-    { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP(i),   higherIsBetter: true  },
-    { name: 'OPEX',      budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
-    { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  }
+    { name: 'Revenue',         budget: toM(revBMonth[i]),      actual: mRev(i),  higherIsBetter: true  },
+    { name: 'Cost of Sales',   budget: toM(cosBMonth[i]),      actual: mCos(i),  higherIsBetter: false },
+    { name: 'Gross Profit',    budget: toM(gpBMonth[i]),       actual: mGP(i),   higherIsBetter: true  },
+    { name: 'Gross Margin %',  budget: revBMonth[i] ? +(gpBMonth[i] / revBMonth[i] * 100).toFixed(1) : null, actual: mGPMgn(i), higherIsBetter: true, isPercent: true },
+    { name: 'OPEX',            budget: toM(salBMonth[i]),      actual: mSal(i),  higherIsBetter: false },
+    { name: 'Expenses',        budget: toM(totOpexBMonth[i]),  actual: mOpex(i), higherIsBetter: false },
+    { name: 'Financial Costs', budget: toM(finBMonth[i]),      actual: mFin(i),  higherIsBetter: false },
+    { name: 'EBITDA',          budget: toM(ebBMonth[i]),       actual: mEB(i),   higherIsBetter: true  },
+    { name: 'EBITDA Margin %', budget: revBMonth[i] ? +(ebBMonth[i] / revBMonth[i] * 100).toFixed(1) : null, actual: mEBMgn(i), higherIsBetter: true, isPercent: true }
   ]);
 
   // Per-month line-item drilldowns (Revenue by Line, Cost of Sales by Line, Expenses by
@@ -805,7 +847,9 @@ async function buildSnapshot(targetDate) {
     return {
       'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES, monthBudgets),
       'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES, false, monthBudgets),
-      'OPEX':      byDeptFromAccts(monthActuals, MGT_EXP, false, monthBudgets),
+      'OPEX':            byScheduleLine(monthActuals, MGT_SAL_LINES, false, monthBudgets),
+      'Expenses':        byDeptFromAccts(monthActuals, MGT_EXP, false, monthBudgets),
+      'Financial Costs': byDeptFromAccts(monthActuals, MGT_FIN, false, monthBudgets),
       'Gross Profit': [
         { unit: 'Revenue',       actual: mRev(mi), budget: toM(revBMonth[mi]) },
         { unit: 'Cost of Sales', actual: mCos(mi) != null ? -mCos(mi) : null, budget: toM(-cosBMonth[mi]) }
@@ -843,13 +887,19 @@ async function buildSnapshot(targetDate) {
     const mgtSalA18     =  sumAccts(actuals, MGT_SAL_I18);
     const mgtOpexA18    =  sumAccts(actuals, MGT_OPEX_I18);
     const mgtTotOpexA18 = mgtSalA18 + mgtOpexA18;
+    const mgtFinA18     = MGT_FIN_I18.size > 0 ? sumAccts(actuals, MGT_FIN_I18) : finA; // row 9598
     const mgtEbA18      = mgtGpA18 - mgtTotOpexA18;
     const MGT_EXP_I18   = new Set([...MGT_SAL_I18, ...MGT_OPEX_I18]);
+
+    const ytdGPMgn18 = mgtRevA18 ? parseFloat((mgtGpA18 / mgtRevA18 * 100).toFixed(1)) : null;
+    const ytdEBMgn18 = mgtRevA18 ? parseFloat((mgtEbA18 / mgtRevA18 * 100).toFixed(1)) : null;
 
     const lineDrilldowns18 = {
       'Revenue':       byRevenueLine(actuals, MGT_REV_LINES_I18, budgets),
       'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES_I18, false, budgets),
-      'OPEX':      byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
+      'OPEX':            byScheduleLine(actuals, MGT_SAL_LINES_I18, false, budgets),
+      'Expenses':        byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
+      'Financial Costs': byDeptFromAccts(actuals, MGT_FIN_I18, false, budgets),
       'Gross Profit': [
         { unit: 'Revenue',       actual: toM(mgtRevA18),  budget: toM(revB)  },
         { unit: 'Cost of Sales', actual: toM(-mgtCosA18), budget: toM(-cosB) }
@@ -859,18 +909,22 @@ async function buildSnapshot(targetDate) {
     };
 
     budgetActualIfrs18 = { lineDrilldowns: lineDrilldowns18, lines: [
-      { name: 'Revenue',       budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
-      { name: 'Cost of Sales', budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
-      { name: 'Gross Profit',  budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'OPEX',      budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
-      { name: 'EBITDA',        budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  }
+      { name: 'Revenue',         budget: toM(revB),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales',   budget: toM(cosB),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',    budget: toM(gpB),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Gross Margin %',  budget: revB ? +(gpB / revB * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            budget: toM(salB),     actual: toM(mgtSalA18),     higherIsBetter: false },
+      { name: 'Expenses',        budget: toM(totOpexB), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'Financial Costs', budget: toM(finB),     actual: toM(mgtFinA18),     higherIsBetter: false },
+      { name: 'EBITDA',          budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  },
+      { name: 'EBITDA Margin %', budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
     ]};
 
     // Actual-side monthly buckets for this schedule's account sets — the budget-side
-    // monthly arrays (revBMonth/cosBMonth/gpBMonth/totOpexBMonth/ebBMonth) are reused
-    // unchanged from the M-MGT-RPT computation above (schedule-independent).
+    // monthly arrays (revBMonth/cosBMonth/gpBMonth/totOpexBMonth/ebBMonth/finBMonth) are
+    // reused unchanged from the M-MGT-RPT computation above (schedule-independent).
     const revM18 = Array(12).fill(0), cosM18 = Array(12).fill(0);
-    const salM18 = Array(12).fill(0), opM18  = Array(12).fill(0);
+    const salM18 = Array(12).fill(0), opM18  = Array(12).fill(0), finM18 = Array(12).fill(0);
     actuals.forEach(x => {
       const a = String(x.accountNo);
       const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
@@ -878,6 +932,7 @@ async function buildSnapshot(targetDate) {
       if (MGT_REV_I18.has(a)) { revM18[mi] += num(x.amount); return; }
       if (MGT_COS_I18.has(a)) { cosM18[mi] += num(x.amount); return; }
       if (MGT_SAL_I18.has(a)) { salM18[mi] += num(x.amount); return; }
+      if (MGT_FIN_I18.has(a)) { finM18[mi] += num(x.amount); return; }
       if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opM18[mi] += num(x.amount);
     });
     const hasData18    = i => revM18[i] !== 0;
@@ -885,27 +940,39 @@ async function buildSnapshot(targetDate) {
     const mRev18  = i => hasData18(i) ? toM(-revM18[i]) : null;
     const mCos18  = i => hasData18(i) ? toM(cosM18[i]) : null;
     const mGP18   = i => hasData18(i) ? toM(-revM18[i] - cosM18[i]) : null;
+    const mSal18  = i => hasExpData18(i) ? toM(salM18[i]) : null;
     const mOpex18 = i => hasExpData18(i) ? toM(salM18[i] + opM18[i]) : null;
+    const mFin18  = i => hasData18(i) ? toM(finM18[i]) : null;
     const mEB18   = i => hasData18(i) ? toM(-revM18[i] - cosM18[i] - salM18[i] - opM18[i]) : null;
+    const mGPMgn18 = i => mRev18(i) ? parseFloat((mGP18(i) / mRev18(i) * 100).toFixed(1)) : null;
+    const mEBMgn18 = i => mRev18(i) ? parseFloat((mEB18(i) / mRev18(i) * 100).toFixed(1)) : null;
 
     const lastDataM18 = Array.from({ length: 12 }, (_, i) => i).reverse().find(i => hasData18(i)) ?? lm;
     const ytdSum18 = arr => arr.slice(0, lastDataM18 + 1).reduce((s, v) => s + v, 0);
     const revBYTD18 = ytdSum18(revBMonth), cosBYTD18 = ytdSum18(cosBMonth), totOpexBYTD18 = ytdSum18(totOpexBMonth);
     const gpBYTD18 = revBYTD18 - cosBYTD18, ebBYTD18 = gpBYTD18 - totOpexBYTD18;
     budgetActualIfrs18.lines = [
-      { name: 'Revenue',       budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
-      { name: 'Cost of Sales', budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
-      { name: 'Gross Profit',  budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
-      { name: 'OPEX',      budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
-      { name: 'EBITDA',        budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  }
+      { name: 'Revenue',         budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
+      { name: 'Cost of Sales',   budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
+      { name: 'Gross Profit',    budget: toM(gpBYTD18),      actual: toM(mgtGpA18),      higherIsBetter: true  },
+      { name: 'Gross Margin %',  budget: revBYTD18 ? +(gpBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdGPMgn18, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            budget: toM(salB),          actual: toM(mgtSalA18),     higherIsBetter: false },
+      { name: 'Expenses',        budget: toM(totOpexBYTD18), actual: toM(mgtTotOpexA18), higherIsBetter: false },
+      { name: 'Financial Costs', budget: toM(finB),          actual: toM(mgtFinA18),     higherIsBetter: false },
+      { name: 'EBITDA',          budget: toM(ebBYTD18),      actual: toM(mgtEbA18),      higherIsBetter: true  },
+      { name: 'EBITDA Margin %', budget: revBYTD18 ? +(ebBYTD18 / revBYTD18 * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
     ];
 
     budgetActualIfrs18.monthlyLines = Array(12).fill(null).map((_, i) => [
-      { name: 'Revenue',       budget: toM(revBMonth[i]),      actual: mRev18(i),  higherIsBetter: true  },
-      { name: 'Cost of Sales', budget: toM(cosBMonth[i]),      actual: mCos18(i),  higherIsBetter: false },
-      { name: 'Gross Profit',  budget: toM(gpBMonth[i]),       actual: mGP18(i),   higherIsBetter: true  },
-      { name: 'OPEX',      budget: toM(totOpexBMonth[i]),  actual: mOpex18(i), higherIsBetter: false },
-      { name: 'EBITDA',        budget: toM(ebBMonth[i]),       actual: mEB18(i),   higherIsBetter: true  }
+      { name: 'Revenue',         budget: toM(revBMonth[i]),      actual: mRev18(i),  higherIsBetter: true  },
+      { name: 'Cost of Sales',   budget: toM(cosBMonth[i]),      actual: mCos18(i),  higherIsBetter: false },
+      { name: 'Gross Profit',    budget: toM(gpBMonth[i]),       actual: mGP18(i),   higherIsBetter: true  },
+      { name: 'Gross Margin %',  budget: revBMonth[i] ? +(gpBMonth[i] / revBMonth[i] * 100).toFixed(1) : null, actual: mGPMgn18(i), higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            budget: toM(salBMonth[i]),      actual: mSal18(i),  higherIsBetter: false },
+      { name: 'Expenses',        budget: toM(totOpexBMonth[i]),  actual: mOpex18(i), higherIsBetter: false },
+      { name: 'Financial Costs', budget: toM(finBMonth[i]),      actual: mFin18(i),  higherIsBetter: false },
+      { name: 'EBITDA',          budget: toM(ebBMonth[i]),       actual: mEB18(i),   higherIsBetter: true  },
+      { name: 'EBITDA Margin %', budget: revBMonth[i] ? +(ebBMonth[i] / revBMonth[i] * 100).toFixed(1) : null, actual: mEBMgn18(i), higherIsBetter: true, isPercent: true }
     ]);
 
     budgetActualIfrs18.monthlyLineDrilldowns = Array(12).fill(null).map((_, mi) => {
@@ -914,7 +981,9 @@ async function buildSnapshot(targetDate) {
       return {
         'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES_I18, monthBudgets),
         'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES_I18, false, monthBudgets),
-        'OPEX':      byDeptFromAccts(monthActuals, MGT_EXP_I18, false, monthBudgets),
+        'OPEX':            byScheduleLine(monthActuals, MGT_SAL_LINES_I18, false, monthBudgets),
+        'Expenses':        byDeptFromAccts(monthActuals, MGT_EXP_I18, false, monthBudgets),
+        'Financial Costs': byDeptFromAccts(monthActuals, MGT_FIN_I18, false, monthBudgets),
         'Gross Profit': [
           { unit: 'Revenue',       actual: mRev18(mi), budget: toM(revBMonth[mi]) },
           { unit: 'Cost of Sales', actual: mCos18(mi) != null ? -mCos18(mi) : null, budget: toM(-cosBMonth[mi]) }
@@ -939,6 +1008,7 @@ async function buildSnapshot(targetDate) {
       if (MGT_REV_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'rev', -amt); return; }
       if (MGT_COS_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'cos', amt); return; }
       if (MGT_SAL_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'sal', amt); return; }
+      if (MGT_FIN_I18.has(a)) { bumpDimMap(dimActualMap18, mi, vc, bu, 'fin', amt); return; }
       if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimActualMap18, mi, vc, bu, 'opex', amt);
     });
     budgetActualIfrs18.dimActual = mapToDimRows(dimActualMap18);
@@ -1352,7 +1422,7 @@ async function buildSnapshot(targetDate) {
   if (budgetActualIfrs18) {
     const lineVal = n => budgetActualIfrs18.lines.find(l => l.name === n)?.actual || 0;
     const rev18 = lineVal('Revenue'), gp18 = lineVal('Gross Profit'), eb18 = lineVal('EBITDA');
-    const net18 = eb18 - toM(finA);
+    const net18 = eb18 - lineVal('Financial Costs');
     budgetActualIfrs18.ratios = [
       { label: 'Gross Margin',  value: pct(gp18, rev18),  trend: 0 },
       { label: 'EBITDA Margin', value: pct(eb18, rev18),  trend: 0 },

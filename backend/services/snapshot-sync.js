@@ -60,14 +60,11 @@ async function syncSnapshot(date) {
     persistSnapshot(targetDate, data);
 
     const L = data.budgetActual.lines;
-    const summary = {
-      date: targetDate,
-      asOf: data.asOf,
-      revenue: L[0].actual,
-      ebitda:  L[4].actual
-    };
+    const revenue = L.find(l => l.name === 'Revenue').actual;
+    const ebitda  = L.find(l => l.name === 'EBITDA').actual;
+    const summary = { date: targetDate, asOf: data.asOf, revenue, ebitda };
     lastSync = { ...summary, ok: true, at: new Date().toISOString() };
-    console.log(`[sync] Done — Revenue ${L[0].actual}M, EBITDA ${L[4].actual}M`);
+    console.log(`[sync] Done — Revenue ${revenue}M, EBITDA ${ebitda}M`);
     return summary;
   } catch (e) {
     lastSync = { date: targetDate, ok: false, at: new Date().toISOString(), error: e.message };

@@ -218,11 +218,15 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
 }
 
 const LINE_COLORS = {
-  Revenue:        '#02404F',
-  'Cost of Sales':'#E5544B',
-  OPEX:           '#EB7D23',
-  'Gross Profit': '#1FB6A6',
-  EBITDA:         '#2EBD85',
+  Revenue:          '#02404F',
+  'Cost of Sales':  '#E5544B',
+  'Gross Profit':   '#1FB6A6',
+  'Gross Margin %': '#1FB6A6',
+  OPEX:             '#8E5FD9',
+  Expenses:         '#EB7D23',
+  'Financial Costs':'#C9556B',
+  EBITDA:           '#2EBD85',
+  'EBITDA Margin %':'#2EBD85',
 }
 
 // Hidden for now — not currently wanted on this page. Underlying data/logic is left
@@ -387,7 +391,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
         </div>
 
         <p className="text-xl font-extrabold text-navy leading-none mb-3">
-          ETB&nbsp;{fmtETB(line.actual)}
+          {line.isPercent ? `${line.actual}%` : <>ETB&nbsp;{fmtETB(line.actual)}</>}
         </p>
 
         <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#F4F6FA' }}>
@@ -398,7 +402,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
         </div>
 
         <p className="text-[10px] font-semibold" style={{ color }}>
-          {diff >= 0 ? '▲' : '▼'} ETB {fmtETB(Math.abs(diff))} vs budget
+          {diff >= 0 ? '▲' : '▼'} {line.isPercent ? `${Math.abs(diff).toFixed(1)}pp` : `ETB ${fmtETB(Math.abs(diff))}`} vs budget
         </p>
         {priorGrowth != null && (
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2EBD85' : '#E5544B' }}>
@@ -495,14 +499,20 @@ export default function Financial({ data }) {
     const cos = sumDim(dimActual, months, vcs, bus, 'cos'), cosB  = sumDim(dimBudget, months, vcs, bus, 'cos')
     const sal = sumDim(dimActual, months, vcs, bus, 'sal'), salB  = sumDim(dimBudget, months, vcs, bus, 'sal')
     const opex = sumDim(dimActual, months, vcs, bus, 'opex'), opexB = sumDim(dimBudget, months, vcs, bus, 'opex')
+    const fin = sumDim(dimActual, months, vcs, bus, 'fin'), finB = sumDim(dimBudget, months, vcs, bus, 'fin')
     const gp = rev - cos, exp = sal + opex, eb = gp - exp
     const gpB = revB - cosB, expB = salB + opexB, ebB = gpB - expB
+    const round1 = n => Math.round(n * 10) / 10
     return [
-      { name: 'Revenue',       actual: rev, budget: revB, higherIsBetter: true  },
-      { name: 'Cost of Sales', actual: cos, budget: cosB, higherIsBetter: false },
-      { name: 'Gross Profit',  actual: gp,  budget: gpB,  higherIsBetter: true  },
-      { name: 'OPEX',      actual: exp, budget: expB, higherIsBetter: false },
-      { name: 'EBITDA',        actual: eb,  budget: ebB,  higherIsBetter: true  },
+      { name: 'Revenue',         actual: rev, budget: revB, higherIsBetter: true  },
+      { name: 'Cost of Sales',   actual: cos, budget: cosB, higherIsBetter: false },
+      { name: 'Gross Profit',    actual: gp,  budget: gpB,  higherIsBetter: true  },
+      { name: 'Gross Margin %',  actual: rev ? round1(gp / rev * 100) : 0, budget: revB ? round1(gpB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
+      { name: 'OPEX',            actual: sal, budget: salB, higherIsBetter: false },
+      { name: 'Expenses',        actual: exp, budget: expB, higherIsBetter: false },
+      { name: 'Financial Costs', actual: fin, budget: finB, higherIsBetter: false },
+      { name: 'EBITDA',          actual: eb,  budget: ebB,  higherIsBetter: true  },
+      { name: 'EBITDA Margin %', actual: rev ? round1(eb / rev * 100) : 0, budget: revB ? round1(ebB / revB * 100) : 0, higherIsBetter: true, isPercent: true },
     ]
   }
 
@@ -595,14 +605,28 @@ export default function Financial({ data }) {
         .filter(r => r.actual !== 0 || r.budget !== 0)
         .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual))
 
+      const salActualMap = sumGroupedDimMap(dimActual.filter(r => r.metric === 'sal'), months, selVCs, selBUs, 'bu')
+      const salBudgetMap = sumGroupedDimMap(dimBudget.filter(r => r.metric === 'sal'), months, selVCs, selBUs, 'bu')
+      const salRows = mergeActualBudgetMaps(salActualMap, salBudgetMap)
+        .filter(r => r.actual !== 0 || r.budget !== 0)
+        .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual))
+
+      const finActualMap = sumGroupedDimMap(dimActual.filter(r => r.metric === 'fin'), months, selVCs, selBUs, 'bu')
+      const finBudgetMap = sumGroupedDimMap(dimBudget.filter(r => r.metric === 'fin'), months, selVCs, selBUs, 'bu')
+      const finRows = mergeActualBudgetMaps(finActualMap, finBudgetMap)
+        .filter(r => r.actual !== 0 || r.budget !== 0)
+        .sort((a, b) => Math.abs(b.actual) - Math.abs(a.actual))
+
       const revTotal = [...revActualMap.values()].reduce((s, v) => s + v, 0)
       const revBudgetTotal = [...revBudgetMap.values()].reduce((s, v) => s + v, 0)
       const cosTotal = [...cosActualMap.values()].reduce((s, v) => s + v, 0)
       const cosBudgetTotal = [...cosBudgetMap.values()].reduce((s, v) => s + v, 0)
       return {
-        'Revenue':       groupBpass(revRows),
-        'Cost of Sales': cosRows,
-        'OPEX':      expRows,
+        'Revenue':         groupBpass(revRows),
+        'Cost of Sales':   cosRows,
+        'OPEX':            salRows,
+        'Expenses':        expRows,
+        'Financial Costs': finRows,
         'Gross Profit':  [
           { unit: 'Revenue',       actual: revTotal,  budget: revBudgetTotal },
           { unit: 'Cost of Sales', actual: -cosTotal, budget: -cosBudgetTotal }
@@ -614,7 +638,9 @@ export default function Financial({ data }) {
     return {
       'Revenue':             mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Revenue'] || [])),
       'Cost of Sales':       mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Cost of Sales'] || [])),
-      'OPEX':            mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['OPEX'] || [])),
+      'OPEX':                mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['OPEX'] || [])),
+      'Expenses':            mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Expenses'] || [])),
+      'Financial Costs':     mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Financial Costs'] || [])),
       'Gross Profit':        mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['Gross Profit'] || [])),
       'HR Related Expenses': mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['HR Related Expenses'] || [])),
       'OPEX by Category':    mergeDrilldownRows(months.map(mi => monthlyLineDrilldowns[mi]?.['OPEX by Category'] || []))
@@ -740,13 +766,15 @@ export default function Financial({ data }) {
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
               <h3 className="text-sm font-bold text-navy">
-                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'OPEX' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
+                {selLine} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'Expenses' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
                 {' · '}{periodLabel}
               </h3>
               <p className="text-[10px] text-muted mt-0.5">
                 {selLine === 'Gross Profit' ? 'Revenue minus Cost of Sales'
                   : selLine === 'Revenue' ? 'Per M-MGT-RPT account schedule — click BPASS to see it by bank partner'
-                  : selLine === 'OPEX' ? 'Per M-MGT-RPT account schedule — Salaries and OPEX split out below, alongside the existing by-department view'
+                  : selLine === 'Expenses' ? 'Per M-MGT-RPT account schedule — Salaries and OPEX split out below, alongside the existing by-department view'
+                  : selLine === 'OPEX' ? 'Per M-MGT-RPT account schedule row “Total-salaries Operating Expenses”, by department'
+                  : selLine === 'Financial Costs' ? 'Per M-MGT-RPT account schedule row “Total Other Financial Costs”, by department'
                   : isScheduleLineView ? 'Per M-MGT-RPT account schedule — click the card again to close'
                   : 'Click the card again to close'}
               </p>
@@ -758,20 +786,20 @@ export default function Financial({ data }) {
               bg-bg/#F4F6FA classes — those depend on the dark theme repainting them,
               which an inline background on the row itself blocks, leaving light text
               on a light background. Explicit colors here are visible either way.
-              "OPEX" gets three stacked tables (by Business Unit / HR salaries by
+              "Expenses" gets three stacked tables (by Business Unit / HR salaries by
               department / OPEX by category) since that one KPI genuinely covers three
               different breakdowns; every other line just gets the one table. */}
-          {selLine === 'OPEX' ? (
+          {selLine === 'Expenses' ? (
             <div className="space-y-5">
               <div>
                 <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">By Business Unit</p>
                 <DrilldownTable
-                  rows={activeLineDrilldowns['OPEX']}
+                  rows={activeLineDrilldowns['Expenses']}
                   higherIsBetterHere={false}
                   getName={getName}
                   expandedRow={expandedRow}
                   setExpandedRow={setExpandedRow}
-                  priorRows={priorLineDrilldowns?.['OPEX']}
+                  priorRows={priorLineDrilldowns?.['Expenses']}
                   priorLabel={priorPeriodLabel}
                 />
               </div>
