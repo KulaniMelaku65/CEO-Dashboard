@@ -435,7 +435,7 @@ export default function Financial2({ data }) {
   if (!data.budgetActualIfrs18) {
     return (
       <div className="space-y-2">
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Financial Performance 2</h2>
+        <h2 className="text-lg font-extrabold text-navy mb-0.5">Detailed Financial Performance</h2>
         <div className="bg-white rounded-2xl border border-border p-8 text-center">
           <p className="text-navy font-bold text-sm mb-1">FS-IFRS 18 schedule not available</p>
           <p className="text-muted text-xs leading-relaxed max-w-md mx-auto">
@@ -741,7 +741,7 @@ export default function Financial2({ data }) {
       {/* Header + filters */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Financial Performance 2</h2>
+          <h2 className="text-lg font-extrabold text-navy mb-0.5">Detailed Financial Performance</h2>
           <p className="text-xs text-muted font-medium">
             {selMonths.length > 0 ? `Viewing ${periodLabel} — uncheck it (or use Clear filters) to return to YTD`
               : `Budget vs Actual — YTD through ${data.asOf || 'current period'} · FS-IFRS 18 account schedule`}
