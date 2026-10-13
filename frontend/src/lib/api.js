@@ -57,6 +57,17 @@ export const departmentOverrides = {
   history: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}/history`),
 }
 
+export const budgetSourceOverrides = {
+  list: () => req('/api/budget-source-overrides'),
+  set: (employeeNo, employeeName, fromSource, budgetSource) => req('/api/budget-source-overrides', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employeeNo, employeeName, fromSource, budgetSource })
+  }),
+  remove: (employeeNo) => req(`/api/budget-source-overrides/${encodeURIComponent(employeeNo)}`, { method: 'DELETE' }),
+  history: (employeeNo) => req(`/api/budget-source-overrides/${encodeURIComponent(employeeNo)}/history`),
+}
+
 export const kpi = {
   departments: () => req('/api/kpi/departments'),
   dictionary:  (department) => req(`/api/kpi/dictionary${department ? `?department=${encodeURIComponent(department)}` : ''}`),

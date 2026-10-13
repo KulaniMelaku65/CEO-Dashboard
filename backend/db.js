@@ -76,6 +76,38 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_dept_override_audit_emp ON department_override_audit(employee_no, created_at DESC);
 
+  -- Dashboard-only Budget Source (Corporate/KIFIYA vs Programme/SAFEE) reassignment —
+  -- same "never written back to BC" philosophy as department_overrides, but a different
+  -- kind of field: Budget Source isn't an employee attribute in BC, it's decided by which
+  -- payroll book (KFT_Payroll_Cost vs KFT_Prog_Payroll_Cost/KFT_Consultant_Payroll_Cost) a
+  -- payroll row came from — see snapshot-builder.js's payrollSource/_ptSource handling. An
+  -- override here relabels ALL of that employee's payroll rows AND their pension employer
+  -- contribution to the chosen source (not just a grouping tag), so the dashboard's own
+  -- Corporate/Programme split can intentionally diverge from what BC's payroll reports show
+  -- for that employee — same divergence department_overrides already accepts for section.
+  CREATE TABLE IF NOT EXISTS budget_source_overrides (
+    employee_no    TEXT PRIMARY KEY,
+    employee_name  TEXT,
+    from_source    TEXT,
+    budget_source  TEXT NOT NULL, -- 'KIFIYA' (Corporate) | 'SAFEE' (Programme)
+    updated_by     TEXT,
+    updated_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Same append-only rationale as department_override_audit.
+  CREATE TABLE IF NOT EXISTS budget_source_override_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_no    TEXT NOT NULL,
+    employee_name  TEXT,
+    from_source    TEXT,
+    to_source      TEXT,
+    action         TEXT NOT NULL, -- 'set' | 'revert'
+    actor          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_budget_source_override_audit_emp ON budget_source_override_audit(employee_no, created_at DESC);
+
   -- Which sidebar pages (App.jsx's ALL_SLIDES ids) a given user can see. Presence of a
   -- row is the grant — no row for a page means no access. Managed from the Admin page.
   CREATE TABLE IF NOT EXISTS user_page_access (

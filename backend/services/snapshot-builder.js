@@ -1471,6 +1471,15 @@ async function buildSnapshot(targetDate) {
     if (deptOverrides[r.AuxiliaryIndex1]) r.businessUnitDept = deptOverrides[r.AuxiliaryIndex1];
   });
 
+  // Manual Budget Source (Corporate/KIFIYA vs Programme/SAFEE) overrides — same
+  // dashboard-only philosophy as deptOverrides above, but applied much further down
+  // (see the two "budgetSourceOverrides" uses below): Budget Source isn't a field on the
+  // headcount row at all, it's decided per payroll row by which BC payroll book it came
+  // from, so this map is only consulted once payroll rows exist to relabel.
+  const budgetSourceOverrides = {};
+  db.prepare('SELECT employee_no, budget_source FROM budget_source_overrides').all()
+    .forEach(r => { budgetSourceOverrides[r.employee_no] = r.budget_source; });
+
   // Persist every employee's job title (KFT_Employee_Headcount now covers Active and
   // Inactive/Terminated/New — its BC-side active-only filter was removed). A minority of
   // inactive rows still have a blank jobTitle in BC itself; this cache preserves whatever
@@ -2515,7 +2524,11 @@ async function buildSnapshot(targetDate) {
     // Salary instead of falling all the way back to 11% of Total Earning.
     const ptKifiyaBasicByEmpMonth = {};
     const ptSafeeBasicByEmpMonth  = {};
-    [...stdPT.map(r => ({ ...r, _ptSource: 'KIFIYA' })), ...progPT.map(r => ({ ...r, _ptSource: 'SAFEE' }))].forEach(r => {
+    [...stdPT.map(r => ({ ...r, _ptSource: 'KIFIYA' })), ...progPT.map(r => ({ ...r, _ptSource: 'SAFEE' }))]
+      // Budget Source override relabels pension's source too, so an overridden employee's
+      // Corporate/Programme totals (which include pension) stay internally consistent.
+      .map(r => budgetSourceOverrides[r.employeeNo] ? { ...r, _ptSource: budgetSourceOverrides[r.employeeNo] } : r)
+      .forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo) return;
       const d = new Date(r.payrollPeriod);
       if (isNaN(d.getTime())) return;
@@ -2678,6 +2691,16 @@ async function buildSnapshot(targetDate) {
       if (r.payrollSource !== 'KIFIYA') return;
       const type = r.employeeType || empNoToType[r.employeeNo] || '';
       if (type === 'Individual Consultant') r.payrollSource = 'SAFEE';
+    });
+
+    // Manual Budget Source override — applied LAST, after the Individual Consultant
+    // correction above, so an explicit override always wins regardless of employee type.
+    // Relabels every one of this employee's payroll rows (standard, programme, consultant,
+    // direct-pay alike) to the chosen source; pension was already relabeled via _ptSource
+    // further up. "Dual-hatted" employees (payrollSource would otherwise read "Both" on
+    // the frontend) collapse entirely onto the override's source.
+    allPay.forEach(r => {
+      if (r.employeeNo && budgetSourceOverrides[r.employeeNo]) r.payrollSource = budgetSourceOverrides[r.employeeNo];
     });
 
     // employeeNo → jobTitle ("Job Description") via headcount name bridge

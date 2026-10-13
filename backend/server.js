@@ -11,6 +11,7 @@ const aiRoutes        = require('./routes/ai');
 const supersetRoutes  = require('./routes/superset');
 const bcRoutes        = require('./routes/bc');
 const deptOverrideRoutes = require('./routes/department-overrides');
+const budgetSourceOverrideRoutes = require('./routes/budget-source-overrides');
 const adminUserRoutes = require('./routes/admin-users');
 const kpiRoutes = require('./routes/kpi');
 const { startScheduler } = require('./services/scheduler');
@@ -36,6 +37,7 @@ app.use('/api/ai',        aiRoutes);
 app.use('/api/superset',  supersetRoutes);
 app.use('/api/bc',        bcRoutes);
 app.use('/api/department-overrides', deptOverrideRoutes);
+app.use('/api/budget-source-overrides', budgetSourceOverrideRoutes);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/kpi', kpiRoutes);
 

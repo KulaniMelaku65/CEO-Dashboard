@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
-import { departmentOverrides } from '../lib/api.js'
+import { departmentOverrides, budgetSourceOverrides as bsOverrideApi } from '../lib/api.js'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 import { compareByTitleRank } from '../lib/titleRank.js'
 
@@ -57,6 +57,18 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
   const [historyByEmp, setHistoryByEmp]   = useState({})
   const [loadingHistory, setLoadingHistory] = useState(false)
 
+  // Budget Source override — a second, independent override type on the same employee
+  // rows (own table, own audit trail, own "Active Overrides" list below), mirroring the
+  // department override above exactly. See backend/db.js's budget_source_overrides for
+  // why this is a different KIND of override: it relabels payroll rows, not a grouping tag.
+  const [bsOverrides, setBsOverrides]         = useState([])
+  const [loadingBsOv, setLoadingBsOv]         = useState(true)
+  const [editingSourceNo, setEditingSourceNo] = useState(null)
+  const [targetBudgetSource, setTargetBudgetSource] = useState('')
+  const [bsHistoryOpenNo, setBsHistoryOpenNo] = useState(null)
+  const [bsHistoryByEmp, setBsHistoryByEmp]   = useState({})
+  const [loadingBsHistory, setLoadingBsHistory] = useState(false)
+
   const loadOverrides = () => {
     setLoadingOv(true)
     departmentOverrides.list()
@@ -65,13 +77,27 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       .catch(() => {})
       .finally(() => setLoadingOv(false))
   }
-  useEffect(() => { loadOverrides() }, [])
+  const loadBsOverrides = () => {
+    setLoadingBsOv(true)
+    bsOverrideApi.list()
+      .then(r => r.ok ? r.json() : [])
+      .then(setBsOverrides)
+      .catch(() => {})
+      .finally(() => setLoadingBsOv(false))
+  }
+  useEffect(() => { loadOverrides(); loadBsOverrides() }, [])
 
   const overrideByNo = useMemo(() => {
     const m = {}
     overrides.forEach(o => { m[o.employee_no] = o })
     return m
   }, [overrides])
+
+  const bsOverrideByNo = useMemo(() => {
+    const m = {}
+    bsOverrides.forEach(o => { m[o.employee_no] = o })
+    return m
+  }, [bsOverrides])
 
   // Every assignable section, grouped by parent BU display name.
   const sectionOptions = useMemo(() => {
@@ -321,6 +347,57 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
     finally { setLoadingHistory(false) }
   }
 
+  // A row's current budget source reads "Both" when the employee has cost under both
+  // books this period (dual-hatted) — there's no single current value to default a
+  // "Change Budget Source" dropdown to in that case, so it starts blank instead.
+  const currentBudgetSource = (emp) =>
+    emp.kifiya > 0 && emp.safee > 0 ? 'Both' : emp.safee > 0 ? 'SAFEE' : 'KIFIYA'
+
+  const startEditSource = (emp) => {
+    const cur = currentBudgetSource(emp)
+    setEditingSourceNo(emp.employeeNo); setTargetBudgetSource(cur === 'Both' ? '' : cur); setError('')
+  }
+  const cancelEditSource = () => { setEditingSourceNo(null); setTargetBudgetSource(''); setError('') }
+
+  const applyChangeSource = async (emp) => {
+    if (!targetBudgetSource) { cancelEditSource(); return }
+    const from = currentBudgetSource(emp)
+    if (targetBudgetSource === from) { cancelEditSource(); return }
+    setBusy(true); setError('')
+    try {
+      const r = await bsOverrideApi.set(emp.employeeNo, emp.name, from, targetBudgetSource)
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Failed to save budget source override.') }
+      cancelEditSource()
+      loadBsOverrides()
+      onDataRefresh?.()
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  const revertSource = async (employeeNo) => {
+    setBusy(true); setError('')
+    try {
+      const r = await bsOverrideApi.remove(employeeNo)
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Failed to revert budget source override.') }
+      loadBsOverrides()
+      onDataRefresh?.()
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  const toggleBsHistory = async (employeeNo) => {
+    if (bsHistoryOpenNo === employeeNo) { setBsHistoryOpenNo(null); return }
+    setBsHistoryOpenNo(employeeNo)
+    if (bsHistoryByEmp[employeeNo]) return
+    setLoadingBsHistory(true)
+    try {
+      const r = await bsOverrideApi.history(employeeNo)
+      const rows = r.ok ? await r.json() : []
+      setBsHistoryByEmp(cur => ({ ...cur, [employeeNo]: rows }))
+    } catch { setBsHistoryByEmp(cur => ({ ...cur, [employeeNo]: [] })) }
+    finally { setLoadingBsHistory(false) }
+  }
+
+  const BUDGET_SOURCE_LABEL = { KIFIYA: 'Corporate', SAFEE: 'Programme', Both: 'Both' }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -477,7 +554,9 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                                 {/* Level 4: Employees — where Change Department lives */}
                                 {jtOpen && jt.employees.map(emp => {
                                   const isEditing = editingNo === emp.employeeNo
+                                  const isEditingSource = editingSourceNo === emp.employeeNo
                                   const hasOverride = !!overrideByNo[emp.employeeNo]
+                                  const hasSourceOverride = !!bsOverrideByNo[emp.employeeNo]
                                   const vc = emp.virtualCompany && emp.virtualCompany !== 'Unknown' ? emp.virtualCompany : ''
                                   const total = emp.kifiya + emp.safee
                                   const pctEmp = jt.monthly > 0 ? (total / jt.monthly) * 100 : 0
@@ -491,6 +570,9 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                                         {hasOverride && (
                                           <span className="ml-1.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full" style={{ background: `${TEAL}33`, color: TEAL }}>OVERRIDDEN</span>
                                         )}
+                                        {hasSourceOverride && (
+                                          <span className="ml-1.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full" style={{ background: `${ORANGE}33`, color: ORANGE }}>SOURCE OVERRIDDEN</span>
+                                        )}
                                       </td>
                                       <td className="px-4 py-1.5 text-[10px] text-muted">{vc}</td>
                                       <td className="px-4 py-1.5" />
@@ -499,6 +581,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                                       <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: TEAL }}>{emp.kifiya ? fmtC(emp.kifiya) : '—'}</td>
                                       <td className="px-4 py-1.5 text-right tabular-nums text-[10px]" style={{ color: ORANGE }}>{emp.safee ? fmtC(emp.safee) : '—'}</td>
                                       <td className="px-4 py-1.5">
+                                        <div className="flex flex-col gap-1.5 items-start">
                                         {!isEditing ? (
                                           <button
                                             onClick={() => startEdit(emp)}
@@ -525,6 +608,31 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                                             <button onClick={cancelEdit} disabled={busy} className="text-[10px] font-bold px-2 py-1 text-muted">Cancel</button>
                                           </div>
                                         )}
+                                        {!isEditingSource ? (
+                                          <button
+                                            onClick={() => startEditSource(emp)}
+                                            disabled={busy}
+                                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-border text-navy hover:border-navy transition-colors disabled:opacity-40"
+                                          >
+                                            Change Budget Source
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <select
+                                              value={targetBudgetSource}
+                                              onChange={e => setTargetBudgetSource(e.target.value)}
+                                              className="text-[10px] rounded-lg px-2 py-1 bg-white text-navy border border-border"
+                                              style={{ minWidth: 140 }}
+                                            >
+                                              <option value="" disabled>Choose…</option>
+                                              <option value="KIFIYA">Corporate</option>
+                                              <option value="SAFEE">Programme</option>
+                                            </select>
+                                            <button onClick={() => applyChangeSource(emp)} disabled={busy} className="text-[10px] font-bold px-2.5 py-1 rounded-lg text-white disabled:opacity-40" style={{ background: ORANGE }}>Confirm</button>
+                                            <button onClick={cancelEditSource} disabled={busy} className="text-[10px] font-bold px-2 py-1 text-muted">Cancel</button>
+                                          </div>
+                                        )}
+                                        </div>
                                       </td>
                                     </tr>
                                   )
@@ -612,6 +720,79 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                               </span>
                               <span className="text-muted">
                                 {dimensionNames[h.from_section] || h.from_section || 'Unknown'} → {dimensionNames[h.to_section] || h.to_section}
+                              </span>
+                              <span className="text-muted">· by {h.actor || 'unknown'} · {new Date(h.created_at + 'Z').toLocaleString()}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </Fragment>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Active budget source overrides — audit trail + revert ── */}
+      <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <h3 className="text-sm font-bold text-navy">Active Budget Source Overrides {bsOverrides.length > 0 && `(${bsOverrides.length})`}</h3>
+          <p className="text-[10px] text-muted mt-0.5">
+            Relabels which book (Corporate/KIFIYA or Programme/SAFEE) this employee's payroll and pension count under on the dashboard — doesn't change Business Central's own payroll records.
+            Reverting removes the override — the employee goes back to whichever book BC's payroll rows actually belong to on the next sync.
+          </p>
+        </div>
+        {loadingBsOv ? (
+          <p className="text-xs px-5 py-4 text-muted">Loading…</p>
+        ) : bsOverrides.length === 0 ? (
+          <p className="text-xs px-5 py-4 text-muted">No budget source overrides set — every employee is showing whichever payroll book Business Central reports.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {bsOverrides.map(o => {
+              const isOpen = bsHistoryOpenNo === o.employee_no
+              const history = bsHistoryByEmp[o.employee_no]
+              return (
+                <Fragment key={o.employee_no}>
+                  <div className="px-5 py-3 flex items-center gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate text-navy">{o.employee_name || o.employee_no}</p>
+                      <p className="text-[10px] mt-0.5 text-muted">
+                        {BUDGET_SOURCE_LABEL[o.from_source] || o.from_source || 'Unknown'} → <span style={{ color: ORANGE, fontWeight: 700 }}>{BUDGET_SOURCE_LABEL[o.budget_source] || o.budget_source}</span>
+                      </p>
+                      <p className="text-[10px] mt-0.5 text-muted">by {o.updated_by || 'unknown'} · {new Date(o.updated_at + 'Z').toLocaleString()}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleBsHistory(o.employee_no)}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy transition-colors"
+                    >
+                      {isOpen ? 'Hide history' : 'History'}
+                    </button>
+                    <button
+                      onClick={() => revertSource(o.employee_no)}
+                      disabled={busy}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border transition-colors disabled:opacity-40"
+                      style={{ color: RED }}
+                    >
+                      Revert
+                    </button>
+                  </div>
+                  {isOpen && (
+                    <div className="px-5 pb-3 pt-1" style={{ background: '#F7FAFA' }}>
+                      {loadingBsHistory && !history ? (
+                        <p className="text-[11px] text-muted py-2">Loading history…</p>
+                      ) : !history || history.length === 0 ? (
+                        <p className="text-[11px] text-muted py-2">No change history recorded for this employee.</p>
+                      ) : (
+                        <ul className="space-y-1.5 py-2">
+                          {history.map((h, i) => (
+                            <li key={i} className="text-[11px] text-navy flex flex-wrap items-center gap-1">
+                              <span className="font-bold" style={{ color: h.action === 'revert' ? RED : ORANGE }}>
+                                {h.action === 'revert' ? 'Reverted' : 'Set'}
+                              </span>
+                              <span className="text-muted">
+                                {BUDGET_SOURCE_LABEL[h.from_source] || h.from_source || 'Unknown'} → {BUDGET_SOURCE_LABEL[h.to_source] || h.to_source}
                               </span>
                               <span className="text-muted">· by {h.actor || 'unknown'} · {new Date(h.created_at + 'Z').toLocaleString()}</span>
                             </li>
