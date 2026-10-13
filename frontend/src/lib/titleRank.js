@@ -1,13 +1,15 @@
 // Seniority ranking for job titles, used wherever a page groups employees by job title
 // within a section/department and needs the most senior titles pinned to the top rather
 // than sorted purely by headcount/cost. Chief and Director are matched as a literal
-// prefix (e.g. "Chief Executive Officer", "Director of Finance"); Manager/Lead/Officer
-// are matched anywhere in the title (word boundary) since those almost always appear at
-// the END of a real title ("HR Manager", "Team Lead", "Compliance Officer") rather than
-// the start. Anything that matches no tier sorts last, in whatever order the caller
-// already uses as a tie-break.
+// prefix (e.g. "Chief Executive Officer", "Director of Finance", "Deputy Chief Growth
+// Officer" — "Deputy " is allowed before "Chief" since that's still a Chief-tier role,
+// just not the top one); Manager/Lead/Officer are matched anywhere in the title (word
+// boundary) since those almost always appear at the END of a real title ("HR Manager",
+// "Team Lead", "Compliance Officer") rather than the start. Anything that matches no tier
+// sorts last, in whatever order the caller already uses as a tie-break.
 const STARTS_WITH_TIERS = [
   { rank: 0, re: /^chief\b/i },
+  { rank: 0.5, re: /^deputy\s+chief\b/i },
   { rank: 1, re: /^director\b/i },
 ]
 const CONTAINS_TIERS = [
