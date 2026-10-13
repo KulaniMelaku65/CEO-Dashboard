@@ -3405,6 +3405,139 @@ async function buildSnapshot(targetDate) {
     }
   }
 
+  // P&L by Business Line — BUS-003 PL / BUS-004PL / BUS-007 PL, three Account Schedules
+  // added in BC specifically for this (ScheduleName values confirmed live against
+  // KFT_MGT_RPT_Lines, not guessed — 'BUS-004PL' has no space before 'PL', unlike the
+  // other two). Unlike M-MGT-RPT, every Total/subtotal/margin row in these three
+  // schedules (Total revenue, KFT-Total Cost of Sales, Total OPEX, Net Profit, EBITDA,
+  // both margin %) is a byte-for-byte copy of the company-wide M-MGT-RPT formulas —
+  // e.g. "Total revenue" sums all 14 company-wide revenue accounts (5013-5026) in all
+  // three schedules alike. Using those rows as written would show the same
+  // whole-company total on all three business-line pages. Only the individually
+  // hand-picked leaf accounts are genuinely scoped to that line — identified as rows
+  // where Totaling is literally just the row's own account number (not a formula) and
+  // Indentation > 0 (which excludes the section-header rows that reuse an anchor
+  // account number, e.g. "Revenue" itself sits on account 5010 at Indentation 0). Every
+  // total below is computed locally from just those leaf accounts.
+  const BUSINESS_LINE_SCHEDULES = [
+    { code: 'BUS-003', name: 'Sharia Finance & Market Solutions',  scheduleName: 'BUS-003 PL' },
+    { code: 'BUS-004', name: 'Smart Mobility',                     scheduleName: 'BUS-004PL'  },
+    { code: 'BUS-007', name: 'Financial & Market Linkage Solutions', scheduleName: 'BUS-007 PL' }
+  ];
+  let businessLines = [];
+  if (bcAvail) {
+    try {
+      const { mgtLines: mgtLinesForBL } = await getBcStatic();
+      const monthsForBL = Array.from({ length: lastDataM + 1 }, (_, i) => i);
+      const months = monthsForBL.length || 1;
+
+      businessLines = BUSINESS_LINE_SCHEDULES.map(({ code, name, scheduleName }) => {
+        const detailRows = mgtLinesForBL.filter(r =>
+          r.ScheduleName === scheduleName && r.TotalingType === 'Posting Accounts' &&
+          r.RowNo && r.Totaling === r.RowNo && Number(r.Indentation) > 0
+        );
+
+        const revenueLines = [], cosLines = [], opexLines = [], salaryLines = [];
+        detailRows.forEach(r => {
+          const acct = r.RowNo;
+          const line = { account: acct, description: r.Description || acct };
+          if (inRange(acct, CONFIG.ranges.revenue)) revenueLines.push(line);
+          else if (inRange(acct, CONFIG.ranges.cosBpass) || inRange(acct, CONFIG.ranges.cosProduct)) cosLines.push(line);
+          else if (inRange(acct, CONFIG.ranges.salaries)) salaryLines.push(line);
+          else if (inRange(acct, CONFIG.ranges.opexA) || inRange(acct, CONFIG.ranges.opexB)) opexLines.push(line);
+        });
+
+        const acctAmt = acct => sumAccts(actuals, new Set([acct]));
+        const revenue  = -revenueLines.reduce((s, l) => s + acctAmt(l.account), 0);
+        const cos      =  cosLines.reduce((s, l) => s + acctAmt(l.account), 0);
+        const salaries =  salaryLines.reduce((s, l) => s + acctAmt(l.account), 0);
+        const opex     =  opexLines.reduce((s, l) => s + acctAmt(l.account), 0);
+        const grossProfit  = revenue - cos;
+        const totalOpex    = salaries + opex;
+        const ebitda        = grossProfit - totalOpex; // Net Profit === EBITDA here: these
+        // schedules allocate no Depreciation/Amortization or Financial Costs per line
+        // (same as the sample reports — "Net profit" and "EBITDA (as reported)" always
+        // matched), so there is nothing further to subtract.
+        const grossMarginPct  = revenue ? Math.round(grossProfit / revenue * 1000) / 10 : null;
+        const ebitdaMarginPct = revenue ? Math.round(ebitda / revenue * 1000) / 10 : null;
+
+        // Per-account revenue mix, actual only, sorted largest first — a zero-actual line
+        // still appears, since a configured account with no postings yet is itself worth
+        // surfacing (the sample reports call this out explicitly as a "diversification gap").
+        const revenueMix = revenueLines.map(l => {
+          const amt = -acctAmt(l.account);
+          return { description: l.description, account: l.account, actual: toM(amt), pct: revenue ? Math.round(amt / revenue * 1000) / 10 : 0 };
+        }).sort((a, b) => b.actual - a.actual);
+
+        const opexDetail = [...salaryLines, ...opexLines].map(l => {
+          const amt = acctAmt(l.account);
+          return { description: l.description, account: l.account, actual: toM(amt) };
+        }).sort((a, b) => b.actual - a.actual);
+
+        // Per-account Cost of Sales breakdown, same shape as revenueMix — the P&L
+        // statement table lists these individually (e.g. "FMLS Project" vs "Financial
+        // and Market Linkage solutions"), not just the Cost of Sales total.
+        const costOfSalesMix = cosLines.map(l => {
+          const amt = acctAmt(l.account);
+          return { description: l.description, account: l.account, actual: toM(amt), pct: cos ? Math.round(amt / cos * 1000) / 10 : 0 };
+        }).sort((a, b) => b.actual - a.actual);
+
+        const avgMonthlyRevenueM = toM(revenue / months);
+        const avgMonthlyEbitdaM  = toM(ebitda / months);
+
+        // Deterministic, number-driven key takeaways — same substance as the hand-built
+        // sample reports (concentration, margin, unallocated OPEX, zero-revenue lines,
+        // run-rate), computed from the actual figures rather than fixed wording.
+        const takeaways = [];
+        const nonZeroMix = revenueMix.filter(r => r.actual !== 0);
+        const zeroMix = revenueMix.filter(r => r.actual === 0);
+        if (revenue !== 0) {
+          if (nonZeroMix.length > 1) {
+            takeaways.push(`Revenue of ETB ${toM(revenue)}M across ${nonZeroMix.length} active revenue line(s); ${nonZeroMix[0].description} alone contributes ${nonZeroMix[0].pct}%.`);
+          } else if (nonZeroMix.length === 1) {
+            takeaways.push(`Revenue of ETB ${toM(revenue)}M, entirely from ${nonZeroMix[0].description}.`);
+          }
+          takeaways.push(`Cost of sales of ETB ${toM(cos)}M (${Math.round(cos / revenue * 1000) / 10}% of revenue) gives a gross margin of ${grossMarginPct}%.`);
+        }
+        if (salaries === 0 && opex === 0) {
+          takeaways.push(`No salaries or OPEX are allocated to this line, so EBITDA of ETB ${toM(ebitda)}M does not reflect fully-loaded profitability.`);
+        } else if (salaries === 0) {
+          takeaways.push(`No salaries are allocated; OPEX of ETB ${toM(opex)}M is included, but EBITDA is still not fully-loaded profitability.`);
+        }
+        if (zeroMix.length > 0) {
+          takeaways.push(`${zeroMix.map(r => r.description).join(', ')} ${zeroMix.length > 1 ? 'are' : 'is'} set up but recorded no revenue in the period.`);
+        }
+        if (revenue !== 0) {
+          takeaways.push(`Run-rate of ETB ${avgMonthlyRevenueM}M revenue per month implies ETB ${toM(revenue / months * 12)}M on a 12-month basis.`);
+        }
+
+        return {
+          code, name, scheduleName, months,
+          revenue: toM(revenue),
+          costOfSales: toM(cos),
+          grossProfit: toM(grossProfit),
+          grossMarginPct,
+          salaries: toM(salaries),
+          opex: toM(opex),
+          totalOpex: toM(totalOpex),
+          netProfit: toM(ebitda),
+          ebitda: toM(ebitda),
+          ebitdaMarginPct,
+          avgMonthlyRevenue: avgMonthlyRevenueM,
+          avgMonthlyEbitda: avgMonthlyEbitdaM,
+          costOfSalesToRevenuePct: revenue ? Math.round(cos / revenue * 1000) / 10 : null,
+          opexToRevenuePct: revenue ? Math.round(totalOpex / revenue * 1000) / 10 : null,
+          revenueMix,
+          costOfSalesMix,
+          opexDetail,
+          takeaways
+        };
+      });
+    } catch (e) {
+      console.warn('  Business Line P&L build failed:', e.message);
+    }
+  }
+
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
@@ -3425,7 +3558,8 @@ async function buildSnapshot(targetDate) {
     financialSS: { revenueByBank },
     arAging,
     apAging,
-    procurement
+    procurement,
+    businessLines
   };
 }
 

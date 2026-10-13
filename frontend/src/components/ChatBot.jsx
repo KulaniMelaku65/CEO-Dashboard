@@ -13,6 +13,7 @@ const PAGE_DATA_KEYS = {
   'finance':                  ['reports', 'budgetActual', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'financial':                ['reports', 'budgetActual', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'financial-2':              ['reports', 'budgetActualIfrs18', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
+  'financial-bu':             ['businessLines'],
   'budget':                   ['corporateBudget', 'budgetOverview'],
   'collections':              ['budgetOverview', 'financialSS', 'loanOps'],
   'balance-sheet':            ['balanceSheet'],

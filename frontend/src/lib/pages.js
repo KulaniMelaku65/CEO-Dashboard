@@ -12,6 +12,7 @@ export const PAGE_REGISTRY = [
   { id: 'finance',       label: 'Finance' },
   { id: 'financial',     label: 'Financial Performance',          parentId: 'finance' },
   { id: 'financial-2',   label: 'Detailed Financial Performance', parentId: 'finance' },
+  { id: 'financial-bu',  label: 'P&L by Business Line',           parentId: 'finance' },
   { id: 'budget',        label: 'Corporate Budget' },
   { id: 'collections',   label: 'Collections & Revenue' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
