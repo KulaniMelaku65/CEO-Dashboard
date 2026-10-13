@@ -3447,17 +3447,69 @@ async function buildSnapshot(targetDate) {
           else if (inRange(acct, CONFIG.ranges.opexA) || inRange(acct, CONFIG.ranges.opexB)) opexLines.push(line);
         });
 
-        const acctAmt = acct => sumAccts(actuals, new Set([acct]));
-        const revenue  = -revenueLines.reduce((s, l) => s + acctAmt(l.account), 0);
-        const cos      =  cosLines.reduce((s, l) => s + acctAmt(l.account), 0);
-        const salaries =  salaryLines.reduce((s, l) => s + acctAmt(l.account), 0);
-        const opex     =  opexLines.reduce((s, l) => s + acctAmt(l.account), 0);
+        // Per-account monthly series (actual + budget), so the frontend can recompute
+        // every figure on this page — KPI cards, P&L statement, mix tables, takeaways —
+        // for any month/quarter selection, the same way Financial Performance's dimActual
+        // lets it recompute under a VC/BU filter without another round trip. Budget is
+        // summed the same way every other budget figure in this file is (Math.abs, since
+        // BC's budget entries aren't credit/debit-signed the way GL postings are) — kept
+        // even if these niche accounts turn out to carry no budget, so the page degrades
+        // to actual-only rather than breaking.
+        const acctMonthly = acct => {
+          const arr = Array(12).fill(0);
+          actuals.forEach(x => {
+            if (String(x.accountNo) !== acct) return;
+            const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+            if (mi >= 0) arr[mi] += num(x.amount);
+          });
+          return arr;
+        };
+        const acctMonthlyBudget = acct => {
+          const arr = Array(12).fill(0);
+          budgets.forEach(x => {
+            if (String(x.accountNo) !== acct) return;
+            const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+            if (mi >= 0) arr[mi] += Math.abs(num(x.amount));
+          });
+          return arr;
+        };
+        const sumArrays = arrs => Array(12).fill(0).map((_, i) => arrs.reduce((s, a) => s + a[i], 0));
+        const sumAll = arr => arr.reduce((s, v) => s + v, 0);
+
+        [...revenueLines, ...cosLines, ...salaryLines, ...opexLines].forEach(l => {
+          l.monthly = acctMonthly(l.account);
+          l.budgetMonthly = acctMonthlyBudget(l.account);
+        });
+
+        // Revenue accounts are credit-normal (negative in GL postings) — negated here,
+        // same convention as every other revenue figure in this file.
+        const revenueMonthly       = sumArrays(revenueLines.map(l => l.monthly)).map(v => -v);
+        const revenueBudgetMonthly = sumArrays(revenueLines.map(l => l.budgetMonthly));
+        const costOfSalesMonthly       = sumArrays(cosLines.map(l => l.monthly));
+        const costOfSalesBudgetMonthly = sumArrays(cosLines.map(l => l.budgetMonthly));
+        const salariesMonthly       = sumArrays(salaryLines.map(l => l.monthly));
+        const salariesBudgetMonthly = sumArrays(salaryLines.map(l => l.budgetMonthly));
+        const opexMonthly       = sumArrays(opexLines.map(l => l.monthly));
+        const opexBudgetMonthly = sumArrays(opexLines.map(l => l.budgetMonthly));
+
+        const revenue  = sumAll(revenueMonthly);
+        const cos      = sumAll(costOfSalesMonthly);
+        const salaries = sumAll(salariesMonthly);
+        const opex     = sumAll(opexMonthly);
+        const revenueBudget  = sumAll(revenueBudgetMonthly);
+        const costOfSalesBudget = sumAll(costOfSalesBudgetMonthly);
+        const salariesBudget = sumAll(salariesBudgetMonthly);
+        const opexBudget     = sumAll(opexBudgetMonthly);
+
         const grossProfit  = revenue - cos;
         const totalOpex    = salaries + opex;
         const ebitda        = grossProfit - totalOpex; // Net Profit === EBITDA here: these
         // schedules allocate no Depreciation/Amortization or Financial Costs per line
         // (same as the sample reports — "Net profit" and "EBITDA (as reported)" always
         // matched), so there is nothing further to subtract.
+        const grossProfitBudget = revenueBudget - costOfSalesBudget;
+        const totalOpexBudget   = salariesBudget + opexBudget;
+        const ebitdaBudget      = grossProfitBudget - totalOpexBudget;
         const grossMarginPct  = revenue ? Math.round(grossProfit / revenue * 1000) / 10 : null;
         const ebitdaMarginPct = revenue ? Math.round(ebitda / revenue * 1000) / 10 : null;
 
@@ -3465,12 +3517,12 @@ async function buildSnapshot(targetDate) {
         // still appears, since a configured account with no postings yet is itself worth
         // surfacing (the sample reports call this out explicitly as a "diversification gap").
         const revenueMix = revenueLines.map(l => {
-          const amt = -acctAmt(l.account);
+          const amt = -sumAll(l.monthly);
           return { description: l.description, account: l.account, actual: toM(amt), pct: revenue ? Math.round(amt / revenue * 1000) / 10 : 0 };
         }).sort((a, b) => b.actual - a.actual);
 
         const opexDetail = [...salaryLines, ...opexLines].map(l => {
-          const amt = acctAmt(l.account);
+          const amt = sumAll(l.monthly);
           return { description: l.description, account: l.account, actual: toM(amt) };
         }).sort((a, b) => b.actual - a.actual);
 
@@ -3478,7 +3530,7 @@ async function buildSnapshot(targetDate) {
         // statement table lists these individually (e.g. "FMLS Project" vs "Financial
         // and Market Linkage solutions"), not just the Cost of Sales total.
         const costOfSalesMix = cosLines.map(l => {
-          const amt = acctAmt(l.account);
+          const amt = sumAll(l.monthly);
           return { description: l.description, account: l.account, actual: toM(amt), pct: cos ? Math.round(amt / cos * 1000) / 10 : 0 };
         }).sort((a, b) => b.actual - a.actual);
 
@@ -3523,6 +3575,14 @@ async function buildSnapshot(targetDate) {
           netProfit: toM(ebitda),
           ebitda: toM(ebitda),
           ebitdaMarginPct,
+          // Budget YTD — null-safe for the frontend badge: these niche per-line accounts
+          // may carry no budget postings at all, in which case every *Budget field is 0
+          // and the UI should just omit the "vs budget" comparison rather than show it.
+          revenueBudget: toM(revenueBudget),
+          costOfSalesBudget: toM(costOfSalesBudget),
+          grossProfitBudget: toM(grossProfitBudget),
+          totalOpexBudget: toM(totalOpexBudget),
+          ebitdaBudget: toM(ebitdaBudget),
           avgMonthlyRevenue: avgMonthlyRevenueM,
           avgMonthlyEbitda: avgMonthlyEbitdaM,
           costOfSalesToRevenuePct: revenue ? Math.round(cos / revenue * 1000) / 10 : null,
@@ -3530,7 +3590,24 @@ async function buildSnapshot(targetDate) {
           revenueMix,
           costOfSalesMix,
           opexDetail,
-          takeaways
+          takeaways,
+          // Monthly series (actual + budget), scaled to ETB millions like every other
+          // figure in this snapshot (toM) — for client-side period filtering/MoM/QoQ, same
+          // (category, month) shape Financial Performance's monthlyLines already uses.
+          monthly: {
+            revenue: revenueMonthly.map(toM), revenueBudget: revenueBudgetMonthly.map(toM),
+            costOfSales: costOfSalesMonthly.map(toM), costOfSalesBudget: costOfSalesBudgetMonthly.map(toM),
+            salaries: salariesMonthly.map(toM), salariesBudget: salariesBudgetMonthly.map(toM),
+            opex: opexMonthly.map(toM), opexBudget: opexBudgetMonthly.map(toM),
+          },
+          // Per-account monthly series (also scaled to M), for recomputing revenueMix/
+          // costOfSalesMix/opexDetail and the full P&L statement under any period filter.
+          accounts: {
+            revenue: revenueLines.map(l => ({ account: l.account, description: l.description, monthly: l.monthly.map(toM), budgetMonthly: l.budgetMonthly.map(toM) })),
+            costOfSales: cosLines.map(l => ({ account: l.account, description: l.description, monthly: l.monthly.map(toM), budgetMonthly: l.budgetMonthly.map(toM) })),
+            salaries: salaryLines.map(l => ({ account: l.account, description: l.description, monthly: l.monthly.map(toM), budgetMonthly: l.budgetMonthly.map(toM) })),
+            opex: opexLines.map(l => ({ account: l.account, description: l.description, monthly: l.monthly.map(toM), budgetMonthly: l.budgetMonthly.map(toM) })),
+          },
         };
       });
     } catch (e) {
