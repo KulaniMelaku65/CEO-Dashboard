@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
   Tooltip, Legend, LineChart, Line, AreaChart, Area, ComposedChart
@@ -7,6 +7,7 @@ import KpiCard from '../components/KpiCard.jsx'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 import { compareByTitleRank } from '../lib/titleRank.js'
+import { budget as budgetApi } from '../lib/api.js'
 
 // Local-only toggle — keep false in anything committed/pushed.
 const SHOW_PAYROLL_TYPE_FILTER = false
@@ -71,6 +72,162 @@ function yearsOfService(hired) {
   const yrs = ms / (1000 * 60 * 60 * 24 * 365.25)
   if (yrs < 1) return `${Math.floor(yrs * 12)}m`
   return `${yrs.toFixed(1)}y`
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HR Cost Forecast — lets an analyst pick a different Business Central budget
+// version and see what it projects for HR salary cost in the remaining months
+// of the year, next to the budget the rest of the dashboard already runs on.
+// Self-contained: fetches its own data via the budget.* API client (the same
+// one the Corporate Budget page already uses) rather than threading through
+// this page's existing filter/aggregation state, since a budget *version*
+// comparison is a different question from "actual cost so far".
+//
+// "HR cost" here is Business Central's own "810" GL account category (accounts
+// 8101-8106, "Opex-CEO Office/Finance/HR/Operations/Interns" — the same range
+// CONFIG.ranges.salaries uses in snapshot-builder.js) — labelled "Salaries &
+// Benefits" by the Corporate Budget API (backend/routes/bc.js's CAT_LABELS) —
+// a budget line, not the payroll-system-derived actual cost the rest of this
+// page shows. The two are genuinely different figures (budgeted GL salary
+// postings vs. actual headcount payroll), so this panel compares
+// budget-to-budget, not budget-to-actual.
+// ═══════════════════════════════════════════════════════════════════════════
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const HR_CATEGORY_CODE = '810'
+
+function hrCategoryMonthly(budgetData) {
+  const cat = (budgetData?.byCategory || []).find(c => c.code === HR_CATEGORY_CODE)
+  return cat?.monthly || Array(12).fill(0)
+}
+
+function BudgetForecastPanel() {
+  const [names, setNames]               = useState([])
+  const [defaultName, setDefaultName]   = useState(null)
+  const [altName, setAltName]           = useState(null)
+  const [defaultData, setDefaultData]   = useState(null)
+  const [altData, setAltData]           = useState(null)
+  const [loadingAlt, setLoadingAlt]     = useState(false)
+  const [error, setError]               = useState('')
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [namesRes, defRes] = await Promise.all([budgetApi.names(), budgetApi.default()])
+        const namesList = namesRes.ok ? await namesRes.json() : []
+        const def = defRes.ok ? (await defRes.json()).name : null
+        setNames(namesList)
+        setDefaultName(def)
+        // Default the comparison to the first OTHER budget version, so the panel shows a
+        // real comparison immediately rather than an empty picker.
+        const firstOther = namesList.find(n => n.name !== def)
+        if (firstOther) setAltName(firstOther.name)
+        if (def) {
+          const dataRes = await budgetApi.data(def)
+          if (dataRes.ok) setDefaultData(await dataRes.json())
+        }
+      } catch { setError('Could not load budget versions.') }
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!altName) return
+    setLoadingAlt(true); setError('')
+    budgetApi.data(altName).then(async r => {
+      if (!r.ok) { setError(`No data for budget "${altName}".`); setAltData(null); return }
+      const json = await r.json()
+      // Occasionally this endpoint comes back with only a handful of rows for a budget
+      // that genuinely has dozens of accounts — a known, not-yet-root-caused quirk on
+      // Business Central's side (see backend/routes/bc.js's comment on rawAccountCount).
+      // Surface it rather than silently plotting a near-empty "Alternate" series next to
+      // a real one, which would misrepresent the comparison.
+      if ((json.rawAccountCount || 0) <= 2) {
+        setError(`Business Central returned unusually little data for "${altName}" (${json.rawAccountCount} account${json.rawAccountCount === 1 ? '' : 's'}) — try again in a moment, or pick a different budget version. This isn't something this page caused.`)
+      }
+      setAltData(json)
+    }).catch(() => setError('Could not load that budget.')).finally(() => setLoadingAlt(false))
+  }, [altName])
+
+  const curMonth = new Date().getMonth() // 0-indexed; months from here on are "coming"
+  const defaultMonthly = hrCategoryMonthly(defaultData)
+  const altMonthly     = hrCategoryMonthly(altData)
+  const altLooksIncomplete = altData && (altData.rawAccountCount || 0) <= 2
+  const chartData = MONTH_LABELS.map((label, i) => ({
+    label, isPast: i < curMonth,
+    Current: defaultMonthly[i] || 0,
+    Alternate: altData ? (altMonthly[i] || 0) : null,
+  }))
+
+  const sumFrom = (arr, i0) => arr.slice(i0).reduce((s, v) => s + v, 0)
+  const remainingCurrent = sumFrom(defaultMonthly, curMonth)
+  const remainingAlt     = sumFrom(altMonthly, curMonth)
+  const delta     = remainingAlt - remainingCurrent
+  const deltaPct  = remainingCurrent ? (delta / remainingCurrent * 100) : null
+
+  return (
+    <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-sm font-bold text-navy">HR Cost Forecast — Budget Scenario</h3>
+          <p className="text-[10px] text-muted mt-0.5">
+            Salaries &amp; Benefits (GL category 810) by month, current budget vs. an alternate version — {MONTH_LABELS[curMonth]} onward is what's still ahead this year.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Compare current budget to</span>
+          <select
+            value={altName || ''}
+            onChange={e => setAltName(e.target.value)}
+            className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+          >
+            {names.filter(n => n.name !== defaultName).map(n => (
+              <option key={n.name} value={n.name}>{n.name}{n.description ? ` — ${n.description}` : ''}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {error && <p className="text-xs font-semibold mb-3" style={{ color: '#E5544B' }}>{error}</p>}
+
+      {!defaultData ? (
+        <p className="text-xs text-muted py-6 text-center">Loading current budget…</p>
+      ) : (
+        <>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={fmtETBRaw} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v) => fmtETBRaw(v)} contentStyle={TOOLTIP_STYLE} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Current" name={`Current (${defaultName})`} fill="#02404F" radius={[4, 4, 0, 0]} />
+              {!altLooksIncomplete && (
+                <Bar dataKey="Alternate" name={altName ? `Alternate (${altName})` : 'Alternate'} fill="#EB7D23" radius={[4, 4, 0, 0]} opacity={loadingAlt ? 0.4 : 1} />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+
+          {altData && !altLooksIncomplete && (
+            <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Current budget, {MONTH_LABELS[curMonth]}–Dec</p>
+                <p className="text-sm font-extrabold text-navy">{fmtETBRaw(remainingCurrent)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">{altName}, {MONTH_LABELS[curMonth]}–Dec</p>
+                <p className="text-sm font-extrabold text-navy">{fmtETBRaw(remainingAlt)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Effect of switching</p>
+                <p className="text-sm font-extrabold" style={{ color: delta > 0 ? '#E5544B' : delta < 0 ? '#2EBD85' : '#02404F' }}>
+                  {delta >= 0 ? '+' : ''}{fmtETBRaw(delta)}{deltaPct != null ? ` (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(1)}%)` : ''}
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
 }
 
 export default function EmployeeCost({ data }) {
@@ -425,6 +582,8 @@ export default function EmployeeCost({ data }) {
         <KpiCard label="ETH Payroll Cost"   value={fmtETBRaw(eth)}       sub="Virtual Company: ETH" />
         <KpiCard label="HUB Payroll Cost"   value={fmtETBRaw(hub)}       sub="Virtual Company: HUB" />
       </div>
+
+      <BudgetForecastPanel />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Clustered bar: KIFIYA vs SAFEE by dept */}

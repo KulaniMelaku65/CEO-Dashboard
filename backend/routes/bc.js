@@ -14,6 +14,13 @@ function safeName(name) {
   return name.replace(/'/g, "''"); // OData single-quote escape
 }
 
+// GET /api/bc/budget-default — which budget name the rest of the dashboard (Financial
+// Performance, snapshot-builder.js's CONFIG.BUDGET_NAME) is actually built from, so a
+// scenario comparison UI can label "current" correctly instead of guessing.
+router.get('/budget-default', requireAuth, (_req, res) => {
+  res.json({ name: process.env.BC_BUDGET_NAME || '20.1' });
+});
+
 // GET /api/bc/budget-names — from GetBudgetName table (fast, includes descriptions)
 router.get('/budget-names', requireAuth, async (_req, res) => {
   if (!isBcConfigured())
@@ -106,10 +113,13 @@ router.get('/budget/:name', requireAuth, async (req, res) => {
       return { unit: bu, monthly, total: arrSum(monthly) };
     });
 
-    // 3-digit prefix → OPEX category labels
+    // 3-digit prefix → OPEX category labels. '810' (Opex-CEO Office/Finance/HR/
+    // Operations/Interns, accounts 8101-8106 — same range as CONFIG.ranges.salaries in
+    // snapshot-builder.js) was keyed '801' here, which matches no real account prefix in
+    // this chart of accounts and silently produced an empty "Salaries & Benefits" bucket.
     const CAT_LABELS = {
       '501': 'Revenue',           '603': 'COS - Salaries',
-      '701': 'Selling & Dist.',   '801': 'Salaries & Benefits',
+      '701': 'Selling & Dist.',   '810': 'Salaries & Benefits',
       '811': 'Insurance',         '820': 'Repair & Maintenance',
       '822': 'Hotels & Accom.',   '824': 'Rentals & Hires',
       '826': 'Consultancy',       '830': 'Utilities',
@@ -125,6 +135,16 @@ router.get('/budget/:name', requireAuth, async (req, res) => {
     });
     const byCategory = Object.values(catMap).map(c => ({ ...c, total: arrSum(c.monthly) }));
 
+    // rawEntryCount/rawAccountCount let a caller sanity-check the result — this endpoint
+    // has been observed to occasionally return a near-empty result for a budget version
+    // from the long-running backend process (e.g. 13 rows / 1 account) for a query that a
+    // one-off script run moments later resolves fully (e.g. 997 rows / 58 accounts) for
+    // the exact same filter. Retrying in-process and cache-busting the URL both failed to
+    // reproduce the correct result, and it was consistently reproducible for specific
+    // budget names (not others) across repeated calls within the same process — pointing
+    // to something on Business Central's OData service itself (a session- or query-plan
+    // cache keyed oddly per filter value) rather than anything on this side. Flagging it
+    // here rather than silently shipping a wrong/near-zero result as if it were real data.
     res.json({
       budgetName: req.params.name,
       months: MONTHS,
@@ -133,7 +153,9 @@ router.get('/budget/:name', requireAuth, async (req, res) => {
       accounts,
       totals:     { monthly: grandMonthly, total: arrSum(grandMonthly) },
       byBU,
-      byCategory
+      byCategory,
+      rawEntryCount: entries.length,
+      rawAccountCount: new Set(entries.map(e => e.accountNo)).size
     });
   } catch (e) {
     console.error('[bc/budget]', e.message);

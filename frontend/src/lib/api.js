@@ -41,8 +41,9 @@ export const ai = {
 }
 
 export const budget = {
-  names: ()     => req('/api/bc/budget-names'),
-  data:  (name) => req(`/api/bc/budget/${encodeURIComponent(name)}`),
+  names:   ()     => req('/api/bc/budget-names'),
+  data:    (name) => req(`/api/bc/budget/${encodeURIComponent(name)}`),
+  default: ()     => req('/api/bc/budget-default'),
 }
 
 export const departmentOverrides = {
