@@ -4,6 +4,7 @@ import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 import { departmentOverrides } from '../lib/api.js'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
+import { compareByTitleRank } from '../lib/titleRank.js'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -52,6 +53,9 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
   const [targetSection, setTarget]        = useState('')
   const [busy, setBusy]                   = useState(false)
   const [error, setError]                 = useState('')
+  const [historyOpenNo, setHistoryOpenNo] = useState(null)
+  const [historyByEmp, setHistoryByEmp]   = useState({})
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   const loadOverrides = () => {
     setLoadingOv(true)
@@ -247,7 +251,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
           headcount: jt.activeEmpSet.size,
           monthly: Math.round(jt.monthly), kifiya: Math.round(jt.kifiya), safee: Math.round(jt.safee),
           employees: [...jt.employees.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-        })).sort((a, b) => b.monthly - a.monthly || a.jobTitle.localeCompare(b.jobTitle))
+        })).sort(compareByTitleRank(jt => jt.jobTitle, (a, b) => b.monthly - a.monthly || a.jobTitle.localeCompare(b.jobTitle)))
         return {
           sectionCode: sec.sectionCode, sectionName: sec.sectionName, headcount: sec.activeEmpSet.size,
           monthly: Math.round(sec.monthly), kifiya: Math.round(sec.kifiya), safee: Math.round(sec.safee), jobTitles
@@ -299,6 +303,22 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       loadOverrides()
       onDataRefresh?.()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  // Full change history for one employee — every set/revert ever recorded, not just the
+  // current override shown above. Fetched once per employee and cached, since the
+  // department_override_audit table is append-only (never changes once loaded here).
+  const toggleHistory = async (employeeNo) => {
+    if (historyOpenNo === employeeNo) { setHistoryOpenNo(null); return }
+    setHistoryOpenNo(employeeNo)
+    if (historyByEmp[employeeNo]) return
+    setLoadingHistory(true)
+    try {
+      const r = await departmentOverrides.history(employeeNo)
+      const rows = r.ok ? await r.json() : []
+      setHistoryByEmp(cur => ({ ...cur, [employeeNo]: rows }))
+    } catch { setHistoryByEmp(cur => ({ ...cur, [employeeNo]: [] })) }
+    finally { setLoadingHistory(false) }
   }
 
   return (
@@ -549,25 +569,60 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
           <p className="text-xs px-5 py-4 text-muted">No overrides set — every employee is showing their Business Central department.</p>
         ) : (
           <div className="divide-y divide-border">
-            {overrides.map(o => (
-              <div key={o.employee_no} className="px-5 py-3 flex items-center gap-3 flex-wrap">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate text-navy">{o.employee_name || o.employee_no}</p>
-                  <p className="text-[10px] mt-0.5 text-muted">
-                    {dimensionNames[o.from_section] || o.from_section || 'Unknown'} → <span style={{ color: TEAL, fontWeight: 700 }}>{dimensionNames[o.section_code] || o.section_code}</span>
-                  </p>
-                  <p className="text-[10px] mt-0.5 text-muted">by {o.updated_by || 'unknown'} · {new Date(o.updated_at + 'Z').toLocaleString()}</p>
-                </div>
-                <button
-                  onClick={() => revert(o.employee_no)}
-                  disabled={busy}
-                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border transition-colors disabled:opacity-40"
-                  style={{ color: RED }}
-                >
-                  Revert
-                </button>
-              </div>
-            ))}
+            {overrides.map(o => {
+              const isOpen = historyOpenNo === o.employee_no
+              const history = historyByEmp[o.employee_no]
+              return (
+                <Fragment key={o.employee_no}>
+                  <div className="px-5 py-3 flex items-center gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate text-navy">{o.employee_name || o.employee_no}</p>
+                      <p className="text-[10px] mt-0.5 text-muted">
+                        {dimensionNames[o.from_section] || o.from_section || 'Unknown'} → <span style={{ color: TEAL, fontWeight: 700 }}>{dimensionNames[o.section_code] || o.section_code}</span>
+                      </p>
+                      <p className="text-[10px] mt-0.5 text-muted">by {o.updated_by || 'unknown'} · {new Date(o.updated_at + 'Z').toLocaleString()}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleHistory(o.employee_no)}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy transition-colors"
+                    >
+                      {isOpen ? 'Hide history' : 'History'}
+                    </button>
+                    <button
+                      onClick={() => revert(o.employee_no)}
+                      disabled={busy}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border transition-colors disabled:opacity-40"
+                      style={{ color: RED }}
+                    >
+                      Revert
+                    </button>
+                  </div>
+                  {isOpen && (
+                    <div className="px-5 pb-3 pt-1" style={{ background: '#F7FAFA' }}>
+                      {loadingHistory && !history ? (
+                        <p className="text-[11px] text-muted py-2">Loading history…</p>
+                      ) : !history || history.length === 0 ? (
+                        <p className="text-[11px] text-muted py-2">No change history recorded for this employee.</p>
+                      ) : (
+                        <ul className="space-y-1.5 py-2">
+                          {history.map((h, i) => (
+                            <li key={i} className="text-[11px] text-navy flex flex-wrap items-center gap-1">
+                              <span className="font-bold" style={{ color: h.action === 'revert' ? RED : TEAL }}>
+                                {h.action === 'revert' ? 'Reverted' : 'Set'}
+                              </span>
+                              <span className="text-muted">
+                                {dimensionNames[h.from_section] || h.from_section || 'Unknown'} → {dimensionNames[h.to_section] || h.to_section}
+                              </span>
+                              <span className="text-muted">· by {h.actor || 'unknown'} · {new Date(h.created_at + 'Z').toLocaleString()}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </Fragment>
+              )
+            })}
           </div>
         )}
       </div>

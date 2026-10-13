@@ -58,6 +58,24 @@ db.exec(`
     updated_at     TEXT DEFAULT (datetime('now'))
   );
 
+  -- Append-only history of every department_overrides change (set or revert) — the table
+  -- above only ever holds ONE row per employee (upserted on every change), so reassigning
+  -- someone twice or reverting an override erased the record of what happened before. This
+  -- table never updates or deletes rows, so "who changed whom from what to what, and when"
+  -- stays answerable for every change, not just the current state.
+  CREATE TABLE IF NOT EXISTS department_override_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_no    TEXT NOT NULL,
+    employee_name  TEXT,
+    from_section   TEXT,
+    to_section     TEXT,
+    action         TEXT NOT NULL, -- 'set' | 'revert'
+    actor          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_dept_override_audit_emp ON department_override_audit(employee_no, created_at DESC);
+
   -- Which sidebar pages (App.jsx's ALL_SLIDES ids) a given user can see. Presence of a
   -- row is the grant — no row for a page means no access. Managed from the Admin page.
   CREATE TABLE IF NOT EXISTS user_page_access (

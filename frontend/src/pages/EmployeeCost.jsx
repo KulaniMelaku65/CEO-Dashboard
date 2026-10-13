@@ -6,6 +6,7 @@ import {
 import KpiCard from '../components/KpiCard.jsx'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
+import { compareByTitleRank } from '../lib/titleRank.js'
 
 // Local-only toggle — keep false in anything committed/pushed.
 const SHOW_PAYROLL_TYPE_FILTER = false
@@ -293,8 +294,8 @@ export default function EmployeeCost({ data }) {
   const filteredJobTitleData = monthEvo
     ? Object.entries(monthEvo.byJobTitle || {})
         .map(([jobTitle, v]) => ({ jobTitle, male: v.male, female: v.female }))
-        .sort((a, b) => (b.male + b.female) - (a.male + a.female))
-    : Object.values(_jtC).sort((a, b) => (b.male + b.female) - (a.male + a.female))
+        .sort(compareByTitleRank(jt => jt.jobTitle, (a, b) => (b.male + b.female) - (a.male + a.female)))
+    : Object.values(_jtC).sort(compareByTitleRank(jt => jt.jobTitle, (a, b) => (b.male + b.female) - (a.male + a.female)))
 
   const filteredJobEmpMap = {}
   filteredHCEmployees.forEach(emp => {
@@ -649,7 +650,7 @@ export default function EmployeeCost({ data }) {
           )
           return Object.values(byTitle)
             .filter(j => j.total > 0)
-            .sort((a, b) => b.total - a.total)
+            .sort(compareByTitleRank(j => j.jobTitle, (a, b) => b.total - a.total))
         })()
         const fmtC = (n) => {
           if (!n && n !== 0) return '—'

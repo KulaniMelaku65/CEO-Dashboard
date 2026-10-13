@@ -3,6 +3,7 @@ import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
+import { compareByTitleRank } from '../lib/titleRank.js'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -369,7 +370,7 @@ export default function HRPageReview({ data }) {
                 safee:     Math.round(jt.safee),
                 employees: [...jt.employees.values()].sort((a, b) => (a.employeeNo || '').localeCompare(b.employeeNo || ''))
               }))
-              .sort((a, b) => b.monthly - a.monthly || a.jobTitle.localeCompare(b.jobTitle))
+              .sort(compareByTitleRank(jt => jt.jobTitle, (a, b) => b.monthly - a.monthly || a.jobTitle.localeCompare(b.jobTitle)))
             return {
               sectionCode: sec.sectionCode,
               sectionName: sec.sectionName,

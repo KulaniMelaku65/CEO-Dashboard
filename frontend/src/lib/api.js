@@ -53,6 +53,7 @@ export const departmentOverrides = {
     body: JSON.stringify({ employeeNo, employeeName, fromSection, sectionCode })
   }),
   remove: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}`, { method: 'DELETE' }),
+  history: (employeeNo) => req(`/api/department-overrides/${encodeURIComponent(employeeNo)}/history`),
 }
 
 export const kpi = {
