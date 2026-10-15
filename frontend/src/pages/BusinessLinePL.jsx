@@ -472,7 +472,11 @@ export default function BusinessLinePL({ data }) {
               <StatementRow label="Total cost of sales" value={c.costOfSales} bold />
 
               <tr><td colSpan={2}><div className="border-t border-border my-1" /></td></tr>
-              <StatementRow label="Gross profit" value={c.grossProfit} bold trStyle={{ background: '#F0F7F6' }} />
+              {/* A translucent navy tint, not a flat light gray — the row's text is the
+                  "text-navy" class, which .dark-app (index.css) flips to white; a flat light
+                  background wouldn't follow it there and the row would go near-invisible
+                  (white-on-near-white). This tint darkens right along with the dark card. */}
+              <StatementRow label="Gross profit" value={c.grossProfit} bold trStyle={{ background: 'rgba(2,64,79,0.06)' }} />
 
               <SectionHeader label="Operating Expenses" color={COLORS.opex} />
               {c.opexDetail.length
@@ -493,12 +497,16 @@ export default function BusinessLinePL({ data }) {
             <ResponsiveContainer width="100%" height={190}>
               <BarChart data={bridgeData} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }}>
                 <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: '#02404F' }} axisLine={false} tickLine={false} />
+                {/* Muted gray, not navy — this card is "bg-white" in light mode but remapped to a
+                    dark navy card by .dark-app (index.css); navy text would vanish against that.
+                    Every other chart on a bg-white card in this app uses this same '#6B7C93' for
+                    axis/label text so it reads on both themes without a dark-mode-specific branch. */}
+                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(v) => fmtETB(Math.abs(v))} />
                 <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                   {bridgeData.map((d, i) => <Cell key={i} fill={d.color} />)}
                   <LabelList dataKey="value" position="right" formatter={(v) => fmtETB(Math.abs(v))}
-                    style={{ fontSize: 11, fontWeight: 700, fill: '#02404F' }} />
+                    style={{ fontSize: 11, fontWeight: 700, fill: '#6B7C93' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
