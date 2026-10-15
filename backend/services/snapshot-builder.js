@@ -145,8 +145,20 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     console.warn('  BC not configured — skipping BC data, Superset-only snapshot');
   }
 
+  // `budgets` above carries the FULL year's pre-entered monthly budget lines — KFT_GL_Budget
+  // has no date filter, unlike `actuals`' `fy` filter (which has no upper bound either, but
+  // naturally stops at "now" since postings for months that haven't happened don't exist
+  // yet). That's needed as-is for the per-month budget arrays further down (so a future month
+  // like December still shows its planned figure in the monthly chart), but every genuinely
+  // "YTD" aggregate — the headline KPI cards and their line-item drilldowns below, both
+  // labeled "Budget vs Actual — YTD through <date>" on the frontend — must stop at the same
+  // month `actuals` does, or "YTD budget" silently becomes "full-year budget" and overstates
+  // the budget side of every YTD comparison by however many months remain in the year.
+  const ytdCutoff = new Date(targetDate + 'T23:59:59');
+  const ytdBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate) <= ytdCutoff);
+
   const A = k => sumRange(actuals, k);
-  const B = k => sumRange(budgets, k);
+  const B = k => sumRange(ytdBudgets, k);
 
   const revA = -A('revenue'),  revB = B('revenue');
   const cosA =  A('cosBpass') + A('cosProduct'),  cosB = B('cosBpass') + B('cosProduct');
@@ -632,15 +644,15 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   };
 
   const lineDrilldowns = {
-    'Revenue':       byRevenueLine(actuals, MGT_REV_LINES, budgets),
-    'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES, false, budgets),
+    'Revenue':       byRevenueLine(actuals, MGT_REV_LINES, ytdBudgets),
+    'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES, false, ytdBudgets),
     // "OPEX" (schedule row 1, salaries only) and "Expenses" (schedule row 30000, Total
     // OPEX = salaries + everything else) are two distinct cards — OPEX's own drilldown
     // is the same salaries-by-department data as the "HR Related Expenses" table nested
     // inside Expenses' breakdown, just surfaced as its own top-level card too.
-    'OPEX':          byScheduleLine(actuals, MGT_SAL_LINES, false, budgets),
-    'Expenses':      byDeptFromAccts(actuals, MGT_EXP, false, budgets),
-    'Financial Costs': byDeptFromAccts(actuals, MGT_FIN, false, budgets),
+    'OPEX':          byScheduleLine(actuals, MGT_SAL_LINES, false, ytdBudgets),
+    'Expenses':      byDeptFromAccts(actuals, MGT_EXP, false, ytdBudgets),
+    'Financial Costs': byDeptFromAccts(actuals, MGT_FIN, false, ytdBudgets),
     // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
     'Gross Profit': [
       { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(revB)  },
@@ -648,8 +660,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     ],
     // Two more ways to slice "Expenses" the KPI card doesn't split out on its own —
     // Salaries by department and OPEX by the schedule's own categories.
-    'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES, false, budgets),
-    'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES, budgets)
+    'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES, false, ytdBudgets),
+    'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES, ytdBudgets)
   };
 
   const budgetActual = { lineDrilldowns, lines: [
@@ -920,17 +932,17 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const ytdEBMgn18 = mgtRevA18 ? parseFloat((mgtEbA18 / mgtRevA18 * 100).toFixed(1)) : null;
 
     const lineDrilldowns18 = {
-      'Revenue':       byRevenueLine(actuals, MGT_REV_LINES_I18, budgets),
-      'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES_I18, false, budgets),
-      'OPEX':            byScheduleLine(actuals, MGT_SAL_LINES_I18, false, budgets),
-      'Expenses':        byDeptFromAccts(actuals, MGT_EXP_I18, false, budgets),
-      'Financial Costs': byDeptFromAccts(actuals, MGT_FIN_I18, false, budgets),
+      'Revenue':       byRevenueLine(actuals, MGT_REV_LINES_I18, ytdBudgets),
+      'Cost of Sales': byScheduleLine(actuals, MGT_COS_LINES_I18, false, ytdBudgets),
+      'OPEX':            byScheduleLine(actuals, MGT_SAL_LINES_I18, false, ytdBudgets),
+      'Expenses':        byDeptFromAccts(actuals, MGT_EXP_I18, false, ytdBudgets),
+      'Financial Costs': byDeptFromAccts(actuals, MGT_FIN_I18, false, ytdBudgets),
       'Gross Profit': [
         { unit: 'Revenue',       actual: toM(mgtRevA18),  budget: toM(revB)  },
         { unit: 'Cost of Sales', actual: toM(-mgtCosA18), budget: toM(-cosB) }
       ],
-      'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES_I18, false, budgets),
-      'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES_I18, budgets)
+      'HR Related Expenses': byScheduleLine(actuals, MGT_SAL_LINES_I18, false, ytdBudgets),
+      'OPEX by Category':    byAcctCategory(actuals, MGT_OPEX_CATEGORIES_I18, ytdBudgets)
     };
 
     // `label` carries the FS-IFRS 18 schedule's own row description — Financial
