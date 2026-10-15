@@ -62,7 +62,7 @@ router.post('/', requireAuth, async (req, res) => {
     ).run(employeeNo, employeeName || null, fromSource || null, budgetSource, actor);
     logAudit.run(employeeNo, employeeName || null, fromSource || null, budgetSource, 'set', actor);
 
-    const summary = await syncSnapshot();
+    const summary = await syncSnapshot(undefined, { fast: true });
     res.json({ ok: true, ...summary });
   } catch (e) {
     console.error('[budget-source-overrides]', e.message);
@@ -84,7 +84,7 @@ router.delete('/:employeeNo', requireAuth, async (req, res) => {
       // possibly-wrong source.
       logAudit.run(req.params.employeeNo, existing.employee_name, existing.budget_source, 'BC default', 'revert', actor);
     }
-    const summary = await syncSnapshot();
+    const summary = await syncSnapshot(undefined, { fast: true });
     res.json({ ok: true, ...summary });
   } catch (e) {
     console.error('[budget-source-overrides]', e.message);

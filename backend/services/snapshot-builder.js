@@ -31,6 +31,30 @@ async function getBcStatic() {
   return _bcStaticCache;
 }
 
+// Cache of per-query BC fetch results, distinct from the one-time static cache above.
+// An override-triggered rebuild (department/budget-source reassignment — see
+// routes/department-overrides.js and routes/budget-source-overrides.js) only relabels
+// rows already in the last snapshot; it doesn't need a fresh ~minute-long round of BC
+// OData calls just to get the same rows back. A genuine resync (the "Latest" button,
+// cron) always passes bypassCache=true, which ignores AND refreshes these entries.
+const _bcDynamicCache = new Map(); // `${service}::${query||''}` -> rows
+function cachedBc(service, query, bypassCache) {
+  const key = `${service}::${query || ''}`;
+  if (!bypassCache && _bcDynamicCache.has(key)) return Promise.resolve(_bcDynamicCache.get(key));
+  return bc(service, query).then(rows => { _bcDynamicCache.set(key, rows); return rows; });
+}
+
+// Same reasoning as _bcDynamicCache above, applied to Superset chart fetches — an
+// override-triggered fast rebuild reuses the last chart payloads instead of re-hitting
+// Superset for all 16 charts.
+const _supersetCache = new Map();
+async function cachedSuperset(chartId, bypassCache) {
+  if (!bypassCache && _supersetCache.has(chartId)) return _supersetCache.get(chartId);
+  const data = await fetchSuperset(chartId);
+  _supersetCache.set(chartId, data);
+  return data;
+}
+
 async function fetchSuperset(chartId, attempt = 0) {
   try {
     const ctrl = new AbortController();
@@ -89,8 +113,9 @@ function sumRange(rows, k, af = 'accountNo', amf = 'amount') {
     .reduce((s, x) => s + num(x[amf]), 0);
 }
 
-/** Build dashboard JSON for a given date (YYYY-MM-DD). */
-async function buildSnapshot(targetDate) {
+/** Build dashboard JSON for a given date (YYYY-MM-DD). Pass { bypassCache: false } to reuse
+ *  the last fetch's BC rows instead of re-querying — see cachedBc() above. */
+async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const IS_HISTORICAL = targetDate !== today;
 
@@ -103,8 +128,8 @@ async function buildSnapshot(targetDate) {
 
   let actuals = [], budgets = [], arAgingRows = [], apAgingRows = [];
   if (bcAvail) {
-    actuals = await bc('KFT_GL_Actuals', fy);
-    budgets = await bc('KFT_GL_Budget', budF);
+    actuals = await cachedBc('KFT_GL_Actuals', fy, bypassCache);
+    budgets = await cachedBc('KFT_GL_Budget', budF, bypassCache);
     console.log(`  BC: actuals ${actuals.length} rows, budget ${budgets.length} rows`);
     if (actuals.length === 0) console.warn('  WARNING: 0 actual rows — check FY_START / postingDate filter.');
     if (budgets.length === 0) console.warn(`  WARNING: 0 budget rows — check BUDGET_NAME='${CONFIG.BUDGET_NAME}'.`);
@@ -113,8 +138,8 @@ async function buildSnapshot(targetDate) {
     // rows. Best-effort: older BC instances/companies without these two custom API
     // pages yet shouldn't break the rest of the snapshot.
     [arAgingRows, apAgingRows] = await Promise.all([
-      bc('KFT_AR_Aging').catch(() => []),
-      bc('KFT_AP_Aging').catch(() => [])
+      cachedBc('KFT_AR_Aging', undefined, bypassCache).catch(() => []),
+      cachedBc('KFT_AP_Aging', undefined, bypassCache).catch(() => [])
     ]);
   } else {
     console.warn('  BC not configured — skipping BC data, Superset-only snapshot');
@@ -1146,7 +1171,7 @@ async function buildSnapshot(targetDate) {
 
   let glAccountNames = {};
   try {
-    const glAccts = await bc('KFT_GL_Accounts');
+    const glAccts = await cachedBc('KFT_GL_Accounts', undefined, bypassCache);
     glAccts.forEach(a => { if (a.no && a.name) glAccountNames[a.no] = a.name; });
   } catch (e) {
     console.warn('  KFT_GL_Accounts not reachable:', e.message);
@@ -1157,7 +1182,7 @@ async function buildSnapshot(targetDate) {
   const capexOut    = Math.abs(A('wip'));
   const operatingOut = Math.abs(cosA) + Math.abs(totOpexA);
 
-  const bank = bcAvail ? await bc('KFT_Bank_Ledger', fy) : [];
+  const bank = bcAvail ? await cachedBc('KFT_Bank_Ledger', fy, bypassCache) : [];
   bank.sort((a, b) => new Date(a.postingDate) - new Date(b.postingDate));
 
   const collByMonth = Array(12).fill(0);
@@ -1206,8 +1231,8 @@ async function buildSnapshot(targetDate) {
   let bsRows, glAccounts;
   if (IS_HISTORICAL) {
     const [glE, rawGlAccounts] = await Promise.all([
-      bcAvail ? bc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`) : Promise.resolve([]),
-      bcAvail ? bc('KFT_GL_Accounts').catch(() => []) : Promise.resolve([])
+      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`, bypassCache) : Promise.resolve([]),
+      bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
     glAccounts = rawGlAccounts;
     const bsMap = {};
@@ -1215,8 +1240,8 @@ async function buildSnapshot(targetDate) {
     bsRows = Object.entries(bsMap).map(([accountNo, balance]) => ({ accountNo, balance }));
   } else {
     [bsRows, glAccounts] = await Promise.all([
-      bcAvail ? bc('KFT_GL_Balances') : Promise.resolve([]),
-      bcAvail ? bc('KFT_GL_Accounts').catch(() => []) : Promise.resolve([])
+      bcAvail ? cachedBc('KFT_GL_Balances', undefined, bypassCache) : Promise.resolve([]),
+      bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
   }
 
@@ -1438,10 +1463,10 @@ async function buildSnapshot(targetDate) {
   }
 
   let [employees, headcountRows, rawDimVals, empHist] = await Promise.all([
-    bcAvail ? bc('GetEmployee').catch(() => [])                                           : Promise.resolve([]),
-    bcAvail ? bc('KFT_Employee_Headcount').catch(() => [])                                : Promise.resolve([]),
-    bcAvail ? bc('KFT_Dimension_Values', '?$orderby=dimensionCode,code').catch(() => []) : Promise.resolve([]),
-    bcAvail ? bc('KFT_Employment_History').catch(() => [])                                : Promise.resolve([])
+    bcAvail ? cachedBc('GetEmployee', undefined, bypassCache).catch(() => [])                                           : Promise.resolve([]),
+    bcAvail ? cachedBc('KFT_Employee_Headcount', undefined, bypassCache).catch(() => [])                                : Promise.resolve([]),
+    bcAvail ? cachedBc('KFT_Dimension_Values', '?$orderby=dimensionCode,code', bypassCache).catch(() => []) : Promise.resolve([]),
+    bcAvail ? cachedBc('KFT_Employment_History', undefined, bypassCache).catch(() => [])                                : Promise.resolve([])
   ]);
 
   // Known vendors/companies with a BC-side data error putting them under a plain
@@ -2191,7 +2216,7 @@ async function buildSnapshot(targetDate) {
     let [stdPay, progPay, consPay, stdPT, progPT, rawDirectPay] = await Promise.all(
       payrollQueryNames.map(name =>
         bcAvail
-          ? bc(name).catch(err => {
+          ? cachedBc(name, undefined, bypassCache).catch(err => {
               console.error(`  ERROR: BC query '${name}' failed — ${err.message || err}. Payroll data from this source will be MISSING from the snapshot.`);
               return [];
             })
@@ -3206,11 +3231,11 @@ async function buildSnapshot(targetDate) {
   // Superset charts — fetched daily alongside BC, stored in SQLite
   const [c1, c10, c15, c19, c23, c27, c29, c36, c37, c38,
          c53, c89, c95, c104, c106, c107] = await Promise.all([
-    fetchSuperset(1),   fetchSuperset(10),  fetchSuperset(15),  fetchSuperset(19),
-    fetchSuperset(23),  fetchSuperset(27),  fetchSuperset(29),  fetchSuperset(36),
-    fetchSuperset(37),  fetchSuperset(38),
-    fetchSuperset(53),  fetchSuperset(89),  fetchSuperset(95),
-    fetchSuperset(104), fetchSuperset(106), fetchSuperset(107)
+    cachedSuperset(1, bypassCache),   cachedSuperset(10, bypassCache),  cachedSuperset(15, bypassCache),  cachedSuperset(19, bypassCache),
+    cachedSuperset(23, bypassCache),  cachedSuperset(27, bypassCache),  cachedSuperset(29, bypassCache),  cachedSuperset(36, bypassCache),
+    cachedSuperset(37, bypassCache),  cachedSuperset(38, bypassCache),
+    cachedSuperset(53, bypassCache),  cachedSuperset(89, bypassCache),  cachedSuperset(95, bypassCache),
+    cachedSuperset(104, bypassCache), cachedSuperset(106, bypassCache), cachedSuperset(107, bypassCache)
   ]);
   console.log(`  Superset: ${[c1,c10,c15,c19,c23,c27,c29,c36,c37,c38,c53,c89,c95,c104,c106,c107].filter(Boolean).length}/16 charts loaded`);
 
@@ -3420,7 +3445,7 @@ async function buildSnapshot(targetDate) {
   let procurement = null;
   if (bcAvail && !IS_HISTORICAL) {
     try {
-      procurement = await buildProcurement(targetDate);
+      procurement = await buildProcurement(targetDate, bypassCache);
       const ep = procurement.endpoints;
       console.log(`  Procurement: ${procurement.po.rows.length} POs, ${procurement.spend.rows.length} spend lines, ${procurement.commitments.entries} commitments; endpoints ok ${Object.values(ep).filter(e => e.ok).length}/${Object.keys(ep).length}`);
     } catch (e) {

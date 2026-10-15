@@ -28,8 +28,11 @@ function persistSnapshot(date, data) {
   saveArchive(date, data);
 }
 
-/** Fetch from BC (if configured) and Superset, then store snapshot for the given date (defaults to today). */
-async function syncSnapshot(date) {
+/** Fetch from BC (if configured) and Superset, then store snapshot for the given date (defaults
+ *  to today). Pass { fast: true } for an override-triggered rebuild (department/budget-source
+ *  reassignment) — it reuses the last fetch's BC rows instead of repeating ~a minute of OData
+ *  calls for data that hasn't changed, only the dashboard-side override mapping has. */
+async function syncSnapshot(date, { fast = false } = {}) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate))
     throw new Error('Invalid date — use YYYY-MM-DD.');
@@ -38,10 +41,10 @@ async function syncSnapshot(date) {
     throw new Error('A sync is already in progress.');
 
   syncInProgress = true;
-  console.log(`[sync] Syncing BC + Superset for ${targetDate}…`);
+  console.log(`[sync] Syncing BC + Superset for ${targetDate}${fast ? ' (fast — reusing cached BC rows)' : ''}…`);
 
   try {
-    const data = await buildSnapshot(targetDate);
+    const data = await buildSnapshot(targetDate, { bypassCache: !fast });
 
     // When BC is unavailable, preserve BC-sourced fields from the most recent prior snapshot
     // so that a Superset-only sync does not wipe the financial/HR data.

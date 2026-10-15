@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
@@ -22,13 +22,18 @@ const fmtN   = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString
 const fmtC   = (n) => (!n && n !== 0) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtPct = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toFixed(1) + '%'
 
-function KpiBlock({ label, value, sub, accent, small }) {
+function KpiBlock({ label, value, sub, accent, small, onClick }) {
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div className="flex flex-col justify-between p-4 rounded-xl" style={{ background: accent || NAVY }}>
+    <Tag
+      onClick={onClick}
+      className={`flex flex-col justify-between p-4 rounded-xl text-left w-full ${onClick ? 'cursor-pointer hover:brightness-110 transition-[filter]' : ''}`}
+      style={{ background: accent || NAVY }}
+    >
       <p className="text-[9px] uppercase tracking-widest font-bold text-white/60 leading-tight">{label}</p>
       <p className={`font-extrabold text-white leading-none mt-2 tabular-nums ${small ? 'text-[18px]' : 'text-[22px]'}`}>{value}</p>
       {sub && <p className="text-[10px] text-white/50 mt-1 truncate">{sub}</p>}
-    </div>
+    </Tag>
   )
 }
 
@@ -68,6 +73,11 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
   const [bsHistoryOpenNo, setBsHistoryOpenNo] = useState(null)
   const [bsHistoryByEmp, setBsHistoryByEmp]   = useState({})
   const [loadingBsHistory, setLoadingBsHistory] = useState(false)
+
+  // Scroll target for the "Active Overrides" KPI card — clicking it jumps straight to the
+  // audit-trail panels below instead of making the admin hunt for them by scrolling.
+  const overridesPanelRef = useRef(null)
+  const scrollToOverrides = () => overridesPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   const loadOverrides = () => {
     setLoadingOv(true)
@@ -421,7 +431,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       {busy && (
         <div className="px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 text-navy" style={{ background: 'rgba(31,182,166,0.12)' }}>
           <div className="w-3.5 h-3.5 rounded-full border-2 animate-spin flex-shrink-0" style={{ borderColor: `${TEAL}44`, borderTopColor: TEAL }} />
-          Applying change and resyncing dashboard data — this can take up to a minute…
+          Applying change and resyncing dashboard data — usually 10–20 seconds…
         </div>
       )}
       {error && (
@@ -446,7 +456,13 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
         <KpiBlock label="Programme (Monthly)" value={hasCostData ? fmtN(Math.round(safeeMonthly)) : '—'} sub={effectiveMonth} accent="#1A7A72" small />
         <KpiBlock label="Corporate Share of Payroll" value={hasCostData ? fmtPct(kifiyaSharePct) : '—'}
           sub={hasCostData ? `${fmtN(Math.round(kifiyaMonthly))} of ${fmtN(Math.round(totalMonthly))}` : 'No payroll data yet'} accent={ORANGE} />
-        <KpiBlock label="Active Overrides" value={loadingOv ? '—' : fmtN(overrides.length)} sub="Dashboard-only, not in BC" accent="#5B4B8A" small />
+        <KpiBlock
+          label="Active Overrides"
+          value={(loadingOv || loadingBsOv) ? '—' : fmtN(overrides.length + bsOverrides.length)}
+          sub={(loadingOv || loadingBsOv) ? 'Dashboard-only, not in BC' : `Dashboard-only, not in BC · click to view`}
+          accent="#5B4B8A" small
+          onClick={scrollToOverrides}
+        />
       </div>
 
       {/* ── Table ── */}
@@ -666,7 +682,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       </div>
 
       {/* ── Active overrides — audit trail + revert ── */}
-      <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+      <div ref={overridesPanelRef} className="bg-white rounded-2xl border border-border shadow-card overflow-hidden scroll-mt-4">
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <h3 className="text-sm font-bold text-navy">Active Overrides {overrides.length > 0 && `(${overrides.length})`}</h3>
           <p className="text-[10px] text-muted mt-0.5">Reverting removes the override — the employee goes back to whatever Business Central reports on the next sync.</p>

@@ -1,5 +1,14 @@
 const { bc } = require('./bc-client');
 
+// Same reasoning/pattern as snapshot-builder.js's _bcDynamicCache: an override-triggered
+// fast rebuild (department/budget-source reassignment) reuses the last fetch for each of
+// these 13 endpoints instead of repeating them — an override can't have changed BC data.
+const _procCache = new Map();
+function cachedBc(name, bypassCache) {
+  if (!bypassCache && _procCache.has(name)) return Promise.resolve(_procCache.get(name));
+  return bc(name).then(rows => { _procCache.set(name, rows); return rows; });
+}
+
 // Every Procurement endpoint is best-effort: one 404/empty page must not take down the rest
 // of the snapshot (or the other procurement pages). `endpoints` reports each one's status so
 // the UI can say exactly which sources are connected, empty, or missing instead of silently
@@ -47,12 +56,12 @@ function groupSum(rows, keyFn, valFns) {
   return [...m.values()];
 }
 
-async function buildProcurement(asOfDate) {
+async function buildProcurement(asOfDate, bypassCache = true) {
   const endpoints = {};
   const fetched = {};
   await Promise.all(Object.entries(ENDPOINT_NAMES).map(async ([key, name]) => {
     try {
-      const rows = await bc(name);
+      const rows = await cachedBc(name, bypassCache);
       fetched[key] = rows;
       endpoints[key] = { name, ok: true, rows: rows.length };
     } catch (e) {

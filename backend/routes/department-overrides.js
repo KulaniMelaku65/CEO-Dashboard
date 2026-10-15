@@ -58,7 +58,7 @@ router.post('/', requireAuth, async (req, res) => {
     ).run(employeeNo, employeeName || null, fromSection || null, sectionCode, actor);
     logAudit.run(employeeNo, employeeName || null, fromSection || null, sectionCode, 'set', actor);
 
-    const summary = await syncSnapshot();
+    const summary = await syncSnapshot(undefined, { fast: true });
     res.json({ ok: true, ...summary });
   } catch (e) {
     console.error('[department-overrides]', e.message);
@@ -81,7 +81,7 @@ router.delete('/:employeeNo', requireAuth, async (req, res) => {
       // from_section here would claim a specific, frequently wrong destination.
       logAudit.run(req.params.employeeNo, existing.employee_name, existing.section_code, 'BC default', 'revert', actor);
     }
-    const summary = await syncSnapshot();
+    const summary = await syncSnapshot(undefined, { fast: true });
     res.json({ ok: true, ...summary });
   } catch (e) {
     console.error('[department-overrides]', e.message);
