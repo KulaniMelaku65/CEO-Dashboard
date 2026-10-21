@@ -108,6 +108,26 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_budget_source_override_audit_emp ON budget_source_override_audit(employee_no, created_at DESC);
 
+  -- Corrects a single voucher's currency tag for payroll CTC purposes, when BC's own
+  -- voucher record is wrong (e.g. a consultant paid in ETB but the voucher was mistakenly
+  -- posted with CurrencyCode='USD') and the payroll/finance team has already fixed the
+  -- impact in BC "another way" (a correcting entry elsewhere) rather than editing the
+  -- original voucher — so the custom KFT_Consultant_Payroll_Cost/KFT_Direct_Pay_Vouchers
+  -- API pages we read from still return the original wrong currency tag, and our own
+  -- currency-conversion logic (snapshot-builder.js) still multiplies an already-ETB amount
+  -- by the wrong exchange rate. One row per voucher; keyed by voucher number since that's
+  -- the only identifier both payroll data sources share and the error is on the VOUCHER,
+  -- not the employee (the same employee's other vouchers are usually fine).
+  CREATE TABLE IF NOT EXISTS payroll_currency_corrections (
+    voucher_no       TEXT PRIMARY KEY,
+    employee_no      TEXT NOT NULL,
+    employee_name    TEXT,
+    correct_currency TEXT NOT NULL DEFAULT 'ETB',
+    note             TEXT,
+    created_by       TEXT,
+    created_at       TEXT DEFAULT (datetime('now'))
+  );
+
   -- Which sidebar pages (App.jsx's ALL_SLIDES ids) a given user can see. Presence of a
   -- row is the grant — no row for a page means no access. Managed from the Admin page.
   CREATE TABLE IF NOT EXISTS user_page_access (

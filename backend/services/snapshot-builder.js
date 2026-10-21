@@ -1517,6 +1517,15 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   db.prepare('SELECT employee_no, budget_source FROM budget_source_overrides').all()
     .forEach(r => { budgetSourceOverrides[r.employee_no] = r.budget_source; });
 
+  // Per-voucher currency corrections (see db.js's payroll_currency_corrections) — keyed by
+  // voucher number, consulted in the payroll currency-conversion logic further down
+  // (both the Direct Pay and Consultant Payroll blocks) to override a specific voucher's
+  // wrong CurrencyCode tag without waiting on a Business Central fix that may never touch
+  // that original voucher record.
+  const currencyCorrections = {};
+  db.prepare('SELECT voucher_no, correct_currency FROM payroll_currency_corrections').all()
+    .forEach(r => { currencyCorrections[r.voucher_no] = r.correct_currency; });
+
   // Persist every employee's job title (KFT_Employee_Headcount now covers Active and
   // Inactive/Terminated/New — its BC-side active-only filter was removed). A minority of
   // inactive rows still have a blank jobTitle in BC itself; this cache preserves whatever
@@ -2440,7 +2449,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
         if (_stdPayEmpMonths.has(monthKey)) return null;
 
         // ── Currency conversion ────────────────────────────────────
-        const currency = (r.currencyCode || '').trim().toUpperCase();
+        // A manual correction (currencyCorrections) wins over the voucher's own tag — see
+        // db.js's payroll_currency_corrections for why BC's own record can still be wrong.
+        const currency = (currencyCorrections[r.voucherNo] || r.currencyCode || '').trim().toUpperCase();
         const isForeign = currency !== '' && currency !== 'ETB';
         const rate      = Number(r.exchangeRate) || 1;
         const rawAmt    = Number(r.totalPaymentAmount) || 0;
@@ -2479,7 +2490,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           ? `${periodMatch[2]}-${String(periodMatch[1]).padStart(2, '0')}-01`
           : r.PayPeriod || null;
 
-        const currency = (r.CurrencyCode || '').trim().toUpperCase();
+        // A manual correction (currencyCorrections) wins over the voucher's own tag — see
+        // db.js's payroll_currency_corrections for why BC's own record can still be wrong.
+        const currency = (currencyCorrections[r.IndividualVoucherNo] || r.CurrencyCode || '').trim().toUpperCase();
         let   rate      = Number(r.ExchangeRate) || 0;
         let   isForeign = currency !== '' && currency !== 'ETB';
 
