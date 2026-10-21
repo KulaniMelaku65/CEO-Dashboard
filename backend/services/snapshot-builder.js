@@ -3261,9 +3261,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       // (always-shown) cost row itself. Computed here since gender isn't part of this
       // payroll-derived record, so completeness can only be resolved with the backend's
       // headcount-sourced completeEmpNoSet.
+      // genderByEmpNo is sourced from GetEmployee's full roster (not filtered to active-only),
+      // so it covers departed employees too — unlike KFT_Employee_Headcount, which is
+      // current-only and can't answer gender for a historical month at all (see PeopleHRSummary.jsx's
+      // Male/Female fix, which needs this for the same reason totalEmployees needed isCountable).
+      const gender  = cleanGender(genderByEmpNo[empKey]) || 'Unknown';
       if (!empPayMap[key]) empPayMap[key] = {
         employeeNo: empKey, name, buCode, buName, sectionCode: sc, sectionName, jobTitle,
-        payrollSource: src, virtualCompany: vc, employeeType: et, employeeStatus: status,
+        payrollSource: src, virtualCompany: vc, employeeType: et, employeeStatus: status, gender,
         isCountable: isActiveStatus(status, empKey),
         monthTotals: {}, pensionMonthTotals: {}, total: 0, pensionTotal: 0
       };

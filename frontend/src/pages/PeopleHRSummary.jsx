@@ -130,21 +130,33 @@ export default function PeopleHRSummary({ data }) {
   // falls back to the LIVE "now" roster — ignoring filterMonth entirely, so every month
   // showed today's count (e.g. always 48 Individual Consultants, regardless of which
   // month was picked) while HR Analysis correctly recomputed per month (e.g. 46 for
-  // July). Count payroll-derived employees actually paid that month instead — same
-  // point-in-time signal and same filteredPayroll population HR Analysis's own
-  // totalHeadcount fallback uses, so the two pages agree again.
+  // July). Build the same point-in-time population payroll-side instead — employees
+  // actually paid that month (employeePayroll rows now carry gender too, sourced from
+  // GetEmployee's full roster rather than the current-only headcount table, so it covers
+  // departed employees for whichever past month they were still around) — and reuse it
+  // for both totalEmployees and the Male/Female split below, so all three agree with
+  // HR Analysis's own totalHeadcount fallback.
   const countableThisMonth = filterMonth !== 'All'
-    ? new Set(
-        filteredPayroll
-          .filter(r => ((r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)) !== 0)
-          .map(r => r.employeeNo)
-      ).size
+    ? (() => {
+        const map = new Map()
+        filteredPayroll.forEach(r => {
+          const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
+          if (vp === 0) return
+          if (!map.has(r.employeeNo)) map.set(r.employeeNo, r.gender || 'Unknown')
+        })
+        return map
+      })()
     : null
   const totalEmployees = monthEvoScope ? monthEvoScope.count
-    : countableThisMonth != null ? countableThisMonth
+    : countableThisMonth ? countableThisMonth.size
     : activeEmployees.length
-  const maleCount   = monthEvoScope ? (monthEvoScope.male   || 0) : activeEmployees.filter(e => e.gender === 'Male').length
-  const femaleCount = monthEvoScope ? (monthEvoScope.female || 0) : activeEmployees.filter(e => e.gender === 'Female').length
+  const countableGenders = countableThisMonth ? [...countableThisMonth.values()] : null
+  const maleCount   = monthEvoScope ? (monthEvoScope.male   || 0)
+    : countableGenders ? countableGenders.filter(g => g === 'Male').length
+    : activeEmployees.filter(e => e.gender === 'Male').length
+  const femaleCount = monthEvoScope ? (monthEvoScope.female || 0)
+    : countableGenders ? countableGenders.filter(g => g === 'Female').length
+    : activeEmployees.filter(e => e.gender === 'Female').length
   const malePct   = totalEmployees ? Math.round((maleCount   / totalEmployees) * 100) : 0
   const femalePct = totalEmployees ? Math.round((femaleCount / totalEmployees) * 100) : 0
 
