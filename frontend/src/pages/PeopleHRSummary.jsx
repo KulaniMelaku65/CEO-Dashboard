@@ -266,8 +266,13 @@ export default function PeopleHRSummary({ data }) {
 
   // ── Based In (region) + HQ/Field split — built from activeEmployees so these also
   // narrow with every active filter (BU/Type/VC/Source), not just the company-wide
-  // total. No historical reconstruction exists for location, so this is always the
-  // live/current picture regardless of Month/Year filter (same limitation as before).
+  // total. Unlike gender (now reconstructable via GetEmployee's full roster, see
+  // Male/Female above), location has NO historical source at all: BC's Employee_Location
+  // field only exists on KFT_Employee_Headcount, which is current-only, and
+  // KFT_Employment_History (the one true historical source) carries no location dimension
+  // whatsoever. So this stays a live/current-only figure — the HQ/Field KPI cells below
+  // show "—" for an explicit historical month instead of silently showing today's numbers
+  // under a misleading month label.
   const byLocation = (() => {
     const counts = {}
     activeEmployees.forEach(e => {
@@ -348,10 +353,10 @@ export default function PeopleHRSummary({ data }) {
               <div><p className="text-white font-extrabold text-xl leading-none">{femalePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Female</p></div>
             </div>
           </Cell1>
-          <Cell1 label="Employees In HQ" value={fmtN(hqField.hq)}
-            sub={hqField.unspecified > 0 ? `+${fmtN(hqField.unspecified)} no location on file` : null} />
-          <Cell1 label="Employees in Field" value={fmtN(hqField.field)}
-            sub={hqField.unspecified > 0 ? `HQ + Field + unspecified = ${fmtN(totalEmployees)}` : null} />
+          <Cell1 label="Employees In HQ" value={filterMonth !== 'All' ? '—' : fmtN(hqField.hq)}
+            sub={filterMonth !== 'All' ? 'No historical location data' : (hqField.unspecified > 0 ? `+${fmtN(hqField.unspecified)} no location on file` : null)} />
+          <Cell1 label="Employees in Field" value={filterMonth !== 'All' ? '—' : fmtN(hqField.field)}
+            sub={filterMonth !== 'All' ? 'No historical location data' : (hqField.unspecified > 0 ? `HQ + Field + unspecified = ${fmtN(totalEmployees)}` : null)} />
         </div>
 
         {/* ── Row 2: Employment Type table + Turnover + BU charts ── */}
