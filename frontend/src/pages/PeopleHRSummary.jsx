@@ -125,7 +125,24 @@ export default function PeopleHRSummary({ data }) {
     ? (filterBU === 'All' ? monthEvo : monthEvo.byBU?.[filterBU] || null)
     : null
 
-  const totalEmployees = monthEvoScope ? monthEvoScope.count : activeEmployees.length
+  // When a historical month is selected but Type/VC/Source narrows things beyond what
+  // monthEvoScope can answer (byBU/byType has no Type/VC/Source split), activeEmployees
+  // falls back to the LIVE "now" roster — ignoring filterMonth entirely, so every month
+  // showed today's count (e.g. always 48 Individual Consultants, regardless of which
+  // month was picked) while HR Analysis correctly recomputed per month (e.g. 46 for
+  // July). Count payroll-derived employees actually paid that month instead — same
+  // point-in-time signal and same filteredPayroll population HR Analysis's own
+  // totalHeadcount fallback uses, so the two pages agree again.
+  const countableThisMonth = filterMonth !== 'All'
+    ? new Set(
+        filteredPayroll
+          .filter(r => ((r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)) !== 0)
+          .map(r => r.employeeNo)
+      ).size
+    : null
+  const totalEmployees = monthEvoScope ? monthEvoScope.count
+    : countableThisMonth != null ? countableThisMonth
+    : activeEmployees.length
   const maleCount   = monthEvoScope ? (monthEvoScope.male   || 0) : activeEmployees.filter(e => e.gender === 'Male').length
   const femaleCount = monthEvoScope ? (monthEvoScope.female || 0) : activeEmployees.filter(e => e.gender === 'Female').length
   const malePct   = totalEmployees ? Math.round((maleCount   / totalEmployees) * 100) : 0
