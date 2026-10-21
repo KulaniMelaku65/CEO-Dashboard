@@ -37,6 +37,19 @@ function Toggle({ on, onClick, disabled }) {
 // visual hint for the ones nested under a parent (Employee Cost, Organization Mapping…).
 const TOGGLE_PAGES = PAGE_REGISTRY
 
+// Sensitive capabilities *within* a page, not pages of their own — so they're kept out of
+// PAGE_REGISTRY (no sidebar entry, no separate "page" to grant access to) but still reuse
+// user_page_access as a plain permission flag, same update call as any real page. Payroll
+// Currency Corrections lives on Organization Mapping for every user who can reach that
+// page, but only relabels payroll currency tags for CTC purposes — sensitive enough that
+// not everyone with Organization Mapping access should be able to use it. Backend check:
+// routes/payroll-currency-corrections.js's requireFeatureAccess.
+const FEATURE_FLAGS = [
+  { id: 'payroll-currency-corrections', label: 'Payroll Currency Corrections' },
+]
+const FEATURE_IDS = new Set(FEATURE_FLAGS.map(f => f.id))
+const countPages = (pageIds) => pageIds.filter(id => !FEATURE_IDS.has(id)).length
+
 // 12-char strong default — just a starting point the admin can overwrite or reuse; the
 // only requirement enforced server-side is 8+ characters.
 function suggestPassword() {
@@ -223,6 +236,23 @@ function AddUserForm({ onCreated }) {
         })}
       </div>
 
+      <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Sensitive features</p>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {FEATURE_FLAGS.map(f => {
+          const on = pageIds.includes(f.id)
+          return (
+            <button
+              key={f.id}
+              onClick={() => togglePage(f.id)}
+              className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all"
+              style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+            >
+              {f.label}
+            </button>
+          )
+        })}
+      </div>
+
       {error && <p className="text-xs font-bold mb-3" style={{ color: RED }}>{error}</p>}
 
       <button
@@ -345,7 +375,7 @@ function UserRow({ u, currentUserId, onChanged }) {
           onClick={() => setExpanded(e => !e)}
           className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-navy hover:border-navy flex-shrink-0"
         >
-          Pages ({u.pageIds.length}) {expanded ? '▾' : '▸'}
+          Pages ({countPages(u.pageIds)}) {expanded ? '▾' : '▸'}
         </button>
         <button onClick={resetPassword} disabled={busy} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-navy hover:border-navy flex-shrink-0 disabled:opacity-40">
           Reset Password
@@ -362,21 +392,40 @@ function UserRow({ u, currentUserId, onChanged }) {
       )}
 
       {expanded && (
-        <div className="px-5 pb-4 flex flex-wrap gap-1.5">
-          {TOGGLE_PAGES.map(p => {
-            const on = u.pageIds.includes(p.id)
-            return (
-              <button
-                key={p.id}
-                onClick={() => togglePage(p.id)}
-                disabled={busy}
-                className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40"
-                style={on ? { background: TEAL, color: '#fff', borderColor: TEAL } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
-              >
-                {p.parentId && <span className="opacity-60">↳ </span>}{p.label}
-              </button>
-            )
-          })}
+        <div className="px-5 pb-4">
+          <div className="flex flex-wrap gap-1.5">
+            {TOGGLE_PAGES.map(p => {
+              const on = u.pageIds.includes(p.id)
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => togglePage(p.id)}
+                  disabled={busy}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40"
+                  style={on ? { background: TEAL, color: '#fff', borderColor: TEAL } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+                >
+                  {p.parentId && <span className="opacity-60">↳ </span>}{p.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mt-3 mb-1.5">Sensitive features</p>
+          <div className="flex flex-wrap gap-1.5">
+            {FEATURE_FLAGS.map(f => {
+              const on = u.pageIds.includes(f.id)
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => togglePage(f.id)}
+                  disabled={busy}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40"
+                  style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

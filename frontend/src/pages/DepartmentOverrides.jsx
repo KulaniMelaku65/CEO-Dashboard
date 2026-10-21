@@ -37,7 +37,12 @@ function KpiBlock({ label, value, sub, accent, small, onClick }) {
   )
 }
 
-export default function DepartmentOverrides({ data, onDataRefresh }) {
+export default function DepartmentOverrides({ data, onDataRefresh, currentUser }) {
+  // Payroll Currency Corrections is gated separately from the rest of this page — see
+  // routes/payroll-currency-corrections.js's requireFeatureAccess and AdminUsers.jsx's
+  // "Sensitive features" toggle. Not everyone who can reach Organization Mapping (for
+  // Department/Budget Source overrides) should also be able to relabel payroll currency.
+  const canManageCurrency = !!currentUser?.isAdmin || !!currentUser?.pageIds?.includes('payroll-currency-corrections')
   const hr  = data?.hr           || {}
   const rev = data?.hrReview     || {}
   const ec  = data?.employeeCost || {}
@@ -114,7 +119,10 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       .catch(() => {})
       .finally(() => setLoadingCc(false))
   }
-  useEffect(() => { loadOverrides(); loadBsOverrides(); loadCcCorrections() }, [])
+  useEffect(() => {
+    loadOverrides(); loadBsOverrides()
+    if (canManageCurrency) loadCcCorrections(); else setLoadingCc(false)
+  }, [canManageCurrency])
 
   const submitCcCorrection = async (e) => {
     e.preventDefault()
@@ -876,7 +884,10 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
         )}
       </div>
 
-      {/* ── Payroll Currency Corrections — fixes a specific voucher's wrong currency tag ── */}
+      {/* ── Payroll Currency Corrections — fixes a specific voucher's wrong currency tag ──
+           Gated behind canManageCurrency (see its definition above) — not part of the
+           regular Department/Budget Source override set everyone on this page gets. */}
+      {canManageCurrency && (
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <h3 className="text-sm font-bold text-navy">Payroll Currency Corrections {ccCorrections.length > 0 && `(${ccCorrections.length})`}</h3>
@@ -957,6 +968,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
