@@ -2254,6 +2254,33 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const payrollStart = new Date(CONFIG.PAYROLL_START);
     const targetEnd    = new Date(targetDate + 'T23:59:59');
 
+    // Memoized payroll-period parsing — `payrollPeriod` only ever takes one of ~22 distinct
+    // "YYYY-MM-01" values across the whole dataset (one per calendar month in range), but
+    // this block re-parses it with `new Date(...)` (and often `toLocaleDateString(...)` too)
+    // independently in well over a dozen separate per-row passes below — tens of thousands
+    // of redundant Date constructions for only ~22 unique inputs. Cache by the exact string
+    // so every pass after this point shares one parse per distinct period instead.
+    // `valid` is purely informational for call sites that check it (matching their original
+    // `isNaN(d.getTime())` guard) — every field is always computed the same way `new
+    // Date(...).getFullYear()` etc. would for ANY input, valid or not, so a call site that
+    // never guarded validity in the first place (there's at least one below) still gets the
+    // exact same NaN/"Invalid Date" values it always did, not a behavior change.
+    const _periodInfoCache = new Map();
+    const periodInfo = (payrollPeriod) => {
+      if (_periodInfoCache.has(payrollPeriod)) return _periodInfoCache.get(payrollPeriod);
+      const d = new Date(payrollPeriod);
+      const info = {
+        valid: !isNaN(d.getTime()),
+        time: d.getTime(),
+        year: d.getFullYear(),
+        month: d.getMonth(), // 0-indexed, matches Date#getMonth()
+        mthKey: d.getFullYear() * 100 + (d.getMonth() + 1),
+        mthLbl: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      };
+      _periodInfoCache.set(payrollPeriod, info);
+      return info;
+    };
+
     console.log(`  Payroll raw: KFT_Payroll_Cost=${stdPay.length} rows, KFT_Prog_Payroll_Cost=${progPay.length} rows, KFT_Consultant_Payroll_Cost=${consPay.length} rows`);
     if (stdPay.length === 0 && progPay.length === 0 && consPay.length === 0)
       console.warn('  WARNING: all payroll queries returned 0 rows — check BC web services are published');
@@ -2386,9 +2413,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const _stdPayEmpMonths = new Set();
     stdPay.forEach(r => {
       if (!r.employeeNo || !r.payrollPeriod) return;
-      const d = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      _stdPayEmpMonths.add(`${r.employeeNo}|${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return;
+      _stdPayEmpMonths.add(`${r.employeeNo}|${pi.year}-${String(pi.month + 1).padStart(2, '0')}`);
     });
 
     const directPay = (rawDirectPay || [])
@@ -2543,8 +2570,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const st = (r.payrollStatus || '').toLowerCase();
       if (st === 'open' || st === 'pending approval') return false;
       if (!r.payrollPeriod) return true;
-      const d = new Date(r.payrollPeriod);
-      return d >= payrollStart && d <= targetEnd;
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return false; // matches the old NaN-comparison-is-always-false behavior
+      return pi.time >= payrollStart.getTime() && pi.time <= targetEnd.getTime();
     });
     if (allPay.length === 0 && (stdPay.length + progPay.length + consPay.length + directPay.length) > 0)
       console.warn(`  WARNING: payroll rows fetched but all filtered out — check BC_PAYROLL_START (${CONFIG.PAYROLL_START}) and status values`);
@@ -2554,10 +2582,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const pensionByEmpMonth = {};
     [...stdPay, ...progPay].forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo || !r.totalEarning) return;
-      const d = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      const key = `${r.employeeNo}|${mthLbl}`;
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return;
+      const key = `${r.employeeNo}|${pi.mthLbl}`;
       pensionByEmpMonth[key] = (pensionByEmpMonth[key] || 0) + Math.abs(Number(r.totalEarning)) * 0.11;
     });
 
@@ -2586,10 +2613,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       .map(r => budgetSourceOverrides[r.employeeNo] ? { ...r, _ptSource: budgetSourceOverrides[r.employeeNo] } : r)
       .forEach(r => {
       if (!r.payrollPeriod || !r.employeeNo) return;
-      const d = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const mthLbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-      const key    = `${r.employeeNo}|${mthLbl}`;
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return;
+      const key    = `${r.employeeNo}|${pi.mthLbl}`;
       const empAmt = Math.abs(Number(r.employerAmount || 0));
       if (empAmt > 0) {
         if (r._ptSource === 'KIFIYA') ptKifiyaEmployerByEmpMonth[key] = (ptKifiyaEmployerByEmpMonth[key] || 0) + empAmt;
@@ -2659,16 +2685,16 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       // Fallback: approximate employer pension as 11% of Total Earning
       stdPay.forEach(r => {
         if (!r.payrollPeriod || !r.totalEarning) return;
-        const d = new Date(r.payrollPeriod);
-        if (isNaN(d.getTime())) return;
-        _addPensionDim(r.employeeNo, d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+        const pi = periodInfo(r.payrollPeriod);
+        if (!pi.valid) return;
+        _addPensionDim(r.employeeNo, pi.mthLbl,
           Math.abs(Number(r.totalEarning)) * 0.11, 'KIFIYA', r.virtualCompany, r.businessUnitDept);
       });
       progPay.forEach(r => {
         if (!r.payrollPeriod || !r.totalEarning) return;
-        const d = new Date(r.payrollPeriod);
-        if (isNaN(d.getTime())) return;
-        _addPensionDim(r.employeeNo, d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+        const pi = periodInfo(r.payrollPeriod);
+        if (!pi.valid) return;
+        _addPensionDim(r.employeeNo, pi.mthLbl,
           Math.abs(Number(r.totalEarning)) * 0.11, 'SAFEE', r.virtualCompany, r.businessUnitDept);
       });
     }
@@ -2826,9 +2852,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const typeMap = {};  // key → { key, label, standard, programme, consultant }
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
-      const d     = new Date(r.payrollPeriod);
-      const key   = d.getFullYear() * 100 + (d.getMonth() + 1);
-      const label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthKey: key, mthLbl: label } = periodInfo(r.payrollPeriod);
       if (!mthMap[key])  mthMap[key]  = { key, label, total: 0 };
       if (!typeMap[key]) typeMap[key] = { key, label, standard: 0, programme: 0, consultant: 0 };
       const amt = num(r.totalEarning);
@@ -2880,9 +2904,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const rawMthBySource = {};
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
-      const d = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return;
+      const k = pi.mthKey;
       if (!rawMthBySource[k]) rawMthBySource[k] = { standard: 0, programme: 0 };
       if (r.payrollSource === 'KIFIYA') rawMthBySource[k].standard  += num(r.totalEarning);
       else if (r._isProgPay)            rawMthBySource[k].programme += num(r.totalEarning);
@@ -2901,9 +2925,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const dept    = r.businessUnitDept || 'Unknown';
       const empKey  = r.employeeNo || 'Unknown';
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
-      const d       = new Date(r.payrollPeriod);
-      const mthKey  = d.getFullYear() * 100 + (d.getMonth() + 1);
-      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthKey, mthLbl } = periodInfo(r.payrollPeriod);
       const earning = num(r.totalEarning);
 
       if (!drillMap[dept]) drillMap[dept] = {
@@ -2930,9 +2952,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const mthKeyLblMap = {};
     allPay.forEach(r => {
       if (!r.payrollPeriod) return;
-      const d = new Date(r.payrollPeriod);
-      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
-      mthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthKey: k, mthLbl } = periodInfo(r.payrollPeriod);
+      mthKeyLblMap[k] = mthLbl;
     });
     const payrollMonths = Object.entries(mthKeyLblMap)
       .sort(([a], [b]) => Number(a) - Number(b))
@@ -2947,10 +2968,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       if (!r.payrollPeriod) return;
       const st = (r.payrollStatus || '').toLowerCase();
       if (st === 'open' || st === 'pending approval') return;
-      const d = new Date(r.payrollPeriod);
-      if (isNaN(d.getTime())) return;
-      const k = d.getFullYear() * 100 + (d.getMonth() + 1);
-      stdMthKeyLblMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const pi = periodInfo(r.payrollPeriod);
+      if (!pi.valid) return;
+      stdMthKeyLblMap[pi.mthKey] = pi.mthLbl;
     });
     const stdPayrollMonths = Object.entries(stdMthKeyLblMap)
       .sort(([a], [b]) => Number(a) - Number(b))
@@ -2982,8 +3002,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const sectionName = dimensionNames[sectionCode] || sectionCode;
       const empKey  = r.employeeNo || 'Unknown';
       const name    = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
-      const d       = new Date(r.payrollPeriod);
-      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthLbl } = periodInfo(r.payrollPeriod);
       const earning = num(r.totalEarning);
 
       if (!buDrillMap[buCode]) buDrillMap[buCode] = { buCode, buName, sections: {}, monthTotals: {}, total: 0 };
@@ -3047,8 +3066,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const jobTitle = (r.jobTitle || '').trim() || 'Unknown';
       const empKey   = r.employeeNo || 'Unknown';
       const name     = [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || empKey;
-      const d        = new Date(r.payrollPeriod);
-      const mthLbl   = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthLbl } = periodInfo(r.payrollPeriod);
       const earning  = num(r.totalEarning);
       if (!jobDrillMap[jobTitle]) jobDrillMap[jobTitle] = { jobTitle, employees: {}, monthTotals: {}, total: 0 };
       const jd = jobDrillMap[jobTitle];
@@ -3153,8 +3171,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
         : empNoToJobTitle[empKey] || historicalJobTitleByNo[empKey] || 'Unknown';
       const src     = r.payrollSource || 'KIFIYA';
       const vc      = ((hc && hc.vc !== 'Unknown') ? hc.vc : (r.virtualCompany || 'Unknown')).trim();
-      const d       = new Date(r.payrollPeriod);
-      const mthLbl  = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const { mthLbl } = periodInfo(r.payrollPeriod);
       const earning = num(r.totalEarning);
       // IC rows get a distinct key suffix so their amounts are never merged with a same-employee
       // progPay record that has a different type — both progPay and consPay use payrollSource SAFEE,
