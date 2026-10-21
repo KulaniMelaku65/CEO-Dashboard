@@ -292,12 +292,13 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
-      // Head Count must land here regardless of vp — see HRPageReview.jsx's identical fix
-      // for why gating it on vp too (as well as the cost/drilldown entry below, which
-      // should stay vp-gated) silently diverged this table's Head Count from the KPI
-      // card's own "only counts Active employees" figure once a filter (Budget Source in
-      // particular) forced this activeEmpSet fallback instead of the point-in-time monthEvo.
-      if (r.isCountable) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
+      // Head Count lands here regardless of vp ONLY in "now"/latest mode — see
+      // HRPageReview.jsx's identical fix. r.isCountable reflects CURRENT status, not status
+      // as of a selected HISTORICAL month, so once an explicit Month/Year is picked, vp
+      // presence is the only signal for "did this person exist that month" and Head Count
+      // stays gated on it (same as the cost/drilldown entry below always has been) —
+      // otherwise someone hired this month would also show up in every earlier month.
+      if (r.isCountable && (filterMonth === 'All' || vp !== 0)) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
       if (vp === 0) return
 
       bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
@@ -323,7 +324,10 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
     // Skipped when Budget Source is filtered: the roster has no source field at all, so
     // someone with no payroll row can't be attributed to Corporate/Programme — including
     // them here would silently un-filter the headcount back to the company-wide total.
-    ;(filterSource === 'All' ? filteredRoster : []).forEach(r => {
+    // Also skipped whenever an explicit Month/Year is selected: the roster is who's active
+    // RIGHT NOW, not who existed as of that historical month — without this, someone hired
+    // this month would wrongly show up (by name, with Head Count) in every earlier month too.
+    ;(filterSource === 'All' && filterMonth === 'All' ? filteredRoster : []).forEach(r => {
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buCode)
       const sec = getSection(bu, r.sectionCode, r.sectionName)

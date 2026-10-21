@@ -309,16 +309,16 @@ export default function HRPageReview({ data }) {
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
-      // Head Count must land here regardless of vp — an active employee simply unpaid
-      // this particular month (e.g. a one-month payroll gap) is still head count. Only
-      // the cost/drilldown entry below is conditioned on vp, so a $0 month doesn't create
-      // a phantom cost row; it used to also gate Head Count by accident, which this
-      // page's "only counts Active employees" KPI card never did — the two silently
-      // diverged for exactly these employees whenever a filter bypassed the monthEvo
-      // point-in-time headcount (so normally invisible, until the live-roster backstop
-      // below — which can't stand in for a Budget Source filter, see its own comment —
-      // was correctly stopped from also papering over this gap for everyone else.)
-      if (r.isCountable) {
+      // Head Count lands here regardless of vp ONLY in "now"/latest mode (no explicit
+      // Month/Year picked) — an active employee simply unpaid this particular month (e.g.
+      // a one-month payroll gap) is still head count, matching this page's "only counts
+      // Active employees" KPI card. But r.isCountable reflects CURRENT status, not status
+      // as of a selected HISTORICAL month — someone hired this month would otherwise also
+      // show up in every earlier month (vp === 0 there, since they didn't exist yet), so
+      // once an explicit Month/Year is selected, vp presence is the only signal we have for
+      // "did this person exist that month" and Head Count stays gated on it, same as the
+      // cost/drilldown entry below always has been.
+      if (r.isCountable && (filterMonth === 'All' || vp !== 0)) {
         bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
       }
       if (vp === 0) return
@@ -350,7 +350,12 @@ export default function HRPageReview({ data }) {
     // "payroll-only concept" limitation as totalHeadcount's KPI figure below), so someone
     // with no payroll row can't be attributed to Corporate/Programme — including them here
     // would silently un-filter the table's headcount back to the company-wide total.
-    ;(filterSource === 'All' ? filteredRoster : []).forEach(r => {
+    // Also skipped whenever an explicit Month/Year is selected: the roster is who's active
+    // RIGHT NOW, not who existed as of that historical month — without this, someone hired
+    // this month (e.g. April) would wrongly show up (by name, with Head Count) in every
+    // earlier month too (e.g. March), since the roster doesn't know or care when they
+    // joined. The payroll-derived rows above already correctly scope by month via vp.
+    ;(filterSource === 'All' && filterMonth === 'All' ? filteredRoster : []).forEach(r => {
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buCode)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
