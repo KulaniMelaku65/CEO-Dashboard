@@ -1291,7 +1291,10 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const inv = invAcctSet ? Gset(invAcctSet) : G('inventory');
   const cl  = Math.abs(clAcctSet ? Gset(clAcctSet) : G('currentLiab'));
   const liab = Math.abs(BS_LIAB   ? Gset(BS_LIAB)   : G('totalLiabilities'));
-  const eq   = Math.abs(BS_EQUITY ? Gset(BS_EQUITY) : G('equity'));
+  // Equity, unlike every other Balance Sheet section above, has no CONFIG.ranges fallback —
+  // only ever shows the real M-BALANCE schedule's figure (0 if that schedule couldn't be
+  // resolved this run), never the crude account-range approximation.
+  const eq   = BS_EQUITY ? Math.abs(Gset(BS_EQUITY)) : 0;
 
   // Balance Sheet — sub-category-grouped account rows for each BS section.
   // Assets are positive (DR normal), liabilities and equity are negated (CR stored).
@@ -1327,7 +1330,10 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const caSection  = bsSectionRaw(BS_CURRENT || rangeSet(CONFIG.ranges.currentAssets));
   const clSection  = bsSectionRaw(clAcctSet  || rangeSet(CONFIG.ranges.currentLiab),    true);
   const nclSection = bsSectionRaw(nclAcctSet || rangeSet(CONFIG.ranges.nonCurrentLiab), true);
-  const eqSection  = bsSectionRaw(BS_EQUITY  || rangeSet(CONFIG.ranges.equity),         true);
+  // Same no-fallback rule as `eq` above — an empty set rather than rangeSet(...) when
+  // BS_EQUITY is unresolved, so the detail page shows no rows rather than the range
+  // approximation's account list.
+  const eqSection  = bsSectionRaw(BS_EQUITY  || new Set(),                              true);
 
   const balanceSheet = {
     asOf: targetDate,
