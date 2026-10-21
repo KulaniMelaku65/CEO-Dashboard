@@ -366,6 +366,21 @@ export default function HRPageReview({ data }) {
       }
     })
 
+    // Per-BU headcount from the live headcount matrix — the SAME source totalHeadcount's
+    // KPI card falls through to (hcCount) whenever a filter other than Month/Year narrows
+    // things (monthEvo has no Type/VC/Source dimensions). Without this, a BU row fell back
+    // straight to bu.activeEmpSet — built from filteredPayAll ∪ filteredRoster, a different
+    // population than headcountMatrix (e.g. Individual Consultant: headcountMatrix/KPI say
+    // 48, but payroll-countable-this-month ∪ live-roster says 56) — so the table's grand
+    // total silently stopped matching the KPI card the same way the Budget Source case did.
+    const hcMatrixByBU = {}
+    headcountMatrix.forEach(r => {
+      if (filterType !== 'All' && r.employeeType   !== filterType) return
+      if (filterVC   !== 'All' && r.virtualCompany !== filterVC)   return
+      const parent = resolveParent(r.buCode)
+      hcMatrixByBU[parent] = (hcMatrixByBU[parent] || 0) + r.count
+    })
+
     const rows = Object.values(buMap)
       .map(bu => {
         // Month/year selected: use the point-in-time reconstruction for that BU instead
@@ -375,7 +390,13 @@ export default function HRPageReview({ data }) {
         // BU — using it here silently ignored the Source filter (this is what made the
         // table's headcount stop matching the KPI card's totalHeadcount above).
         const buMonthEvo = (filterType === 'All' && filterVC === 'All' && filterSource === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
-        const headcount = buMonthEvo ? buMonthEvo.count : bu.activeEmpSet.size
+        // hcMatrixByBU only covers Type/VC, not Budget Source (headcountMatrix has no
+        // source dimension either) — same reasoning as totalHeadcount's own KPI logic,
+        // which only trusts hcCount when filterSource === 'All' too.
+        const hcMatrixCount = filterSource === 'All' ? hcMatrixByBU[bu.buCode] : null
+        const headcount = buMonthEvo ? buMonthEvo.count
+          : (hcMatrixCount != null && hcMatrixCount > 0) ? hcMatrixCount
+          : bu.activeEmpSet.size
 
         const sections = Object.values(bu.sections)
           .map(sec => {
@@ -413,7 +434,7 @@ export default function HRPageReview({ data }) {
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, filterSource, monthEvo])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, filterSource, monthEvo, headcountMatrix])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
