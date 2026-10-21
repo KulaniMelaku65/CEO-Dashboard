@@ -68,6 +68,16 @@ export const budgetSourceOverrides = {
   history: (employeeNo) => req(`/api/budget-source-overrides/${encodeURIComponent(employeeNo)}/history`),
 }
 
+export const payrollCurrencyCorrections = {
+  list: () => req('/api/payroll-currency-corrections'),
+  set: (voucherNo, employeeNo, employeeName, correctCurrency, note) => req('/api/payroll-currency-corrections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ voucherNo, employeeNo, employeeName, correctCurrency, note })
+  }),
+  remove: (voucherNo) => req(`/api/payroll-currency-corrections/${encodeURIComponent(voucherNo)}`, { method: 'DELETE' }),
+}
+
 export const kpi = {
   departments: () => req('/api/kpi/departments'),
   dictionary:  (department) => req(`/api/kpi/dictionary${department ? `?department=${encodeURIComponent(department)}` : ''}`),

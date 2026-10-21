@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
-import { departmentOverrides, budgetSourceOverrides as bsOverrideApi } from '../lib/api.js'
+import { departmentOverrides, budgetSourceOverrides as bsOverrideApi, payrollCurrencyCorrections as currencyApi } from '../lib/api.js'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 import { compareByTitleRank } from '../lib/titleRank.js'
 
@@ -74,6 +74,17 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
   const [bsHistoryByEmp, setBsHistoryByEmp]   = useState({})
   const [loadingBsHistory, setLoadingBsHistory] = useState(false)
 
+  // Payroll Currency Corrections — a third, independent correction type, but unlike
+  // department/budget source it isn't a standing employee attribute editable from a table
+  // row: it corrects one specific voucher's wrong currency tag for one specific month (see
+  // backend/db.js's payroll_currency_corrections). So instead of an Action-column button,
+  // this is its own small form + list panel, keyed by voucher number rather than employee.
+  const [ccCorrections, setCcCorrections]   = useState([])
+  const [loadingCc, setLoadingCc]           = useState(true)
+  const [ccForm, setCcForm] = useState({ voucherNo: '', employeeNo: '', employeeName: '', correctCurrency: 'ETB', note: '' })
+  const [ccBusy, setCcBusy]   = useState(false)
+  const [ccError, setCcError] = useState('')
+
   // Scroll target for the "Active Overrides" KPI card — clicking it jumps straight to the
   // audit-trail panels below instead of making the admin hunt for them by scrolling.
   const overridesPanelRef = useRef(null)
@@ -95,7 +106,37 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
       .catch(() => {})
       .finally(() => setLoadingBsOv(false))
   }
-  useEffect(() => { loadOverrides(); loadBsOverrides() }, [])
+  const loadCcCorrections = () => {
+    setLoadingCc(true)
+    currencyApi.list()
+      .then(r => r.ok ? r.json() : [])
+      .then(setCcCorrections)
+      .catch(() => {})
+      .finally(() => setLoadingCc(false))
+  }
+  useEffect(() => { loadOverrides(); loadBsOverrides(); loadCcCorrections() }, [])
+
+  const submitCcCorrection = async (e) => {
+    e.preventDefault()
+    const { voucherNo, employeeNo, employeeName, correctCurrency, note } = ccForm
+    if (!voucherNo.trim() || !employeeNo.trim()) { setCcError('Voucher number and employee number are required.'); return }
+    setCcBusy(true); setCcError('')
+    try {
+      const r = await currencyApi.set(voucherNo.trim(), employeeNo.trim(), employeeName.trim(), correctCurrency, note.trim())
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Failed to save correction.') }
+      setCcForm({ voucherNo: '', employeeNo: '', employeeName: '', correctCurrency: 'ETB', note: '' })
+      loadCcCorrections(); onDataRefresh?.()
+    } catch (err) { setCcError(err.message) } finally { setCcBusy(false) }
+  }
+
+  const removeCcCorrection = async (voucherNo) => {
+    setCcBusy(true); setCcError('')
+    try {
+      const r = await currencyApi.remove(voucherNo)
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Failed to remove correction.') }
+      loadCcCorrections(); onDataRefresh?.()
+    } catch (err) { setCcError(err.message) } finally { setCcBusy(false) }
+  }
 
   const overrideByNo = useMemo(() => {
     const m = {}
@@ -820,6 +861,88 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
                 </Fragment>
               )
             })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Payroll Currency Corrections — fixes a specific voucher's wrong currency tag ── */}
+      <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <h3 className="text-sm font-bold text-navy">Payroll Currency Corrections {ccCorrections.length > 0 && `(${ccCorrections.length})`}</h3>
+          <p className="text-[10px] text-muted mt-0.5">
+            For when Business Central posts a payroll voucher with the wrong currency tag (e.g. an ETB payment mistakenly marked USD) and the
+            amount then gets multiplied by an exchange rate it shouldn't. Corrects how the dashboard reads that one voucher — doesn't change
+            Business Central's own record. Removing a correction reverts to whatever currency BC's voucher shows on the next sync.
+          </p>
+        </div>
+
+        {/* bg-bg, not a hardcoded light color — the labels below use text-muted, which
+            .dark-app (index.css) flips to white; a flat light background wouldn't follow it
+            there and they'd go near-invisible, same bug fixed on BusinessLinePL.jsx's Gross
+            profit row. bg-bg is remapped to dark navy by .dark-app, so it darkens with it. */}
+        <form onSubmit={submitCcCorrection} className="px-5 py-4 border-b border-border flex flex-wrap items-end gap-2.5 bg-bg">
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Voucher No</label>
+            <input value={ccForm.voucherNo} onChange={e => setCcForm(f => ({ ...f, voucherNo: e.target.value }))}
+              placeholder="PPV03541" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 120 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Employee No</label>
+            <input value={ccForm.employeeNo} onChange={e => setCcForm(f => ({ ...f, employeeNo: e.target.value }))}
+              placeholder="KFT1551" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 110 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Employee Name</label>
+            <input value={ccForm.employeeName} onChange={e => setCcForm(f => ({ ...f, employeeName: e.target.value }))}
+              placeholder="Optional" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 160 }} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Correct Currency</label>
+            <select value={ccForm.correctCurrency} onChange={e => setCcForm(f => ({ ...f, correctCurrency: e.target.value }))}
+              className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 90 }}>
+              <option value="ETB">ETB</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 180 }}>
+            <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Note (optional)</label>
+            <input value={ccForm.note} onChange={e => setCcForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="Why this voucher's tag is wrong" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border w-full" />
+          </div>
+          <button type="submit" disabled={ccBusy} className="text-[11px] font-bold px-3.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: ORANGE }}>
+            Add Correction
+          </button>
+          {ccError && <p className="text-[11px] font-bold w-full" style={{ color: RED }}>{ccError}</p>}
+        </form>
+
+        {loadingCc ? (
+          <p className="text-xs px-5 py-4 text-muted">Loading…</p>
+        ) : ccCorrections.length === 0 ? (
+          <p className="text-xs px-5 py-4 text-muted">No currency corrections set — every voucher is showing whichever currency Business Central reports.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {ccCorrections.map(c => (
+              <div key={c.voucher_no} className="px-5 py-3 flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate text-navy">
+                    {c.voucher_no} <span className="font-normal text-muted">· {c.employee_name || c.employee_no} ({c.employee_no})</span>
+                  </p>
+                  <p className="text-[10px] mt-0.5 text-muted">
+                    Forced to <span style={{ color: ORANGE, fontWeight: 700 }}>{c.correct_currency}</span>
+                    {c.note && <> — {c.note}</>}
+                  </p>
+                  <p className="text-[10px] mt-0.5 text-muted">by {c.created_by || 'unknown'} · {new Date(c.created_at + 'Z').toLocaleString()}</p>
+                </div>
+                <button
+                  onClick={() => removeCcCorrection(c.voucher_no)}
+                  disabled={ccBusy}
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border transition-colors disabled:opacity-40"
+                  style={{ color: RED }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>
