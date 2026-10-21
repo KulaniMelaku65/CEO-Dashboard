@@ -192,22 +192,27 @@ export default function HRPageReview({ data }) {
   const monthEvo = headcountMonthLabel
     ? hcEvoLabels.find(m => m.label === headcountMonthLabel)
     : null
-  // byBU has no further type/VC split, so only trust it for the overall KPI when those
-  // filters aren't also narrowing things (BU filter alone is fine — byBU is per-BU already).
-  const monthHeadcount = (monthEvo && filterType === 'All' && filterVC === 'All')
+  // byBU has no further type/VC/source split, so only trust it for the overall KPI when
+  // none of those are also narrowing things (BU filter alone is fine — byBU is per-BU already).
+  const monthHeadcount = (monthEvo && filterType === 'All' && filterVC === 'All' && filterSource === 'All')
     ? (filterBU === 'All' ? monthEvo.count : monthEvo.byBU?.[filterBU]?.count ?? 0)
     : null
 
   const totalHeadcount = useMemo(() => {
-    // Budget Source is a payroll-only concept with no representation in the live
-    // headcount table at all (same limitation documented elsewhere: "Budget Source has
-    // no historical reconstruction"), so validHC/filteredHC/monthHeadcount below would
-    // silently ignore this filter and always show the unfiltered total. Count unique
-    // payroll-derived employees instead whenever Source is actually narrowed —
-    // filteredPay already respects filterSource (and is isCountable-filtered).
-    if (filterSource !== 'All')
-      return new Set(filteredPay.map(r => r.employeeNo)).size
     if (monthHeadcount != null) return monthHeadcount
+    // Either "now" mode, or an explicit historical month that headcountEvolution's byBU
+    // can't answer (Type/VC/Source narrows things further than byBU's dimensions, or no
+    // reconstruction exists for that month at all). headcountMatrix/validHC/filteredHC below
+    // are always "today" snapshots with no month dimension, so they can only be trusted when
+    // no explicit historical month is selected — otherwise count payroll-derived employees
+    // actually paid that month (isCountable + that month's pay !== 0), the same point-in-time
+    // gate the BU table below uses, instead of silently reusing today's live headcount
+    // regardless of which month was picked.
+    if (filterMonth !== 'All' || filterSource !== 'All') {
+      const countable = filteredPayAll.filter(r => r.isCountable &&
+        (filterMonth === 'All' || ((r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)) !== 0))
+      return new Set(countable.map(r => r.employeeNo)).size
+    }
     const hcCount = (filterBU === 'All' && filterType === 'All' && filterVC === 'All')
       ? validHC.reduce((s, r) => s + r.count, 0)
       : filteredHC.reduce((s, r) => s + r.count, 0)
@@ -219,7 +224,7 @@ export default function HRPageReview({ data }) {
     if (hcCount === 0 && filteredPay.length > 0)
       return new Set(filteredPay.map(r => r.employeeNo)).size
     return hcCount
-  }, [validHC, filteredHC, filteredPay, filterBU, filterType, filterVC, filterSource, monthHeadcount])
+  }, [validHC, filteredHC, filteredPay, filteredPayAll, filterBU, filterType, filterVC, filterSource, filterMonth, effectiveMonth, monthHeadcount])
 
   const { totalMonthly, kifiyaMonthly, safeeMonthly } = useMemo(() => {
     let total = 0, kifiya = 0, safee = 0
@@ -378,13 +383,19 @@ export default function HRPageReview({ data }) {
     // population than headcountMatrix (e.g. Individual Consultant: headcountMatrix/KPI say
     // 48, but payroll-countable-this-month ∪ live-roster says 56) — so the table's grand
     // total silently stopped matching the KPI card the same way the Budget Source case did.
+    // headcountMatrix is always a "today" snapshot with no month dimension, so it's only
+    // trustworthy here in "now" mode (filterMonth === 'All') — otherwise it would silently
+    // override the correctly month-scoped bu.activeEmpSet.size below with today's count
+    // regardless of which historical month is selected.
     const hcMatrixByBU = {}
-    headcountMatrix.forEach(r => {
-      if (filterType !== 'All' && r.employeeType   !== filterType) return
-      if (filterVC   !== 'All' && r.virtualCompany !== filterVC)   return
-      const parent = resolveParent(r.buCode)
-      hcMatrixByBU[parent] = (hcMatrixByBU[parent] || 0) + r.count
-    })
+    if (filterMonth === 'All') {
+      headcountMatrix.forEach(r => {
+        if (filterType !== 'All' && r.employeeType   !== filterType) return
+        if (filterVC   !== 'All' && r.virtualCompany !== filterVC)   return
+        const parent = resolveParent(r.buCode)
+        hcMatrixByBU[parent] = (hcMatrixByBU[parent] || 0) + r.count
+      })
+    }
 
     const rows = Object.values(buMap)
       .map(bu => {
@@ -439,7 +450,7 @@ export default function HRPageReview({ data }) {
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, filterSource, monthEvo, headcountMatrix])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, filterMonth, allBUs, filterType, filterVC, filterSource, monthEvo, headcountMatrix])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)

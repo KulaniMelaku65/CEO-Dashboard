@@ -370,7 +370,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
     }).sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, deptDisplayNames, dimensionNames, monthEvo, filterType, filterVC, filterSource])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, filterMonth, deptDisplayNames, dimensionNames, monthEvo, filterType, filterVC, filterSource])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
