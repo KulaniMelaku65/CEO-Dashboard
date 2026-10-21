@@ -259,10 +259,17 @@ export default function PeopleHRSummary({ data }) {
       .map(([country, count]) => ({ country, count }))
       .sort((a, b) => b.count - a.count)
   })()
+  // BC's Employee_Location is blank for a meaningful share of employees (contractors in
+  // particular rarely have an office assigned) — those employees still count toward
+  // "Employees Number"/Male/Female above, so without this third bucket HQ + Field would
+  // silently fall short of the total with no visible explanation. Track them explicitly
+  // instead of just dropping them, and surface the count below (sub on the HQ/Field cells)
+  // so the numbers reconcile rather than looking like a bug.
   const hqField = activeEmployees.reduce((acc, e) => {
     if (e.region) { if (e.isHQ) acc.hq++; else acc.field++ }
+    else acc.unspecified++
     return acc
-  }, { hq: 0, field: 0 })
+  }, { hq: 0, field: 0, unspecified: 0 })
 
   // ── Budget Source — cost split by payroll source (Corporate vs Programme) ──
   const budgetLine = [
@@ -312,8 +319,10 @@ export default function PeopleHRSummary({ data }) {
               <div><p className="text-white font-extrabold text-xl leading-none">{femalePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Female</p></div>
             </div>
           </Cell1>
-          <Cell1 label="Employees In HQ" value={fmtN(hqField.hq)} />
-          <Cell1 label="Employees in Field" value={fmtN(hqField.field)} />
+          <Cell1 label="Employees In HQ" value={fmtN(hqField.hq)}
+            sub={hqField.unspecified > 0 ? `+${fmtN(hqField.unspecified)} no location on file` : null} />
+          <Cell1 label="Employees in Field" value={fmtN(hqField.field)}
+            sub={hqField.unspecified > 0 ? `HQ + Field + unspecified = ${fmtN(totalEmployees)}` : null} />
         </div>
 
         {/* ── Row 2: Employment Type table + Turnover + BU charts ── */}
