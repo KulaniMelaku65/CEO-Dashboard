@@ -1556,6 +1556,24 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   employees = employees.filter(e => !KNOWN_VENDOR_IDS.has(e.no));
   empHist   = empHist.filter(e => !KNOWN_VENDOR_IDS.has(e.employeeNo));
 
+  // GetEmployee returns one row per job-title MOVEMENT event (promotion/transfer), not one
+  // row per employee — every core field (status, department, gender, employmentDate, ...)
+  // is identical across an employee's rows, only the movement* fields and AuxiliaryIndex5
+  // (that movement's own sequence number) differ. 1,707 unique employee numbers currently
+  // span 2,350 rows here. Anything that iterates `employees` without deduplicating first
+  // double/triple-counts whoever has a recorded movement — this is what inflated past
+  // months in headcountEvolution's reconstruction below (e.g. a historical month showing
+  // MORE headcount than the live "now" count, which should be structurally impossible).
+  // Keep the highest AuxiliaryIndex5 (most recent movement) per employee number.
+  {
+    const latestByNo = new Map();
+    employees.forEach(e => {
+      const prev = latestByNo.get(e.no);
+      if (!prev || num(e.AuxiliaryIndex5) >= num(prev.AuxiliaryIndex5)) latestByNo.set(e.no, e);
+    });
+    employees = [...latestByNo.values()];
+  }
+
   // KFT_Employee_Headcount now exposes an explicit 'employeeNo' column (Employee."No.").
   // When BC returns the explicit column, AuxiliaryIndex1 (the legacy system-column alias
   // for the root dataitem's primary key) may no longer be populated. Backfill it so all
