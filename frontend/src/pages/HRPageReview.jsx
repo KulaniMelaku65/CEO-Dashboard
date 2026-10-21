@@ -303,20 +303,30 @@ export default function HRPageReview({ data }) {
     // as a cost row (tagged "Inactive" for clarity) without inflating Head Count.
     filteredPayAll.forEach(r => {
       const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
-      if (vp === 0) return
 
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buName)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
+      // Head Count must land here regardless of vp — an active employee simply unpaid
+      // this particular month (e.g. a one-month payroll gap) is still head count. Only
+      // the cost/drilldown entry below is conditioned on vp, so a $0 month doesn't create
+      // a phantom cost row; it used to also gate Head Count by accident, which this
+      // page's "only counts Active employees" KPI card never did — the two silently
+      // diverged for exactly these employees whenever a filter bypassed the monthEvo
+      // point-in-time headcount (so normally invisible, until the live-roster backstop
+      // below — which can't stand in for a Budget Source filter, see its own comment —
+      // was correctly stopped from also papering over this gap for everyone else.)
+      if (r.isCountable) {
+        bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
+      }
+      if (vp === 0) return
+
       bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
       if (r.payrollSource === 'KIFIYA') { bu.kifiya += vp; sec.kifiya += vp; jt.kifiya += vp }
       else                              { bu.safee  += vp; sec.safee  += vp; jt.safee  += vp }
       bu.vcs.add(r.virtualCompany)
-      if (r.isCountable) {
-        bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
-      }
 
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
@@ -336,7 +346,11 @@ export default function HRPageReview({ data }) {
     // history at all (e.g. very recent hires, or a month before any payroll has run
     // for them yet) who would otherwise be entirely missing from the drill-down.
     // Cost stays 0 for these (→ "—"), since there's nothing to show for effectiveMonth.
-    filteredRoster.forEach(r => {
+    // Skipped when Budget Source is filtered: the roster has no source field at all (same
+    // "payroll-only concept" limitation as totalHeadcount's KPI figure below), so someone
+    // with no payroll row can't be attributed to Corporate/Programme — including them here
+    // would silently un-filter the table's headcount back to the company-wide total.
+    ;(filterSource === 'All' ? filteredRoster : []).forEach(r => {
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buCode)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
@@ -356,7 +370,11 @@ export default function HRPageReview({ data }) {
       .map(bu => {
         // Month/year selected: use the point-in-time reconstruction for that BU instead
         // of "now" — same headcount source as the People & HR page for that month.
-        const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
+        // Also bypassed when Budget Source is filtered: monthEvo has no source dimension
+        // at all, so byBU[...].count is always the unfiltered company-wide figure for that
+        // BU — using it here silently ignored the Source filter (this is what made the
+        // table's headcount stop matching the KPI card's totalHeadcount above).
+        const buMonthEvo = (filterType === 'All' && filterVC === 'All' && filterSource === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
         const headcount = buMonthEvo ? buMonthEvo.count : bu.activeEmpSet.size
 
         const sections = Object.values(bu.sections)
@@ -395,7 +413,7 @@ export default function HRPageReview({ data }) {
       .sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, monthEvo])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, allBUs, filterType, filterVC, filterSource, monthEvo])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)

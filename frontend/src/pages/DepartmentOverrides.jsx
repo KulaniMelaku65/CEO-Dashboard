@@ -279,17 +279,23 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
 
     filteredPayAll.forEach(r => {
       const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
-      if (vp === 0) return
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buName)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
+      // Head Count must land here regardless of vp — see HRPageReview.jsx's identical fix
+      // for why gating it on vp too (as well as the cost/drilldown entry below, which
+      // should stay vp-gated) silently diverged this table's Head Count from the KPI
+      // card's own "only counts Active employees" figure once a filter (Budget Source in
+      // particular) forced this activeEmpSet fallback instead of the point-in-time monthEvo.
+      if (r.isCountable) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
+      if (vp === 0) return
+
       bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
       if (r.payrollSource === 'KIFIYA') { bu.kifiya += vp; sec.kifiya += vp; jt.kifiya += vp }
       else                              { bu.safee  += vp; sec.safee  += vp; jt.safee  += vp }
       bu.vcs.add(r.virtualCompany)
-      if (r.isCountable) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
 
       if (!jt.employees.has(r.employeeNo)) {
         jt.employees.set(r.employeeNo, {
@@ -306,7 +312,10 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
     })
 
     // Backstop with the live active roster — active employees with no payroll yet.
-    filteredRoster.forEach(r => {
+    // Skipped when Budget Source is filtered: the roster has no source field at all, so
+    // someone with no payroll row can't be attributed to Corporate/Programme — including
+    // them here would silently un-filter the headcount back to the company-wide total.
+    ;(filterSource === 'All' ? filteredRoster : []).forEach(r => {
       const parent = resolveParent(r.buCode)
       const bu  = getBU(parent, r.buCode)
       const sec = getSection(bu, r.sectionCode, r.sectionName)
@@ -335,7 +344,9 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
         }
       }).sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
 
-      const buMonthEvo = (filterType === 'All' && filterVC === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
+      // Bypassed when Budget Source is filtered too: monthEvo has no source dimension, so
+      // byBU[...].count is always the unfiltered company-wide figure for that BU.
+      const buMonthEvo = (filterType === 'All' && filterVC === 'All' && filterSource === 'All') ? monthEvo?.byBU?.[bu.buCode] : null
       const headcount = buMonthEvo ? buMonthEvo.count : bu.activeEmpSet.size
 
       return {
@@ -347,7 +358,7 @@ export default function DepartmentOverrides({ data, onDataRefresh }) {
     }).sort((a, b) => b.monthly - a.monthly || a.buName.localeCompare(b.buName))
 
     return { tableRows: rows }
-  }, [filteredPayAll, filteredRoster, effectiveMonth, deptDisplayNames, dimensionNames, monthEvo, filterType, filterVC])
+  }, [filteredPayAll, filteredRoster, effectiveMonth, deptDisplayNames, dimensionNames, monthEvo, filterType, filterVC, filterSource])
 
   const grandMonthly   = tableRows.reduce((s, r) => s + r.monthly, 0)
   const grandHeadcount = tableRows.reduce((s, r) => s + r.headcount, 0)
