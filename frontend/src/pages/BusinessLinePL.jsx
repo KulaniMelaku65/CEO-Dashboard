@@ -18,8 +18,13 @@ import { fmtETB, fmtPct } from '../lib/fmt.js'
 // does — all client-side, no extra round trip.
 // ═══════════════════════════════════════════════════════════════════════════
 
+// revenue was '#02404F' (navy) — same color as the dark-mode card the "Revenue to profit
+// bridge" bar sits on (see index.css's .dark-app .bg-white), so the bar itself disappeared
+// the same way its axis/value labels did before that earlier fix. Blue reads clearly
+// against both the light-mode white card and the dark-mode navy one, and isn't already
+// used by any of the other four bars here.
 const COLORS = {
-  revenue:     '#02404F',
+  revenue:     '#4A90E2',
   cos:         '#E5544B',
   grossProfit: '#1FB6A6',
   opex:        '#8E5FD9',
