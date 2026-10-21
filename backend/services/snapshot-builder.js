@@ -276,6 +276,11 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   // Balance Sheet account sets, resolved from the real M-BALANCE schedule below.
   // Stay null (→ CONFIG.ranges fallback further down) if the schedule can't be reached.
   let BS_FIXED = null, BS_CURRENT = null, BS_LIAB = null, BS_EQUITY = null;
+  // Equity's own sub-rows (Paid up Capital, Legal Reserves, Other Reserves, Retained
+  // Earnings), kept separate from the flattened BS_EQUITY set above — see where this is
+  // populated below for why the Equity section display needs these instead of the usual
+  // per-account-subcategory grouping every other Balance Sheet section uses.
+  let BS_EQUITY_ROWS = null;
 
   if (bcAvail) {
     try {
@@ -520,6 +525,37 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           if (fixed.size && current.size && liab.size && equity.size) {
             BS_FIXED = fixed; BS_CURRENT = current; BS_LIAB = liab; BS_EQUITY = equity;
             console.log(`  M-BALANCE: Fixed=${fixed.size} accts, Current=${current.size} accts, Liab=${liab.size} accts, Equity=${equity.size} accts`);
+
+            // Keep F0062's own child rows separate (Paid up Capital / Legal Reserves /
+            // Other Reserves / Retained Earnings) rather than flattening them all into one
+            // set like `equity` above. Retained Earnings' own Totaling is "4040|2995|5000..9999"
+            // — BC computes it as prior retained earnings PLUS the entire P&L (current-year
+            // earnings not yet closed to equity), which is correct for the schedule's total
+            // but means the generic per-CoA-subcategory grouping every other Balance Sheet
+            // section uses would explode that into 20+ individual revenue/expense line items
+            // under "Equity". Grouping by the schedule's own 4 sub-rows instead collapses all
+            // of Retained Earnings' accounts (4040, 2995, the whole P&L range) into that one
+            // "Retained Earnings" line, matching what M-BALANCE itself actually presents.
+            const f0062 = bsByRowNo['F0062'];
+            if (f0062 && f0062.TotalingType !== 'Posting Accounts') {
+              const equityRows = [];
+              const pushEquityRow = (rowNo) => {
+                const row = bsByRowNo[rowNo];
+                const accts = resolveBsRow(rowNo);
+                if (row && accts.size > 0)
+                  equityRows.push({ label: (row.Description || rowNo).replace(/^\d+\s*[-.\s]+/, '').trim(), accounts: accts });
+              };
+              (f0062.Totaling || '').split('+').map(s => s.trim()).filter(Boolean).forEach(term => {
+                const rangeM = term.match(/^([A-Za-z]\d+)\.\.([A-Za-z]\d+)$/);
+                if (rangeM) {
+                  const i0 = bsIdxByRowNo[rangeM[1]], i1 = bsIdxByRowNo[rangeM[2]];
+                  if (i0 != null && i1 != null) for (let i = i0; i <= i1; i++) pushEquityRow(bsRowsSched[i].RowNo);
+                } else {
+                  pushEquityRow(term);
+                }
+              });
+              if (equityRows.length) BS_EQUITY_ROWS = equityRows;
+            }
           }
         }
       } catch (e) {
@@ -1320,6 +1356,23 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     return { rows, total };
   };
 
+  // Same shape as bsSectionRaw, but one row per *schedule* row rather than one row per CoA
+  // subcategory — see BS_EQUITY_ROWS' own comment above for why Equity specifically needs
+  // this (Retained Earnings' accounts span the entire P&L range, which bsSectionRaw would
+  // otherwise explode into 20+ individual revenue/expense line items).
+  const bsSectionByRows = (equityRows, negate = false) => {
+    const rows = equityRows
+      .map(r => ({
+        name: r.label,
+        balance: Math.round(bsRows
+          .filter(x => r.accounts.has(String(x.accountNo)))
+          .reduce((s, x) => s + num(x.balance) * (negate ? -1 : 1), 0))
+      }))
+      .filter(r => r.balance !== 0);
+    const total = rows.reduce((s, x) => s + x.balance, 0);
+    return { rows, total };
+  };
+
   const rangeSet = ([lo, hi]) => new Set(bsRows.map(x => String(x.accountNo)).filter(a => inRange(a, [lo, hi])));
 
   const nca = BS_FIXED ? Gset(BS_FIXED) : G('nonCurrentAssets');
@@ -1330,10 +1383,11 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const caSection  = bsSectionRaw(BS_CURRENT || rangeSet(CONFIG.ranges.currentAssets));
   const clSection  = bsSectionRaw(clAcctSet  || rangeSet(CONFIG.ranges.currentLiab),    true);
   const nclSection = bsSectionRaw(nclAcctSet || rangeSet(CONFIG.ranges.nonCurrentLiab), true);
-  // Same no-fallback rule as `eq` above — an empty set rather than rangeSet(...) when
-  // BS_EQUITY is unresolved, so the detail page shows no rows rather than the range
-  // approximation's account list.
-  const eqSection  = bsSectionRaw(BS_EQUITY  || new Set(),                              true);
+  // Same no-fallback rule as `eq` above — empty rather than rangeSet(...) when BS_EQUITY
+  // is unresolved, so the detail page shows no rows rather than the range approximation's
+  // account list. Grouped by the schedule's own 4 sub-rows (BS_EQUITY_ROWS) rather than
+  // bsSectionRaw's per-CoA-subcategory grouping — see BS_EQUITY_ROWS' own comment.
+  const eqSection  = BS_EQUITY_ROWS ? bsSectionByRows(BS_EQUITY_ROWS, true) : { rows: [], total: 0 };
 
   const balanceSheet = {
     asOf: targetDate,
