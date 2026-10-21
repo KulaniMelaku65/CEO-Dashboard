@@ -116,6 +116,11 @@ function sumRange(rows, k, af = 'accountNo', amf = 'amount') {
 /** Build dashboard JSON for a given date (YYYY-MM-DD). Pass { bypassCache: false } to reuse
  *  the last fetch's BC rows instead of re-querying — see cachedBc() above. */
 async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
+  // Coarse timing, left in permanently (negligible overhead) — used to confirm where an
+  // override-triggered "fast" rebuild's remaining time actually goes. Profiled: with the
+  // BC/Superset/Procurement cache warm, PAYROLL ≈ TOTAL (the payroll block's own in-process
+  // row processing, not network I/O, is the bottleneck) — see its own marker below.
+  console.time('[profile] TOTAL');
   const today = new Date().toISOString().slice(0, 10);
   const IS_HISTORICAL = targetDate !== today;
 
@@ -2221,6 +2226,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       .filter(r => r.employeeNo)
   };
 
+  console.time('[profile] PAYROLL');
   // Payroll cost — standard (KIFIYA) + programme (SAFEE)
   // AL Query has no UNION, so we fetch both and merge here.
   let employeeCost = { byVirtualCompany: [], byDeptAndSource: [], monthly: [] };
@@ -3243,6 +3249,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     };
 
     console.log(`  Payroll cost: ${allPay.length} rows, ${Object.keys(drillMap).length} depts, ${payrollMonths.length} months`);
+    console.timeEnd('[profile] PAYROLL');
   } catch (e) {
     console.warn('  Payroll cost fetch failed:', e.message);
   }
@@ -3688,6 +3695,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     }
   }
 
+  console.timeEnd('[profile] TOTAL');
   return {
     asOf: new Date(targetDate + 'T12:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     budgetActual,
