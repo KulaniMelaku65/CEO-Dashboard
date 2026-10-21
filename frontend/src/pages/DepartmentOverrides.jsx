@@ -292,13 +292,15 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
-      // Head Count lands here regardless of vp ONLY in "now"/latest mode — see
-      // HRPageReview.jsx's identical fix. r.isCountable reflects CURRENT status, not status
-      // as of a selected HISTORICAL month, so once an explicit Month/Year is picked, vp
-      // presence is the only signal for "did this person exist that month" and Head Count
-      // stays gated on it (same as the cost/drilldown entry below always has been) —
-      // otherwise someone hired this month would also show up in every earlier month.
-      if (r.isCountable && (filterMonth === 'All' || vp !== 0)) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
+      // "Now"/latest mode: Head Count uses r.isCountable, their CURRENT status.
+      // Historical month selected: r.isCountable is still CURRENT status, not status as of
+      // THAT month — someone who has since left is isCountable=false for every month of
+      // their employment, wrongly dropping them from headcount even in months they genuinely
+      // worked. vp !== 0 (actually paid that month) is a far better signal of "did this
+      // person exist that month", and already correctly excludes months before they were
+      // hired and months after they left (vp === 0 in both cases) — see HRPageReview.jsx's
+      // identical fix.
+      if (filterMonth === 'All' ? r.isCountable : vp !== 0) { bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo) }
       if (vp === 0) return
 
       bu.monthly += vp; sec.monthly += vp; jt.monthly += vp
@@ -344,7 +346,10 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
 
     const rows = Object.values(buMap).map(bu => {
       const sections = Object.values(bu.sections).map(sec => {
-        const jobTitles = Object.values(sec.jobTitles).map(jt => ({
+        // A job title bucket is created the moment ANY row (in any month) touches it, so one
+        // with nobody in jt.employees for this effectiveMonth is a leftover from a different
+        // month — drop it rather than show an empty "0 headcount" row. See HRPageReview.jsx.
+        const jobTitles = Object.values(sec.jobTitles).filter(jt => jt.employees.size > 0).map(jt => ({
           jobTitle: jt.jobTitle,
           headcount: jt.activeEmpSet.size,
           monthly: Math.round(jt.monthly), kifiya: Math.round(jt.kifiya), safee: Math.round(jt.safee),
@@ -354,7 +359,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
           sectionCode: sec.sectionCode, sectionName: sec.sectionName, headcount: sec.activeEmpSet.size,
           monthly: Math.round(sec.monthly), kifiya: Math.round(sec.kifiya), safee: Math.round(sec.safee), jobTitles
         }
-      }).sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
+      }).filter(sec => sec.jobTitles.length > 0).sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
 
       // Bypassed when Budget Source is filtered too: monthEvo has no source dimension, so
       // byBU[...].count is always the unfiltered company-wide figure for that BU.

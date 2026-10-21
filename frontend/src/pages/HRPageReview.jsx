@@ -204,13 +204,17 @@ export default function HRPageReview({ data }) {
     // can't answer (Type/VC/Source narrows things further than byBU's dimensions, or no
     // reconstruction exists for that month at all). headcountMatrix/validHC/filteredHC below
     // are always "today" snapshots with no month dimension, so they can only be trusted when
-    // no explicit historical month is selected — otherwise count payroll-derived employees
-    // actually paid that month (isCountable + that month's pay !== 0), the same point-in-time
-    // gate the BU table below uses, instead of silently reusing today's live headcount
-    // regardless of which month was picked.
+    // no explicit historical month is selected. In "now" mode, count by r.isCountable (their
+    // CURRENT status). In historical-month mode, r.isCountable is still CURRENT status, not
+    // status as of THAT month — someone who has since left would be isCountable=false for
+    // every month of their employment, wrongly excluding them from a month they genuinely
+    // worked — so use vp !== 0 (actually paid that month) instead, the same point-in-time
+    // signal the BU table below uses, which already correctly excludes months before hire
+    // and months after leaving.
     if (filterMonth !== 'All' || filterSource !== 'All') {
-      const countable = filteredPayAll.filter(r => r.isCountable &&
-        (filterMonth === 'All' || ((r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)) !== 0))
+      const countable = filteredPayAll.filter(r => filterMonth === 'All'
+        ? r.isCountable
+        : ((r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)) !== 0)
       return new Set(countable.map(r => r.employeeNo)).size
     }
     const hcCount = (filterBU === 'All' && filterType === 'All' && filterVC === 'All')
@@ -314,16 +318,19 @@ export default function HRPageReview({ data }) {
       const sec = getSection(bu, r.sectionCode, r.sectionName)
       const jt  = getJobTitle(sec, r.jobTitle)
 
-      // Head Count lands here regardless of vp ONLY in "now"/latest mode (no explicit
-      // Month/Year picked) — an active employee simply unpaid this particular month (e.g.
-      // a one-month payroll gap) is still head count, matching this page's "only counts
-      // Active employees" KPI card. But r.isCountable reflects CURRENT status, not status
-      // as of a selected HISTORICAL month — someone hired this month would otherwise also
-      // show up in every earlier month (vp === 0 there, since they didn't exist yet), so
-      // once an explicit Month/Year is selected, vp presence is the only signal we have for
-      // "did this person exist that month" and Head Count stays gated on it, same as the
-      // cost/drilldown entry below always has been.
-      if (r.isCountable && (filterMonth === 'All' || vp !== 0)) {
+      // "Now"/latest mode (no explicit Month/Year picked): Head Count lands here based on
+      // r.isCountable, their CURRENT status — an active employee simply unpaid this
+      // particular month (e.g. a one-month payroll gap) is still head count, matching this
+      // page's "only counts Active employees" KPI card.
+      // Historical month selected: r.isCountable reflects CURRENT status, not status as of
+      // THAT month — someone who has since left would be isCountable=false for every month
+      // of their employment, wrongly dropping them from headcount even in months they
+      // genuinely worked (e.g. left in April — isCountable is now false for their Jan-April
+      // rows too). vp !== 0 (they were actually paid that month) is a far better signal of
+      // "did this person exist as an employee that month" than today's status, and also
+      // already correctly excludes months before they were hired (vp === 0 there) and months
+      // after they left (vp === 0 there too, once their payroll stops).
+      if (filterMonth === 'All' ? r.isCountable : vp !== 0) {
         bu.activeEmpSet.add(r.employeeNo); sec.activeEmpSet.add(r.employeeNo); jt.activeEmpSet.add(r.employeeNo)
       }
       if (vp === 0) return
@@ -416,7 +423,13 @@ export default function HRPageReview({ data }) {
 
         const sections = Object.values(bu.sections)
           .map(sec => {
+            // A job title bucket gets created the moment ANY row (in any month) touches it,
+            // so one with nobody in jt.employees for this specific effectiveMonth (no one
+            // paid, and no live-roster backstop entry) is a leftover from a different
+            // month's activity — drop it instead of showing an empty "0 headcount" row.
+            // If that job title gains someone again next month, it reappears on its own.
             const jobTitles = Object.values(sec.jobTitles)
+              .filter(jt => jt.employees.size > 0)
               .map(jt => ({
                 jobTitle:  jt.jobTitle,
                 headcount: jt.activeEmpSet.size,
@@ -436,6 +449,9 @@ export default function HRPageReview({ data }) {
               jobTitles
             }
           })
+          // Same reasoning one level up: a section with no job titles left this month
+          // (every one of them was emptied by the filter above) has nothing to show either.
+          .filter(sec => sec.jobTitles.length > 0)
           .sort((a, b) => b.monthly - a.monthly || a.sectionName.localeCompare(b.sectionName))
 
         return {
