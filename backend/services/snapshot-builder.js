@@ -273,9 +273,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   let MGT_OPEX_I18 = new Set(), MGT_OPEX_CATEGORIES_I18 = [];
   let MGT_FIN_I18 = new Set();
 
-  // Balance Sheet account sets, resolved from the real M-BALANCE schedule below.
+  // Balance Sheet account sets, resolved from the real SOFP-KFT schedule below.
   // Stay null (→ CONFIG.ranges fallback further down) if the schedule can't be reached.
   let BS_FIXED = null, BS_CURRENT = null, BS_LIAB = null, BS_EQUITY = null;
+  // Current vs Non-Current Liabilities, straight from the schedule's own F0054/F0036 rows
+  // (SOFP-KFT splits these explicitly, unlike the old M-BALANCE where Long Term Liabilities
+  // was a dead stub) — see where these are populated below for why intersecting BS_LIAB
+  // with CONFIG.ranges.currentLiab/nonCurrentLiab is no longer the right approach.
+  let BS_CURRENT_LIAB = null, BS_NONCURRENT_LIAB = null;
   // Equity's own sub-rows (Paid up Capital, Legal Reserves, Other Reserves, Retained
   // Earnings), kept separate from the flattened BS_EQUITY set above — see where this is
   // populated below for why the Equity section display needs these instead of the usual
@@ -467,21 +472,30 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
 
       console.log(`  FS-IFRS 18: Rev=${MGT_REV_I18.size} accts, COS=${MGT_COS_I18.size} accts, Sal=${MGT_SAL_I18.size} accts, OPEX=${MGT_OPEX_I18.size} accts`);
 
-      // ── Balance Sheet (M-BALANCE) — resolve the real schedule into account sets ──
+      // ── Balance Sheet (SOFP-KFT) — resolve the real schedule into account sets ──
       // This is the same schedule Report 151 "Balance Sheet" runs via
-      // GeneralLedgerSetup."Acc. Sched. for Balance Sheet" (confirmed = M-BALANCE).
+      // GeneralLedgerSetup."Acc. Sched. for Balance Sheet" (originally M-BALANCE, renamed
+      // to SOFP-KFT in BC — same row structure, confirmed live).
       try {
-        const bsRowsSched = (bsLines || []).filter(r => r.ScheduleName === 'M-BALANCE');
+        // BC renamed this schedule from 'M-BALANCE' to 'SOFP-KFT' (confirmed live — the old
+        // name now returns 0 rows). Row numbering/formulas are otherwise identical (F0018,
+        // F0031, F0062, P0057-P0061), except Liabilities: see the F0054/F0055 note below.
+        const bsRowsSched = (bsLines || []).filter(r => r.ScheduleName === 'SOFP-KFT');
         if (bsRowsSched.length) {
           const bsIdxByRowNo = {}, bsByRowNo = {};
           bsRowsSched.forEach((r, i) => { bsIdxByRowNo[r.RowNo] = i; bsByRowNo[r.RowNo] = r; });
 
           // A Posting-Accounts row's Totaling is an account filter: "lo..hi" ranges,
           // single account numbers, or "|"-separated alternatives of either
-          // (e.g. "4030|4041", "4040|2995|5000..9999").
+          // (e.g. "4030|4041", "4040|2995|5000..9999"). SOFP-KFT's P0038 "Trade Creditors"
+          // has a stray trailing comma in its live Totaling value ("3111..3116,") — BC data
+          // entry quirk, not a different syntax — so commas are treated as another
+          // alternative-separator alongside "|" rather than being left to break the "lo..hi"
+          // regex match and silently drop the whole row (this one is ETB 307.6M, by far the
+          // largest current-liability line — confirmed missing via a direct GL balance check).
           const parseAcctTotaling = totaling => {
             const result = new Set();
-            (totaling || '').replace(/[()]/g, '').split('|').map(s => s.trim()).filter(Boolean).forEach(tok => {
+            (totaling || '').replace(/[()]/g, '').split(/[|,]/).map(s => s.trim()).filter(Boolean).forEach(tok => {
               const m = tok.match(/^(\d+)\.\.(\d+)$/);
               if (m) {
                 const lo = Number(m[1]), hi = Number(m[2]);
@@ -516,15 +530,24 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           };
 
           // F0018 Total Fixed Assets, F0031 Total Current Assets, F0062 Total Equity.
-          // Liabilities: F0036 ("=P0034..P0035") is a dead/orphaned "Long Term Liabilities"
-          // stub with no accounts in the live schedule — always empty. F0054
-          // ("=P0037..P0053") is the real 16-account liabilities total; use that instead.
+          // Liabilities: in SOFP-KFT (unlike the old M-BALANCE, where the equivalent Long
+          // Term Liabilities row was a dead/orphaned stub with no accounts), F0036 "Total
+          // Long Term Liabilities" now has real accounts (3701..3749), and F0054 is only
+          // "Total Short Term Liabilities" — using F0054 alone would silently drop the
+          // long-term portion. F0055 ("=F0036+F0054") is the schedule's own real "Total
+          // Liabilities" row; use that instead.
           const fixed = resolveBsRow('F0018'), current = resolveBsRow('F0031');
-          const liab  = resolveBsRow('F0054'), equity  = resolveBsRow('F0062');
+          const liab  = resolveBsRow('F0055'), equity  = resolveBsRow('F0062');
+          const currentLiab = resolveBsRow('F0054'), nonCurrentLiab = resolveBsRow('F0036');
 
           if (fixed.size && current.size && liab.size && equity.size) {
             BS_FIXED = fixed; BS_CURRENT = current; BS_LIAB = liab; BS_EQUITY = equity;
-            console.log(`  M-BALANCE: Fixed=${fixed.size} accts, Current=${current.size} accts, Liab=${liab.size} accts, Equity=${equity.size} accts`);
+            // Current/Non-Current liability sub-sets straight from the schedule, when it
+            // actually splits them (nonCurrentLiab is only non-empty now that SOFP-KFT's
+            // Long Term Liabilities row has real accounts) — CONFIG.ranges.currentLiab/
+            // nonCurrentLiab stay the fallback further down otherwise.
+            if (currentLiab.size && nonCurrentLiab.size) { BS_CURRENT_LIAB = currentLiab; BS_NONCURRENT_LIAB = nonCurrentLiab; }
+            console.log(`  SOFP-KFT: Fixed=${fixed.size} accts, Current=${current.size} accts, Liab=${liab.size} accts (CL=${currentLiab.size}, NCL=${nonCurrentLiab.size}), Equity=${equity.size} accts`);
 
             // Keep F0062's own child rows separate (Paid up Capital / Legal Reserves /
             // Other Reserves / Retained Earnings) rather than flattening them all into one
@@ -559,7 +582,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           }
         }
       } catch (e) {
-        console.warn('  M-BALANCE fetch failed — using hardcoded account ranges:', e.message);
+        console.warn('  SOFP-KFT fetch failed — using hardcoded account ranges:', e.message);
       }
     } catch (e) {
       console.warn('  M-MGT-RPT fetch failed — using hardcoded account sets:', e.message);
@@ -1315,12 +1338,18 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     .filter(x => set.has(String(x.accountNo)))
     .reduce((s, x) => s + num(x.balance), 0);
 
-  // Prefer the real M-BALANCE schedule's account sets (matches BC's official Balance
+  // Prefer the real SOFP-KFT schedule's account sets (matches BC's official Balance
   // Sheet report exactly); fall back to the hardcoded CONFIG.ranges if the schedule
-  // couldn't be resolved this run. M-BALANCE has no current/non-current split for
-  // liabilities, so that distinction is still layered on via CONFIG.ranges either way.
-  const clAcctSet  = BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.currentLiab)))    : null;
-  const nclAcctSet = BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.nonCurrentLiab))) : null;
+  // couldn't be resolved this run. Current/Non-Current Liabilities prefer the schedule's
+  // own BS_CURRENT_LIAB/BS_NONCURRENT_LIAB (F0054/F0036) directly — intersecting the
+  // combined BS_LIAB (F0055, current+non-current together) with CONFIG.ranges.currentLiab/
+  // nonCurrentLiab the way this used to work only made sense back when BS_LIAB was itself
+  // just the current portion (the old M-BALANCE's Long Term Liabilities row was a dead
+  // stub); doing that intersection against the new combined set instead drops most of the
+  // real current-liability accounts (CONFIG.ranges.currentLiab doesn't cover SOFP-KFT's
+  // full, non-contiguous current-liability account list).
+  const clAcctSet  = BS_CURRENT_LIAB || (BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.currentLiab)))    : null);
+  const nclAcctSet = BS_NONCURRENT_LIAB || (BS_LIAB ? new Set([...BS_LIAB].filter(a => inRange(a, CONFIG.ranges.nonCurrentLiab))) : null);
   const invAcctSet = BS_CURRENT ? new Set([...BS_CURRENT].filter(a => inRange(a, CONFIG.ranges.inventory))) : null;
 
   const ca  = BS_CURRENT ? Gset(BS_CURRENT) : G('currentAssets');
