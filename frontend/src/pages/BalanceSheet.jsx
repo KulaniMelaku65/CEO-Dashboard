@@ -70,7 +70,7 @@ function fmtRaw(n) {
   return Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
-function SectionHeader({ label, total, color, expanded, onToggle }) {
+function SectionHeader({ label, total, color, expanded, onToggle, showCompare }) {
   return (
     <tr
       className="cursor-pointer select-none"
@@ -84,14 +84,27 @@ function SectionHeader({ label, total, color, expanded, onToggle }) {
       <td className="px-5 py-3 text-right font-extrabold text-sm" style={{ color }}>
         ETB {fmtRaw(total)}
       </td>
+      {showCompare && <td />}
     </tr>
+  )
+}
+
+// A plain (non-red/green) compare-period cell — a real financial statement's "prior
+// period" column is just the other period's figure side by side, not a judgment call
+// about whether the change is good or bad (the KPI cards above already do that).
+function CompareCell({ value }) {
+  return (
+    <td className="px-5 py-2 text-right text-[13px] text-muted align-middle">
+      {value == null ? '—' : `${value < 0 ? '(' : ''}ETB ${fmtRaw(value)}${value < 0 ? ')' : ''}`}
+    </td>
   )
 }
 
 // `onDrill`, when passed along with a non-empty `accounts` list, makes the row clickable
 // to open the GL drilldown modal for exactly the accounts behind that figure — same
-// click-a-number-to-see-the-ledger behavior BC itself has.
-function AccountRow({ name, balance, accounts, onDrill }) {
+// click-a-number-to-see-the-ledger behavior BC itself has. Only available when the
+// statement is showing live (today's) figures — see `compareLabel`'s caption.
+function AccountRow({ name, balance, accounts, onDrill, compareValue, showCompare }) {
   const clickable = onDrill && accounts?.length > 0
   return (
     <tr
@@ -102,11 +115,12 @@ function AccountRow({ name, balance, accounts, onDrill }) {
       <td className={`px-5 py-2 text-right text-[13px] font-semibold ${balance < 0 ? 'text-red-600' : 'text-navy'} ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
         {balance < 0 ? '(' : ''}ETB {fmtRaw(balance)}{balance < 0 ? ')' : ''}
       </td>
+      {showCompare && <CompareCell value={compareValue} />}
     </tr>
   )
 }
 
-function SubtotalRow({ label, total, light, accounts, onDrill }) {
+function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, showCompare }) {
   const clickable = onDrill && accounts?.length > 0
   return (
     <tr
@@ -118,11 +132,12 @@ function SubtotalRow({ label, total, light, accounts, onDrill }) {
       <td className={`px-5 py-2.5 text-right text-[13px] font-bold text-navy border-t border-border ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
         ETB {fmtRaw(total)}
       </td>
+      {showCompare && <CompareCell value={compareValue} />}
     </tr>
   )
 }
 
-function GrandTotalRow({ label, total, accent, accounts, onDrill }) {
+function GrandTotalRow({ label, total, accent, accounts, onDrill, compareValue, showCompare }) {
   const color = accent || '#FFFFFF'
   const clickable = onDrill && accounts?.length > 0
   return (
@@ -135,20 +150,24 @@ function GrandTotalRow({ label, total, accent, accounts, onDrill }) {
       <td className={`px-5 py-3 text-right font-extrabold text-sm border-t-2 ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`} style={{ color, borderColor: color }}>
         ETB {fmtRaw(total)}
       </td>
+      {showCompare && <CompareCell value={compareValue} />}
     </tr>
   )
 }
 
-function BsSection({ label, section, color, defaultExpanded = true, onDrill }) {
+function BsSection({ label, section, color, defaultExpanded = true, onDrill, compareRows, showCompare }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const rows = section?.rows || []
   const total = section?.total ?? 0
+  const compareByName = {}
+  ;(compareRows || []).forEach(r => { compareByName[r.name] = r.balance })
 
   return (
     <>
-      <SectionHeader label={label} total={total} color={color} expanded={expanded} onToggle={() => setExpanded(e => !e)} />
+      <SectionHeader label={label} total={total} color={color} expanded={expanded} onToggle={() => setExpanded(e => !e)} showCompare={showCompare} />
       {expanded && rows.map((r, i) => (
-        <AccountRow key={i} name={r.name} balance={r.balance} accounts={r.accounts} onDrill={onDrill} />
+        <AccountRow key={i} name={r.name} balance={r.balance} accounts={r.accounts} onDrill={onDrill}
+          compareValue={compareByName[r.name]} showCompare={showCompare} />
       ))}
     </>
   )
@@ -205,11 +224,36 @@ export default function BalanceSheet({ data }) {
   const delta = (curr, prior) => (curr == null || prior == null) ? null : +(curr - prior).toFixed(1)
 
   const { ratios, totalAssets, totalLiabilities, equity, currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities } = bs
-  // Account-level detail only exists on the live object (the monthly array is scalar
-  // totals only) — the statement table below always reads from here regardless of the
-  // period filter, see the note rendered just above it.
-  const { sections } = liveBs
+  const showCompare = !!priorBs
+
+  // Statement rows: live account-level detail (with GL-drilldown account lists) when no
+  // historical period is selected; the selected month's own per-account breakdown
+  // (sectionsRows, added to snapshot-builder.js's monthly computation) otherwise — so the
+  // statement now follows the same period the KPI cards above it do, instead of always
+  // being "today" regardless of the filter. Historical rows don't carry GL account
+  // numbers (only scalar balances), so drilldown stays a live-only feature.
+  const sumRows = (rows) => (rows || []).reduce((s, r) => s + r.balance, 0)
+  const wrapHistorical = (rows) => ({ rows: rows || [], total: sumRows(rows), accounts: [] })
+  const sections = periodBs
+    ? {
+        nonCurrentAssets:      wrapHistorical(periodBs.sectionsRows?.nonCurrentAssets),
+        currentAssets:         wrapHistorical(periodBs.sectionsRows?.currentAssets),
+        currentLiabilities:    wrapHistorical(periodBs.sectionsRows?.currentLiabilities),
+        nonCurrentLiabilities: wrapHistorical(periodBs.sectionsRows?.nonCurrentLiabilities),
+        equity:                wrapHistorical(periodBs.sectionsRows?.equity)
+      }
+    : liveBs.sections
   const hasSections = sections && (sections.nonCurrentAssets?.rows?.length > 0 || sections.currentAssets?.rows?.length > 0)
+  const stmtTotalAssets      = (sections?.nonCurrentAssets?.total || 0) + (sections?.currentAssets?.total || 0)
+  const stmtTotalLiabilities = (sections?.currentLiabilities?.total || 0) + (sections?.nonCurrentLiabilities?.total || 0)
+  const stmtTotalEquity      = sections?.equity?.total || 0
+
+  // Compare column: the prior period's own sectionsRows, same shape regardless of
+  // whether the primary column is live or historical.
+  const compareOf = (key) => priorBs?.sectionsRows?.[key] || null
+  const compareTotalAssets      = priorBs ? sumRows(compareOf('nonCurrentAssets')) + sumRows(compareOf('currentAssets')) : null
+  const compareTotalLiabilities = priorBs ? sumRows(compareOf('currentLiabilities')) + sumRows(compareOf('nonCurrentLiabilities')) : null
+  const compareTotalEquity      = priorBs ? sumRows(compareOf('equity')) : null
 
   return (
     <div className="space-y-6">
@@ -239,39 +283,45 @@ export default function BalanceSheet({ data }) {
         )}
       </div>
 
-      {/* KPI cards — Total Assets / Total Liabilities expand into their Non-Current/Current
-          breakdown on click instead of always showing all four at once. When a Compare To
-          baseline is active, each card also shows its vs-prior-period delta. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ExpandableStatCard label="Total Assets" value={`ETB ${fmtETB(totalAssets || bs.totalAssetsImplied)}`}
-          sub="Fixed + current assets — click to break down" accent={NAVY}
-          open={assetsOpen} onToggle={() => setAssetsOpen(o => !o)}
-          delta={priorBs ? delta(totalAssets, priorBs.totalAssets) : null} deltaLabel={sel.priorLabel} />
-        <ExpandableStatCard label="Total Liabilities" value={`ETB ${fmtETB(totalLiabilities)}`}
-          sub="Current + non-current — click to break down" accent={ORANGE}
-          open={liabOpen} onToggle={() => setLiabOpen(o => !o)}
-          delta={priorBs ? delta(totalLiabilities, priorBs.totalLiabilities) : null} deltaLabel={sel.priorLabel} />
+      {/* KPI cards — Total Assets / Total Liabilities expand into their own Non-Current/
+          Current sub-cards directly beneath them (each kept in its own grid column, so
+          the two groups stay aligned under their own parent instead of one floating into
+          empty space when only one side is expanded). When a Compare To baseline is
+          active, every card also shows its vs-prior-period delta. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <div className="space-y-4">
+          <ExpandableStatCard label="Total Assets" value={`ETB ${fmtETB(totalAssets || bs.totalAssetsImplied)}`}
+            sub="Fixed + current assets — click to break down" accent={NAVY}
+            open={assetsOpen} onToggle={() => setAssetsOpen(o => !o)}
+            delta={priorBs ? delta(totalAssets, priorBs.totalAssets) : null} deltaLabel={sel.priorLabel} />
+          {assetsOpen && (
+            <div className="grid grid-cols-2 gap-4">
+              <StatCard label="Non-Current Assets" value={`ETB ${fmtETB(nonCurrentAssets)}`}
+                sub="Fixed assets net of depreciation" accent={TEAL}
+                delta={priorBs ? delta(nonCurrentAssets, priorBs.nonCurrentAssets) : null} deltaLabel={sel.priorLabel} />
+              <StatCard label="Current Assets" value={`ETB ${fmtETB(currentAssets)}`}
+                sub="Cash, receivables, inventory" accent={TEAL}
+                delta={priorBs ? delta(currentAssets, priorBs.currentAssets) : null} deltaLabel={sel.priorLabel} />
+            </div>
+          )}
+        </div>
+        <div className="space-y-4">
+          <ExpandableStatCard label="Total Liabilities" value={`ETB ${fmtETB(totalLiabilities)}`}
+            sub="Current + non-current — click to break down" accent={ORANGE}
+            open={liabOpen} onToggle={() => setLiabOpen(o => !o)}
+            delta={priorBs ? delta(totalLiabilities, priorBs.totalLiabilities) : null} deltaLabel={sel.priorLabel} />
+          {liabOpen && (
+            <div className="grid grid-cols-2 gap-4">
+              <StatCard label="Current Liabilities" value={`ETB ${fmtETB(currentLiabilities)}`}
+                sub="Due within 12 months" accent={ORANGE}
+                delta={priorBs ? delta(currentLiabilities, priorBs.currentLiabilities) : null} deltaLabel={sel.priorLabel} />
+              <StatCard label="Non-Current Liabilities" value={`ETB ${fmtETB(nonCurrentLiabilities)}`}
+                sub="Due beyond 12 months" accent={ORANGE}
+                delta={priorBs ? delta(nonCurrentLiabilities, priorBs.nonCurrentLiabilities) : null} deltaLabel={sel.priorLabel} />
+            </div>
+          )}
+        </div>
       </div>
-      {assetsOpen && (
-        <div className="grid grid-cols-2 gap-4 pl-4 md:pl-8 md:w-1/2">
-          <StatCard label="Non-Current Assets" value={`ETB ${fmtETB(nonCurrentAssets)}`}
-            sub="Fixed assets net of depreciation" accent={TEAL}
-            delta={priorBs ? delta(nonCurrentAssets, priorBs.nonCurrentAssets) : null} deltaLabel={sel.priorLabel} />
-          <StatCard label="Current Assets" value={`ETB ${fmtETB(currentAssets)}`}
-            sub="Cash, receivables, inventory" accent={TEAL}
-            delta={priorBs ? delta(currentAssets, priorBs.currentAssets) : null} deltaLabel={sel.priorLabel} />
-        </div>
-      )}
-      {liabOpen && (
-        <div className="grid grid-cols-2 gap-4 pl-4 md:pl-8 md:ml-auto md:w-1/2">
-          <StatCard label="Current Liabilities" value={`ETB ${fmtETB(currentLiabilities)}`}
-            sub="Due within 12 months" accent={ORANGE}
-            delta={priorBs ? delta(currentLiabilities, priorBs.currentLiabilities) : null} deltaLabel={sel.priorLabel} />
-          <StatCard label="Non-Current Liabilities" value={`ETB ${fmtETB(nonCurrentLiabilities)}`}
-            sub="Due beyond 12 months" accent={ORANGE}
-            delta={priorBs ? delta(nonCurrentLiabilities, priorBs.nonCurrentLiabilities) : null} deltaLabel={sel.priorLabel} />
-        </div>
-      )}
 
       {/* Ratio cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -280,69 +330,98 @@ export default function BalanceSheet({ data }) {
         <StatCard label="Debt / Equity" value={ratios?.debtToEquity ?? '—'} sub="Total Liabilities / Equity" />
       </div>
 
-      {/* Full Balance Sheet statement — always today's live account-level detail; the
-          period filter above only re-points the KPI cards, since reconstructing every
-          individual account's balance for every past month (rather than just the section
-          totals already computed) is a much larger computation than this page needs. */}
+      {/* Full Balance Sheet statement — now follows the same period the KPI cards above
+          do (a historical month's own account breakdown when one is selected, GL
+          drilldown only available on the live/today view since historical rows don't
+          carry GL account numbers), plus a Compare To column when that's active. */}
       {periodBs && (
         <p className="text-[11px] text-muted -mb-2">
-          Account-level detail below always shows today's live figures — the KPI cards above reflect {sel.periodLabel}.
+          Showing {sel.periodLabel}'s own figures below — GL drilldown (click any figure)
+          is only available on the live view; clear the period filter to use it.
         </p>
       )}
       {hasSections ? (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Balance Sheet Statement</h3>
-            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)} · click a section header to expand / collapse · click any figure to see its GL entries</p>
+            <p className="text-[10px] text-muted mt-0.5">
+              {periodBs ? `As of end of ${sel.periodLabel}` : `As of ${fmtDate(liveBs.asOf)}`}
+              {showCompare && ` vs ${sel.priorLabel}`} · click a section header to expand / collapse
+              {!periodBs && ' · click any figure to see its GL entries'}
+            </p>
           </div>
           <table className="w-full text-sm">
+            {showCompare && (
+              <thead>
+                <tr className="border-b border-border">
+                  <td className="px-5 py-1.5" />
+                  <td className="px-5 py-1.5 text-right text-[10px] font-extrabold text-muted uppercase tracking-wider">
+                    {periodBs ? sel.periodLabel : 'Live'}
+                  </td>
+                  <td className="px-5 py-1.5 text-right text-[10px] font-extrabold text-muted uppercase tracking-wider">{sel.priorLabel}</td>
+                </tr>
+              </thead>
+            )}
             <tbody>
               {/* ── ASSETS ──────────────────────────────── */}
               <tr style={{ background: NAVY + '10' }}>
-                <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
+                <td colSpan={showCompare ? 3 : 2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
                   ASSETS
                 </td>
               </tr>
 
-              <BsSection label="Non-Current Assets" section={sections.nonCurrentAssets} color={TEAL} onDrill={openDrill} />
-              <SubtotalRow label="Total Non-Current Assets" total={sections.nonCurrentAssets?.total} accounts={sections.nonCurrentAssets?.accounts} onDrill={openDrill} />
+              <BsSection label="Non-Current Assets" section={sections.nonCurrentAssets} color={TEAL} onDrill={openDrill}
+                compareRows={compareOf('nonCurrentAssets')} showCompare={showCompare} />
+              <SubtotalRow label="Total Non-Current Assets" total={sections.nonCurrentAssets?.total} accounts={sections.nonCurrentAssets?.accounts} onDrill={openDrill}
+                compareValue={priorBs ? sumRows(compareOf('nonCurrentAssets')) : null} showCompare={showCompare} />
 
-              <BsSection label="Current Assets" section={sections.currentAssets} color={TEAL} defaultExpanded={false} onDrill={openDrill} />
-              <SubtotalRow label="Total Current Assets" total={sections.currentAssets?.total} light accounts={sections.currentAssets?.accounts} onDrill={openDrill} />
+              <BsSection label="Current Assets" section={sections.currentAssets} color={TEAL} defaultExpanded={false} onDrill={openDrill}
+                compareRows={compareOf('currentAssets')} showCompare={showCompare} />
+              <SubtotalRow label="Total Current Assets" total={sections.currentAssets?.total} light accounts={sections.currentAssets?.accounts} onDrill={openDrill}
+                compareValue={priorBs ? sumRows(compareOf('currentAssets')) : null} showCompare={showCompare} />
 
-              <GrandTotalRow label="TOTAL ASSETS" total={sections.totalAssets} accent="#FFFFFF" accounts={sections.totalAssetsAccounts} onDrill={openDrill} />
+              <GrandTotalRow label="TOTAL ASSETS" total={stmtTotalAssets} accent="#FFFFFF" accounts={sections.totalAssetsAccounts} onDrill={openDrill}
+                compareValue={compareTotalAssets} showCompare={showCompare} />
 
               {/* ── LIABILITIES ───────────────────────── */}
-              <tr><td colSpan={2} className="py-2" /></tr>
+              <tr><td colSpan={showCompare ? 3 : 2} className="py-2" /></tr>
               <tr style={{ background: ORANGE + '10' }}>
-                <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: ORANGE }}>
+                <td colSpan={showCompare ? 3 : 2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: ORANGE }}>
                   LIABILITIES
                 </td>
               </tr>
 
-              <BsSection label="Current Liabilities" section={sections.currentLiabilities} color={ORANGE} onDrill={openDrill} />
-              <SubtotalRow label="Total Current Liabilities" total={sections.currentLiabilities?.total} light accounts={sections.currentLiabilities?.accounts} onDrill={openDrill} />
+              <BsSection label="Current Liabilities" section={sections.currentLiabilities} color={ORANGE} onDrill={openDrill}
+                compareRows={compareOf('currentLiabilities')} showCompare={showCompare} />
+              <SubtotalRow label="Total Current Liabilities" total={sections.currentLiabilities?.total} light accounts={sections.currentLiabilities?.accounts} onDrill={openDrill}
+                compareValue={priorBs ? sumRows(compareOf('currentLiabilities')) : null} showCompare={showCompare} />
 
-              <BsSection label="Non-Current Liabilities" section={sections.nonCurrentLiabilities} color={ORANGE} defaultExpanded={false} onDrill={openDrill} />
-              <SubtotalRow label="Total Non-Current Liabilities" total={sections.nonCurrentLiabilities?.total} accounts={sections.nonCurrentLiabilities?.accounts} onDrill={openDrill} />
+              <BsSection label="Non-Current Liabilities" section={sections.nonCurrentLiabilities} color={ORANGE} defaultExpanded={false} onDrill={openDrill}
+                compareRows={compareOf('nonCurrentLiabilities')} showCompare={showCompare} />
+              <SubtotalRow label="Total Non-Current Liabilities" total={sections.nonCurrentLiabilities?.total} accounts={sections.nonCurrentLiabilities?.accounts} onDrill={openDrill}
+                compareValue={priorBs ? sumRows(compareOf('nonCurrentLiabilities')) : null} showCompare={showCompare} />
 
-              <GrandTotalRow label="TOTAL LIABILITIES" total={sections.totalLiabilities} accent={ORANGE} accounts={sections.totalLiabilitiesAccounts} onDrill={openDrill} />
+              <GrandTotalRow label="TOTAL LIABILITIES" total={stmtTotalLiabilities} accent={ORANGE} accounts={sections.totalLiabilitiesAccounts} onDrill={openDrill}
+                compareValue={compareTotalLiabilities} showCompare={showCompare} />
 
               {/* ── EQUITY ────────────────────────────── */}
-              <tr><td colSpan={2} className="py-2" /></tr>
+              <tr><td colSpan={showCompare ? 3 : 2} className="py-2" /></tr>
               <tr style={{ background: GREEN + '10' }}>
-                <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: GREEN }}>
+                <td colSpan={showCompare ? 3 : 2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: GREEN }}>
                   EQUITY
                 </td>
               </tr>
 
-              <BsSection label="Equity" section={sections.equity} color={GREEN} onDrill={openDrill} />
-              <GrandTotalRow label="TOTAL EQUITY" total={sections.totalEquity} accent={GREEN} accounts={sections.equity?.accounts} onDrill={openDrill} />
+              <BsSection label="Equity" section={sections.equity} color={GREEN} onDrill={openDrill}
+                compareRows={compareOf('equity')} showCompare={showCompare} />
+              <GrandTotalRow label="TOTAL EQUITY" total={stmtTotalEquity} accent={GREEN} accounts={sections.equity?.accounts} onDrill={openDrill}
+                compareValue={compareTotalEquity} showCompare={showCompare} />
 
               {/* ── CHECK ─────────────────────────────── */}
-              <tr><td colSpan={2} className="py-2" /></tr>
-              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={sections.totalLiabEquity} accent="#FFFFFF"
-                accounts={[...new Set([...(sections.totalLiabilitiesAccounts || []), ...(sections.equity?.accounts || [])])]} onDrill={openDrill} />
+              <tr><td colSpan={showCompare ? 3 : 2} className="py-2" /></tr>
+              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={stmtTotalLiabilities + stmtTotalEquity} accent="#FFFFFF"
+                accounts={[...new Set([...(sections.totalLiabilitiesAccounts || []), ...(sections.equity?.accounts || [])])]} onDrill={openDrill}
+                compareValue={showCompare ? compareTotalLiabilities + compareTotalEquity : null} showCompare={showCompare} />
             </tbody>
           </table>
         </div>

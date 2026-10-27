@@ -1375,9 +1375,17 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   // purely so the frontend can ask the GL drilldown endpoint "show me the entries behind
   // this number" — same click-to-source-entries behavior as BC itself — without the
   // frontend needing to know anything about CoA subcategories or how a row was grouped.
-  const bsSectionRaw = (acctSet, negate = false) => {
+  // `balanceMap` (accountNo → balance), when passed, replaces bsRows as the balance
+  // source — used by the monthly trailing computation further below to produce the exact
+  // same row shape from a past month-end's running balances, so the frontend can show a
+  // Compare To column on the statement table by matching rows between two calls of this
+  // same function (one against `bsRows` for today, one against a month's snapshot).
+  const bsSectionRaw = (acctSet, negate = false, balanceMap = null) => {
     const subMap = {}, subMinAcct = {}, subAccts = {};
-    bsRows.forEach(x => {
+    const source = balanceMap
+      ? Object.entries(balanceMap).map(([accountNo, balance]) => ({ accountNo, balance }))
+      : bsRows;
+    source.forEach(x => {
       const a = String(x.accountNo);
       if (!acctSet.has(a)) return;
       const detail = acctDetailMap[a] || {};
@@ -1403,11 +1411,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   // subcategory — see BS_EQUITY_ROWS' own comment above for why Equity specifically needs
   // this (Retained Earnings' accounts span the entire P&L range, which bsSectionRaw would
   // otherwise explode into 20+ individual revenue/expense line items).
-  const bsSectionByRows = (equityRows, negate = false) => {
+  const bsSectionByRows = (equityRows, negate = false, balanceMap = null) => {
+    const source = balanceMap
+      ? Object.entries(balanceMap).map(([accountNo, balance]) => ({ accountNo, balance }))
+      : bsRows;
     const rows = equityRows
       .map(r => ({
         name: r.label,
-        balance: Math.round(bsRows
+        balance: Math.round(source
           .filter(x => r.accounts.has(String(x.accountNo)))
           .reduce((s, x) => s + num(x.balance) * (negate ? -1 : 1), 0)),
         accounts: [...r.accounts].sort()
@@ -1507,6 +1518,18 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const mNcl  = Math.abs(nclAcctSet ? GsetRunning(nclAcctSet) : 0);
       const mLiab = Math.abs(BS_LIAB   ? GsetRunning(BS_LIAB)   : 0);
       const mEq   = BS_EQUITY  ? Math.abs(GsetRunning(BS_EQUITY)) : 0;
+      // Same per-subcategory/per-equity-row breakdown as the live `sections` above (reusing
+      // the same two grouping functions against `running` instead of `bsRows`), raw ETB —
+      // lets the Balance Sheet Statement table add a Compare To column by matching rows
+      // between this and the live sections by `name`, instead of only comparing the 7
+      // section-level scalars the KPI cards already show.
+      const sectionsRows = {
+        nonCurrentAssets:      bsSectionRaw(BS_FIXED   || rangeSet(CONFIG.ranges.nonCurrentAssets), false, running).rows,
+        currentAssets:         bsSectionRaw(BS_CURRENT || rangeSet(CONFIG.ranges.currentAssets),    false, running).rows,
+        currentLiabilities:    bsSectionRaw(clAcctSet   || rangeSet(CONFIG.ranges.currentLiab),     true,  running).rows,
+        nonCurrentLiabilities: bsSectionRaw(nclAcctSet  || rangeSet(CONFIG.ranges.nonCurrentLiab),  true,  running).rows,
+        equity: BS_EQUITY_ROWS ? bsSectionByRows(BS_EQUITY_ROWS, true, running).rows : []
+      };
       bsMonthly.push({
         label: m.label,
         totalAssets:        toM(mNca + mCa),
@@ -1517,6 +1540,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
         currentLiabilities:  toM(mCl),
         nonCurrentLiabilities: toM(mNcl),
         equity:              toM(mEq),
+        sectionsRows,
         ratios: {
           currentRatio: mCl ? +(mCa / mCl).toFixed(2) : null,
           quickRatio:   mCl ? +((mCa - mInv) / mCl).toFixed(2) : null,
