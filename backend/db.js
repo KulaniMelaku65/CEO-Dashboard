@@ -212,6 +212,18 @@ db.exec(`
 
   -- Small key/value store for CFO-editable global config that doesn't warrant its own table
   -- (roll-up mode/thresholds, default RAG bands per KPI type).
+  -- Which sidebar pages (App.jsx's ALL_SLIDES ids) show the shared period filter bar
+  -- (YTD/Quarter/Month + Compare To, same component as Financial Performance) — a global
+  -- per-page toggle set from Admin, not a per-user grant like user_page_access above.
+  -- Presence of a row with enabled=1 is what turns the filter bar on for that page; a page
+  -- with no row (or enabled=0) just doesn't render one, same as before this existed.
+  CREATE TABLE IF NOT EXISTS page_filter_settings (
+    page_id    TEXT PRIMARY KEY,
+    enabled    INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now')),
+    updated_by TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS kpi_settings (
     key         TEXT PRIMARY KEY,
     value_json  TEXT NOT NULL,

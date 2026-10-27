@@ -14,6 +14,7 @@ const deptOverrideRoutes = require('./routes/department-overrides');
 const budgetSourceOverrideRoutes = require('./routes/budget-source-overrides');
 const payrollCurrencyCorrectionRoutes = require('./routes/payroll-currency-corrections');
 const adminUserRoutes = require('./routes/admin-users');
+const pageFilterSettingsRoutes = require('./routes/page-filter-settings');
 const kpiRoutes = require('./routes/kpi');
 const { startScheduler } = require('./services/scheduler');
 const { runStartup }     = require('./services/startup');
@@ -41,6 +42,7 @@ app.use('/api/department-overrides', deptOverrideRoutes);
 app.use('/api/budget-source-overrides', budgetSourceOverrideRoutes);
 app.use('/api/payroll-currency-corrections', payrollCurrencyCorrectionRoutes);
 app.use('/api/admin/users', adminUserRoutes);
+app.use('/api/page-filter-settings', pageFilterSettingsRoutes);
 app.use('/api/kpi', kpiRoutes);
 
 // Serve the built React frontend (run `cd frontend && npm run build` first)

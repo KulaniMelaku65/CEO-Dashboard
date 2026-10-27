@@ -1304,20 +1304,28 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     { name: 'Net Profit',      value: toM(netA),  type: 'total' }
   ];
 
-  let bsRows, glAccounts;
+  let bsRows, glAccounts, glEntriesBS;
   if (IS_HISTORICAL) {
     const [glE, rawGlAccounts] = await Promise.all([
       bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`, bypassCache) : Promise.resolve([]),
       bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
     glAccounts = rawGlAccounts;
+    glEntriesBS = glE;
     const bsMap = {};
     glE.forEach(e => { const k = String(e.accountNo); bsMap[k] = (bsMap[k] || 0) + num(e.amount); });
     bsRows = Object.entries(bsMap).map(([accountNo, balance]) => ({ accountNo, balance }));
   } else {
-    [bsRows, glAccounts] = await Promise.all([
+    // Also fetch dated entries in live mode (not just the historical-rebuild path) —
+    // KFT_GL_Balances only ever gives TODAY's cumulative balance, with no way to ask what
+    // it was at an earlier month-end. The trailing-months computation just below needs the
+    // raw dated entries to answer that automatically for any past month, straight from
+    // BC's own ledger, rather than depending on whether a historical sync snapshot happens
+    // to exist for that date.
+    [bsRows, glAccounts, glEntriesBS] = await Promise.all([
       bcAvail ? cachedBc('KFT_GL_Balances', undefined, bypassCache) : Promise.resolve([]),
-      bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([])
+      bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([]),
+      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
   }
 
@@ -1448,6 +1456,64 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       totalLiabEquity:       clSection.total + nclSection.total + eqSection.total
     }
   };
+
+  // ── Balance Sheet — trailing 12 months, point-in-time ───────────────────────────────
+  // Unlike P&L, Balance Sheet accounts are cumulative since inception, so a given month's
+  // figure means "balance AS OF that month's end", not a sum of that month's own activity.
+  // Walk every dated GL entry once (glEntriesBS, fetched above in both live and historical
+  // mode specifically for this), keeping a running per-account cumulative balance, and
+  // snapshot it at each of the last 12 month-end boundaries — this is what lets the Balance
+  // Sheet page answer "July 2026" automatically straight from BC's own ledger, for any
+  // month, instead of depending on whether a historical sync snapshot happens to exist for
+  // that exact date.
+  const bsMonthly = [];
+  if (glEntriesBS && glEntriesBS.length) {
+    const bsTargetDt = new Date(targetDate);
+    const monthsBS = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(bsTargetDt.getFullYear(), bsTargetDt.getMonth() - (11 - i), 1);
+      return {
+        label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+        end:   new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+      };
+    });
+    const sortedEntries = [...glEntriesBS].sort((a, b) => new Date(a.postingDate) - new Date(b.postingDate));
+    const running = {};
+    const GsetRunning = set => [...set].reduce((s, a) => s + (running[a] || 0), 0);
+    let idx = 0;
+    monthsBS.forEach(m => {
+      while (idx < sortedEntries.length && new Date(sortedEntries[idx].postingDate) <= m.end) {
+        const e = sortedEntries[idx];
+        const a = String(e.accountNo);
+        running[a] = (running[a] || 0) + num(e.amount);
+        idx++;
+      }
+      const mNca  = BS_FIXED   ? GsetRunning(BS_FIXED)   : 0;
+      const mCa   = BS_CURRENT ? GsetRunning(BS_CURRENT) : 0;
+      const mInv  = invAcctSet ? GsetRunning(invAcctSet) : 0;
+      const mCl   = Math.abs(clAcctSet  ? GsetRunning(clAcctSet)  : 0);
+      const mNcl  = Math.abs(nclAcctSet ? GsetRunning(nclAcctSet) : 0);
+      const mLiab = Math.abs(BS_LIAB   ? GsetRunning(BS_LIAB)   : 0);
+      const mEq   = BS_EQUITY  ? Math.abs(GsetRunning(BS_EQUITY)) : 0;
+      bsMonthly.push({
+        label: m.label,
+        totalAssets:        toM(mNca + mCa),
+        nonCurrentAssets:    toM(mNca),
+        currentAssets:       toM(mCa),
+        inventory:           toM(mInv),
+        totalLiabilities:    toM(mLiab),
+        currentLiabilities:  toM(mCl),
+        nonCurrentLiabilities: toM(mNcl),
+        equity:              toM(mEq),
+        ratios: {
+          currentRatio: mCl ? +(mCa / mCl).toFixed(2) : null,
+          quickRatio:   mCl ? +((mCa - mInv) / mCl).toFixed(2) : null,
+          debtToEquity: mEq ? +(mLiab / mEq).toFixed(2) : null
+        }
+      });
+    });
+    console.log(`  Balance Sheet monthly: ${bsMonthly.length} months, ${sortedEntries.length} dated entries`);
+  }
+  balanceSheet.monthly = bsMonthly;
 
   // ── Tax (VAT / WHT / Corporate / Payroll) ───────────────────────────────────
   // Tax type accounts are resolved dynamically from KFT_Chart_Of_Accounts (subcategory

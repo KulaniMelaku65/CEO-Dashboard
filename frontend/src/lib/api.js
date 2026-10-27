@@ -16,6 +16,15 @@ export const auth = {
   }),
 }
 
+export const pageFilterSettings = {
+  list: () => req('/api/page-filter-settings'),
+  set:  (pageId, enabled) => req(`/api/page-filter-settings/${pageId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  }),
+}
+
 export const snapshots = {
   latest: ()  => req('/api/snapshots/latest'),
   dates:  ()  => req('/api/snapshots/dates'),

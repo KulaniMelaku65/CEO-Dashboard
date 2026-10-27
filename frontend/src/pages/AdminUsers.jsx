@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { adminUsers } from '../lib/api.js'
+import { adminUsers, pageFilterSettings } from '../lib/api.js'
 import { PAGE_REGISTRY } from '../lib/pages.js'
 import { KPI_DEPARTMENTS } from './kpi/departments.js'
 
@@ -432,6 +432,62 @@ function UserRow({ u, currentUserId, onChanged }) {
   )
 }
 
+// Global, per-page toggle for the shared period filter bar (YTD/Quarter/Month + Compare
+// To — same component as Financial Performance, see PeriodFilterBar.jsx). Separate from
+// the per-user page grants above: this decides whether a page SHOWS the filter at all,
+// not who can see the page itself. Turning it on for a page only does something once that
+// page's own backend/frontend actually reads the filtered period (Balance Sheet is the
+// first to do so) — flipping it on elsewhere is safe (defaults to hidden either way) but
+// won't do anything until that page is wired up to use it.
+function PageFilterSettings() {
+  const [enabledIds, setEnabledIds] = useState(null)
+  const [error, setError] = useState('')
+  const [savingId, setSavingId] = useState(null)
+
+  const load = () => {
+    pageFilterSettings.list()
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load period filter settings.')))
+      .then(setEnabledIds)
+      .catch(e => setError(e.message))
+  }
+  useEffect(() => { load() }, [])
+
+  const toggle = (pageId, on) => {
+    setSavingId(pageId)
+    pageFilterSettings.set(pageId, on)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to save.')))
+      .then(() => setEnabledIds(ids => on ? [...ids, pageId] : ids.filter(id => id !== pageId)))
+      .catch(e => setError(e.message))
+      .finally(() => setSavingId(null))
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h3 className="text-sm font-bold text-navy">Period Filter — Pages</h3>
+        <p className="text-[10px] text-muted mt-0.5">
+          Which pages show the shared YTD / Quarter / Month filter (with Compare To), same
+          control as Financial Performance's. Off by default for every page.
+        </p>
+      </div>
+      {enabledIds === null ? (
+        <p className="text-xs px-5 py-4 text-muted">Loading…</p>
+      ) : error ? (
+        <p className="text-xs px-5 py-4 font-bold" style={{ color: RED }}>{error}</p>
+      ) : (
+        <div className="px-5 py-3 flex flex-wrap gap-x-6 gap-y-2">
+          {TOGGLE_PAGES.map(p => (
+            <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer" style={p.parentId ? { paddingLeft: 16 } : undefined}>
+              <Toggle on={enabledIds.includes(p.id)} disabled={savingId === p.id} onClick={() => toggle(p.id, !enabledIds.includes(p.id))} />
+              <span className="text-xs font-semibold text-navy">{p.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminUsers({ currentUserId }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -468,6 +524,8 @@ export default function AdminUsers({ currentUserId }) {
       <CredentialsBanner info={createdInfo} onDismiss={() => setCreatedInfo(null)} />
 
       <AddUserForm onCreated={(j) => { setCreatedInfo(j); load() }} />
+
+      <PageFilterSettings />
 
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border">

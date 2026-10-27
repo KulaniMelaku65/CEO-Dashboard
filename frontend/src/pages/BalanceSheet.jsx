@@ -1,20 +1,27 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { fmtETB, fmtDate } from '../lib/fmt.js'
-import { snapshots } from '../lib/api.js'
-
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+import { pageFilterSettings } from '../lib/api.js'
+import PeriodFilterBar, { usePeriodSelection } from '../components/PeriodFilterBar.jsx'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
 const GREEN  = '#22C55E'
 
-function StatCard({ label, value, sub, accent }) {
+// `delta` is a signed ETB-millions figure (already computed by the caller as current −
+// prior) shown as a small vs-prior line under `sub` — only passed in when a Compare To
+// baseline is active, same "vs Prior" treatment Financial Performance uses elsewhere.
+function StatCard({ label, value, sub, accent, delta, deltaLabel }) {
   return (
     <div className="bg-white rounded-2xl p-4 border border-border">
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1">{label}</p>
       <p className="text-2xl font-black" style={{ color: accent || '#FFFFFF' }}>{value}</p>
       {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
+      {delta != null && (
+        <p className="text-[11px] font-bold mt-0.5" style={{ color: delta >= 0 ? '#22C55E' : '#E5544B' }}>
+          {delta >= 0 ? '+' : ''}ETB {fmtETB(delta)} vs {deltaLabel}
+        </p>
+      )}
     </div>
   )
 }
@@ -22,11 +29,11 @@ function StatCard({ label, value, sub, accent }) {
 // A Total card that expands into its own Non-Current/Current sub-cards on click — same
 // StatCard look, just clickable with a chevron, so it reads as a drilldown rather than a
 // dead card. `open` is lifted to the parent so the caller decides the default state.
-function ExpandableStatCard({ label, value, sub, accent, open, onToggle }) {
+function ExpandableStatCard({ label, value, sub, accent, open, onToggle, delta, deltaLabel }) {
   return (
     <button
       onClick={onToggle}
-      className="bg-white rounded-2xl p-4 border border-border text-left hover:border-navy/30 transition-colors cursor-pointer"
+      className="bg-white rounded-2xl p-4 border border-border text-left hover:border-navy/30 transition-colors cursor-pointer w-full"
     >
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1 flex items-center gap-1.5">
         <span className="text-[9px]">{open ? '▾' : '▸'}</span>
@@ -34,6 +41,11 @@ function ExpandableStatCard({ label, value, sub, accent, open, onToggle }) {
       </p>
       <p className="text-2xl font-black" style={{ color: accent || '#FFFFFF' }}>{value}</p>
       {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
+      {delta != null && (
+        <p className="text-[11px] font-bold mt-0.5" style={{ color: delta >= 0 ? '#22C55E' : '#E5544B' }}>
+          {delta >= 0 ? '+' : ''}ETB {fmtETB(delta)} vs {deltaLabel}
+        </p>
+      )}
     </button>
   )
 }
@@ -112,131 +124,55 @@ function BsSection({ label, section, color, negate = false, defaultExpanded = tr
 }
 
 export default function BalanceSheet({ data }) {
-  // ── Month/Year filter — page-local (unlike the Topbar's hidden global history
-  // browser), matching every other filtered page in the app. Balance Sheet has no
-  // historical breakdown baked into the live snapshot (it's a point-in-time figure,
-  // not a monthly flow), so a specific month/year re-fetches that date's own stored
-  // snapshot from /api/snapshots instead of slicing arrays already in `data`.
-  const [filterYear, setFilterYear]   = useState('All')
-  const [filterMonth, setFilterMonth] = useState('All')
-  const [allDates, setAllDates]       = useState([])
-  const [histBs, setHistBs]           = useState(null)
-  const [histLoading, setHistLoading] = useState(false)
-  const [histError, setHistError]     = useState(false)
+  const liveBs = data?.balanceSheet || null
+  // Trailing 12 months, point-in-time, computed automatically from BC's own dated GL
+  // ledger at every sync (see snapshot-builder.js) — not dependent on a historical sync
+  // snapshot happening to exist for the exact date picked.
+  const monthly = liveBs?.monthly || []
+  const mData = monthly.map(m => ({ label: m.label }))
+  const sel = usePeriodSelection(mData)
 
+  // Admin-controlled: Admin → "Period Filter — Pages" decides which pages show this bar
+  // at all (off by default everywhere). Balance Sheet works fine without it (just shows
+  // today's live figures, as before this existed).
+  const [filterEnabled, setFilterEnabled] = useState(false)
   useEffect(() => {
-    snapshots.dates()
+    pageFilterSettings.list()
       .then(r => r.ok ? r.json() : [])
-      .then(setAllDates)
+      .then(ids => setFilterEnabled(ids.includes('balance-sheet')))
       .catch(() => {})
   }, [])
-
-  // year → month index → [dates] (dates come back latest-first from the API)
-  const byYear = useMemo(() => {
-    const acc = {}
-    allDates.forEach(d => {
-      const dt = new Date(d + 'T12:00:00')
-      const y = dt.getFullYear(), m = dt.getMonth()
-      if (!acc[y]) acc[y] = {}
-      if (!acc[y][m]) acc[y][m] = []
-      acc[y][m].push(d)
-    })
-    return acc
-  }, [allDates])
-  const years = Object.keys(byYear).map(Number).sort((a, b) => b - a)
-  const monthsForYear = filterYear !== 'All' ? Object.keys(byYear[filterYear] || {}).map(Number) : []
-
-  // Resolve the filter to a single target date: latest snapshot in the picked month, or
-  // latest in the picked year when only Year is set — then fetch that date's own snapshot.
-  const targetDate = filterYear === 'All' ? null
-    : filterMonth !== 'All' ? (byYear[filterYear]?.[MONTH_NAMES.indexOf(filterMonth)]?.[0] || null)
-    : (byYear[filterYear] ? Object.values(byYear[filterYear]).flat().sort().slice(-1)[0] : null)
-
-  useEffect(() => {
-    if (!targetDate) { setHistBs(null); setHistError(false); return }
-    setHistLoading(true); setHistError(false)
-    snapshots.byDate(targetDate)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(d => setHistBs(d?.balanceSheet || null))
-      .catch(() => { setHistBs(null); setHistError(true) })
-      .finally(() => setHistLoading(false))
-  }, [targetDate])
-
-  const isFiltered = filterYear !== 'All'
-  const bs = isFiltered ? histBs : (data?.balanceSheet || null)
 
   // Drilldown expand state for the Total Assets / Total Liabilities KPI cards —
   // collapsed by default so the top row stays compact.
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [liabOpen, setLiabOpen]     = useState(false)
 
-  const filterBar = (
-    <div className="bg-white rounded-2xl border border-border p-4 shadow-card flex flex-wrap gap-4 items-end">
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Year</span>
-        <select
-          value={filterYear}
-          onChange={e => { setFilterYear(e.target.value === 'All' ? 'All' : Number(e.target.value)); setFilterMonth('All') }}
-          className="text-xs font-bold text-navy border border-border rounded-lg px-3 py-2 outline-none bg-white"
-        >
-          <option value="All">All (Live)</option>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Month</span>
-        <select
-          value={filterMonth}
-          onChange={e => setFilterMonth(e.target.value)}
-          disabled={filterYear === 'All'}
-          className="text-xs font-bold text-navy border border-border rounded-lg px-3 py-2 outline-none bg-white disabled:opacity-40"
-        >
-          <option value="All">All (latest in year)</option>
-          {MONTH_NAMES.map((name, i) => (
-            <option key={name} value={name} disabled={!monthsForYear.includes(i)}>{name}</option>
-          ))}
-        </select>
-      </div>
-      {isFiltered && (
-        <button
-          onClick={() => { setFilterYear('All'); setFilterMonth('All') }}
-          className="text-xs font-bold text-muted hover:text-navy px-3 py-2"
-        >
-          Clear filter
-        </button>
-      )}
-    </div>
-  )
-
-  if (histLoading) {
+  if (!liveBs) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
-          <p className="text-xs text-muted font-medium">Loading {filterMonth !== 'All' ? `${filterMonth} ` : ''}{filterYear}…</p>
-        </div>
-        {filterBar}
+      <div className="bg-white rounded-2xl border border-border p-10 text-center text-muted text-sm">
+        No balance sheet data available yet. Sync from Business Central to populate.
       </div>
     )
   }
 
-  if (!bs) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
-        </div>
-        {filterBar}
-        <div className="bg-white rounded-2xl border border-border p-10 text-center text-muted text-sm">
-          {isFiltered
-            ? (histError ? 'Could not load that snapshot.' : `No snapshot available for ${filterMonth !== 'All' ? filterMonth + ' ' : ''}${filterYear}.`)
-            : 'No balance sheet data available yet. Sync from Business Central to populate.'}
-        </div>
-      </div>
-    )
-  }
+  // Balance Sheet is a point-in-time statement, not a flow — so "selected period" means
+  // "as of the end of that period" rather than summed across it. A quarter or an
+  // arbitrary multi-month selection resolves to its latest month; YTD/no selection keeps
+  // today's precise live figures (not the monthly array's approximation, which also feeds
+  // ratios/ a 12-month cap — the live figures have neither limitation).
+  const latestOf = (idxs) => idxs && idxs.length ? monthly[Math.max(...idxs)] : null
+  const periodBs = sel.selMonths.length > 0 ? latestOf(sel.selMonths) : null
+  const bs = periodBs || liveBs
+  const priorBs = latestOf(sel.priorMonths)
 
-  const { sections, ratios, totalAssets, totalLiabilities, equity, currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities } = bs
+  const delta = (curr, prior) => (curr == null || prior == null) ? null : +(curr - prior).toFixed(1)
+
+  const { ratios, totalAssets, totalLiabilities, equity, currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities } = bs
+  // Account-level detail only exists on the live object (the monthly array is scalar
+  // totals only) — the statement table below always reads from here regardless of the
+  // period filter, see the note rendered just above it.
+  const { sections } = liveBs
   const hasSections = sections && (sections.nonCurrentAssets?.rows?.length > 0 || sections.currentAssets?.rows?.length > 0)
 
   return (
@@ -244,37 +180,54 @@ export default function BalanceSheet({ data }) {
       <div>
         <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
         <p className="text-xs text-muted font-medium">
-          As of {fmtDate(bs.asOf)} · source: Business Central
-          {isFiltered && ` · closest snapshot to ${filterMonth !== 'All' ? filterMonth + ' ' : ''}${filterYear}`}
+          {periodBs
+            ? `As of end of ${sel.periodLabel} · source: Business Central`
+            : `As of ${fmtDate(liveBs.asOf)} · source: Business Central`}
         </p>
       </div>
 
-      {filterBar}
+      {filterEnabled && monthly.length > 0 && (
+        <div className="bg-white rounded-2xl border border-border p-4 shadow-card flex flex-wrap items-end justify-between gap-3">
+          <PeriodFilterBar sel={sel} mData={mData} />
+          {sel.selMonths.length > 0 && (
+            <button onClick={sel.clearPeriod} className="text-xs font-bold text-muted hover:text-navy px-3 py-2">
+              Clear filter
+            </button>
+          )}
+        </div>
+      )}
 
       {/* KPI cards — Total Assets / Total Liabilities expand into their Non-Current/Current
-          breakdown on click instead of always showing all four at once. */}
+          breakdown on click instead of always showing all four at once. When a Compare To
+          baseline is active, each card also shows its vs-prior-period delta. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ExpandableStatCard label="Total Assets" value={`ETB ${fmtETB(totalAssets || bs.totalAssetsImplied)}`}
           sub="Fixed + current assets — click to break down" accent="#FFFFFF"
-          open={assetsOpen} onToggle={() => setAssetsOpen(o => !o)} />
+          open={assetsOpen} onToggle={() => setAssetsOpen(o => !o)}
+          delta={priorBs ? delta(totalAssets, priorBs.totalAssets) : null} deltaLabel={sel.priorLabel} />
         <ExpandableStatCard label="Total Liabilities" value={`ETB ${fmtETB(totalLiabilities)}`}
           sub="Current + non-current — click to break down" accent={ORANGE}
-          open={liabOpen} onToggle={() => setLiabOpen(o => !o)} />
+          open={liabOpen} onToggle={() => setLiabOpen(o => !o)}
+          delta={priorBs ? delta(totalLiabilities, priorBs.totalLiabilities) : null} deltaLabel={sel.priorLabel} />
       </div>
       {assetsOpen && (
         <div className="grid grid-cols-2 gap-4 pl-4 md:pl-8 md:w-1/2">
           <StatCard label="Non-Current Assets" value={`ETB ${fmtETB(nonCurrentAssets)}`}
-            sub="Fixed assets net of depreciation" accent={TEAL} />
+            sub="Fixed assets net of depreciation" accent={TEAL}
+            delta={priorBs ? delta(nonCurrentAssets, priorBs.nonCurrentAssets) : null} deltaLabel={sel.priorLabel} />
           <StatCard label="Current Assets" value={`ETB ${fmtETB(currentAssets)}`}
-            sub="Cash, receivables, inventory" accent={TEAL} />
+            sub="Cash, receivables, inventory" accent={TEAL}
+            delta={priorBs ? delta(currentAssets, priorBs.currentAssets) : null} deltaLabel={sel.priorLabel} />
         </div>
       )}
       {liabOpen && (
         <div className="grid grid-cols-2 gap-4 pl-4 md:pl-8 md:ml-auto md:w-1/2">
           <StatCard label="Current Liabilities" value={`ETB ${fmtETB(currentLiabilities)}`}
-            sub="Due within 12 months" accent={ORANGE} />
+            sub="Due within 12 months" accent={ORANGE}
+            delta={priorBs ? delta(currentLiabilities, priorBs.currentLiabilities) : null} deltaLabel={sel.priorLabel} />
           <StatCard label="Non-Current Liabilities" value={`ETB ${fmtETB(nonCurrentLiabilities)}`}
-            sub="Due beyond 12 months" accent={ORANGE} />
+            sub="Due beyond 12 months" accent={ORANGE}
+            delta={priorBs ? delta(nonCurrentLiabilities, priorBs.nonCurrentLiabilities) : null} deltaLabel={sel.priorLabel} />
         </div>
       )}
 
@@ -285,12 +238,20 @@ export default function BalanceSheet({ data }) {
         <StatCard label="Debt / Equity" value={ratios?.debtToEquity ?? '—'} sub="Total Liabilities / Equity" />
       </div>
 
-      {/* Full Balance Sheet statement */}
+      {/* Full Balance Sheet statement — always today's live account-level detail; the
+          period filter above only re-points the KPI cards, since reconstructing every
+          individual account's balance for every past month (rather than just the section
+          totals already computed) is a much larger computation than this page needs. */}
+      {periodBs && (
+        <p className="text-[11px] text-muted -mb-2">
+          Account-level detail below always shows today's live figures — the KPI cards above reflect {sel.periodLabel}.
+        </p>
+      )}
       {hasSections ? (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Balance Sheet Statement</h3>
-            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(bs.asOf)} · click a section header to expand / collapse</p>
+            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)} · click a section header to expand / collapse</p>
           </div>
           <table className="w-full text-sm">
             <tbody>
@@ -347,7 +308,7 @@ export default function BalanceSheet({ data }) {
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Balance Sheet Summary</h3>
-            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(bs.asOf)}</p>
+            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)}</p>
           </div>
           <table className="w-full text-sm">
             <tbody>
