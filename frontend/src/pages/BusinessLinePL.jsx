@@ -385,6 +385,28 @@ export default function BusinessLinePL({ data }) {
   ]
   const maxMix = Math.max(1, ...c.revenueMix.map(r => Math.abs(r.actual)))
 
+  // Positive bars (Revenue, Gross profit, EBITDA) grow rightward from zero; negative ones
+  // (Cost of sales, OPEX) grow leftward. Recharts' built-in LabelList `position="right"`
+  // always places the label past the bar's higher-x edge regardless of sign — for a
+  // negative bar that edge IS the zero-crossing, not its outer end, so the label lands
+  // right next to the zero line instead of out past the bar, overlapping the Y-axis
+  // category text next to it (worse the narrower the chart gets and "Cost of sales" wraps
+  // to two lines). This renders the label itself from the bar's actual geometry Recharts
+  // hands back (x/width in real pixels for however wide the container/bar ended up, so it
+  // tracks screen size and data changes automatically) and always anchors it on the bar's
+  // OUTER edge — away from the zero line — instead of the inner one.
+  const BridgeLabel = (props) => {
+    const { x, y, width, height, value } = props
+    const isNeg = value < 0
+    const labelX = isNeg ? x - 6 : x + width + 6
+    return (
+      <text x={labelX} y={y + height / 2} dy={4} textAnchor={isNeg ? 'end' : 'start'}
+        style={{ fontSize: 11, fontWeight: 700, fill: '#6B7C93' }}>
+        {fmtETB(Math.abs(value))}
+      </text>
+    )
+  }
+
   return (
     <div className="space-y-5">
       {/* Business line selector + period filter */}
@@ -500,8 +522,12 @@ export default function BusinessLinePL({ data }) {
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
             <h3 className="text-sm font-bold text-navy mb-3">Revenue to profit bridge</h3>
             <ResponsiveContainer width="100%" height={190}>
-              <BarChart data={bridgeData} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }}>
-                <XAxis type="number" hide />
+              <BarChart data={bridgeData} layout="vertical" margin={{ top: 5, right: 56, left: 5, bottom: 5 }}>
+                {/* Padding the domain past the real min/max (rather than letting bars span
+                    edge-to-edge) reserves room for BridgeLabel's outer-edge placement on
+                    whichever bar ends up most negative/positive, so its label never has to
+                    crowd the Y-axis column — scales with whatever that extreme value is. */}
+                <XAxis type="number" hide domain={[(min) => (min < 0 ? min * 1.35 : 0), (max) => max * 1.05]} />
                 {/* Muted gray, not navy — this card is "bg-white" in light mode but remapped to a
                     dark navy card by .dark-app (index.css); navy text would vanish against that.
                     Every other chart on a bg-white card in this app uses this same '#6B7C93' for
@@ -510,8 +536,7 @@ export default function BusinessLinePL({ data }) {
                 <Tooltip formatter={(v) => fmtETB(Math.abs(v))} />
                 <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                   {bridgeData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  <LabelList dataKey="value" position="right" formatter={(v) => fmtETB(Math.abs(v))}
-                    style={{ fontSize: 11, fontWeight: 700, fill: '#6B7C93' }} />
+                  <LabelList dataKey="value" content={BridgeLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

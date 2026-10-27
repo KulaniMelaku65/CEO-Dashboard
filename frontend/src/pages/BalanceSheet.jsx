@@ -9,20 +9,30 @@ const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
 const GREEN  = '#22C55E'
 
+// Same KPI card language as P&L by Business Line / Financial Performance — a colored
+// left accent bar + navy value text (readable on the card in both light and dark mode,
+// since "text-navy" is a class index.css's .dark-app remaps, unlike a hardcoded inline
+// white) — instead of the plain white-card-with-colored-value-text this page had before,
+// which also only worked by coincidence in dark mode (default-colored value text was
+// literally inline white-on-white in light mode whenever no accent was passed).
 // `delta` is a signed ETB-millions figure (already computed by the caller as current −
-// prior) shown as a small vs-prior line under `sub` — only passed in when a Compare To
-// baseline is active, same "vs Prior" treatment Financial Performance uses elsewhere.
+// prior) shown as a small vs-prior line with an ▲/▼ arrow — only passed in when a
+// Compare To baseline is active, matching how BusinessLinePL.jsx shows "vs budget"/"vs
+// prior" deltas.
 function StatCard({ label, value, sub, accent, delta, deltaLabel }) {
   return (
-    <div className="bg-white rounded-2xl p-4 border border-border">
-      <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-black" style={{ color: accent || '#FFFFFF' }}>{value}</p>
-      {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
-      {delta != null && (
-        <p className="text-[11px] font-bold mt-0.5" style={{ color: delta >= 0 ? '#22C55E' : '#E5544B' }}>
-          {delta >= 0 ? '+' : ''}ETB {fmtETB(delta)} vs {deltaLabel}
-        </p>
-      )}
+    <div className="bg-white rounded-2xl border border-border shadow-card p-4 relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent || NAVY }} />
+      <div className="pl-2">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1">{label}</p>
+        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        {sub && <p className="text-[10px] text-muted">{sub}</p>}
+        {delta != null && (
+          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2EBD85' : '#E5544B' }}>
+            {delta >= 0 ? '▲' : '▼'} ETB {fmtETB(Math.abs(delta))} vs {deltaLabel}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -34,19 +44,22 @@ function ExpandableStatCard({ label, value, sub, accent, open, onToggle, delta, 
   return (
     <button
       onClick={onToggle}
-      className="bg-white rounded-2xl p-4 border border-border text-left hover:border-navy/30 transition-colors cursor-pointer w-full"
+      className="bg-white rounded-2xl border border-border shadow-card p-4 relative overflow-hidden text-left hover:border-navy/30 transition-colors cursor-pointer w-full"
     >
-      <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1 flex items-center gap-1.5">
-        <span className="text-[9px]">{open ? '▾' : '▸'}</span>
-        {label}
-      </p>
-      <p className="text-2xl font-black" style={{ color: accent || '#FFFFFF' }}>{value}</p>
-      {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
-      {delta != null && (
-        <p className="text-[11px] font-bold mt-0.5" style={{ color: delta >= 0 ? '#22C55E' : '#E5544B' }}>
-          {delta >= 0 ? '+' : ''}ETB {fmtETB(delta)} vs {deltaLabel}
+      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent || NAVY }} />
+      <div className="pl-2">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1 flex items-center gap-1.5">
+          <span className="text-[9px]">{open ? '▾' : '▸'}</span>
+          {label}
         </p>
-      )}
+        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        {sub && <p className="text-[10px] text-muted">{sub}</p>}
+        {delta != null && (
+          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2EBD85' : '#E5544B' }}>
+            {delta >= 0 ? '▲' : '▼'} ETB {fmtETB(Math.abs(delta))} vs {deltaLabel}
+          </p>
+        )}
+      </div>
     </button>
   )
 }
@@ -200,32 +213,38 @@ export default function BalanceSheet({ data }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
-        <p className="text-xs text-muted font-medium">
-          {periodBs
-            ? `As of end of ${sel.periodLabel} · source: Business Central`
-            : `As of ${fmtDate(liveBs.asOf)} · source: Business Central`}
-        </p>
-      </div>
-
-      {filterEnabled && monthly.length > 0 && (
-        <div className="bg-white rounded-2xl border border-border p-4 shadow-card flex flex-wrap items-end justify-between gap-3">
-          <PeriodFilterBar sel={sel} mData={mData} />
-          {sel.selMonths.length > 0 && (
-            <button onClick={sel.clearPeriod} className="text-xs font-bold text-muted hover:text-navy px-3 py-2">
-              Clear filter
-            </button>
-          )}
+      {/* Header + filter — same layout as Financial Performance: title on the left,
+          the period filter inline at the top-right, no separate boxed card around it. */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
+          <p className="text-xs text-muted font-medium">
+            {periodBs
+              ? `As of end of ${sel.periodLabel} · source: Business Central`
+              : `As of ${fmtDate(liveBs.asOf)} · source: Business Central`}
+          </p>
         </div>
-      )}
+        {filterEnabled && monthly.length > 0 && (
+          <div className="flex flex-wrap items-end gap-2.5">
+            <PeriodFilterBar sel={sel} mData={mData} />
+            {sel.selMonths.length > 0 && (
+              <button
+                onClick={sel.clearPeriod}
+                className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* KPI cards — Total Assets / Total Liabilities expand into their Non-Current/Current
           breakdown on click instead of always showing all four at once. When a Compare To
           baseline is active, each card also shows its vs-prior-period delta. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ExpandableStatCard label="Total Assets" value={`ETB ${fmtETB(totalAssets || bs.totalAssetsImplied)}`}
-          sub="Fixed + current assets — click to break down" accent="#FFFFFF"
+          sub="Fixed + current assets — click to break down" accent={NAVY}
           open={assetsOpen} onToggle={() => setAssetsOpen(o => !o)}
           delta={priorBs ? delta(totalAssets, priorBs.totalAssets) : null} deltaLabel={sel.priorLabel} />
         <ExpandableStatCard label="Total Liabilities" value={`ETB ${fmtETB(totalLiabilities)}`}
