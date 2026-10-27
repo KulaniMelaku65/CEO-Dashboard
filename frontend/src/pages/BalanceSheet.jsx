@@ -186,9 +186,10 @@ function BsSection({ label, section, color, defaultExpanded = true, onDrill, com
 
 export default function BalanceSheet({ data }) {
   const liveBs = data?.balanceSheet || null
-  // Trailing 12 months, point-in-time, computed automatically from BC's own dated GL
+  // Trailing 24 months, point-in-time, computed automatically from BC's own dated GL
   // ledger at every sync (see snapshot-builder.js) — not dependent on a historical sync
-  // snapshot happening to exist for the exact date picked.
+  // snapshot happening to exist for the exact date picked. 24 (not 12) so a recent
+  // month's Compare To can reach the same month a year earlier for YoY comparison.
   const monthly = liveBs?.monthly || []
   const mData = monthly.map(m => ({ label: m.label }))
   const sel = usePeriodSelection(mData)
@@ -283,7 +284,11 @@ export default function BalanceSheet({ data }) {
           </p>
         </div>
         {filterEnabled && monthly.length > 0 && (
-          <div className="flex flex-wrap items-end gap-2.5">
+          // ml-auto: keeps this group pinned to the right once it wraps onto its own
+          // line (e.g. once Clear filters appears and widens it) — matches Financial
+          // Performance's header row, where a lone wrapped flex item would otherwise
+          // default to the line's left edge under justify-between.
+          <div className="flex flex-wrap items-end gap-2.5 ml-auto">
             <PeriodFilterBar sel={sel} mData={mData} />
             {sel.selMonths.length > 0 && (
               <button

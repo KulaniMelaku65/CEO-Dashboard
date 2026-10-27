@@ -6,6 +6,7 @@ import {
 import { budget as budgetApi } from '../lib/api.js'
 import { aggregateByPeriod } from '../lib/period.js'
 import PeriodToggle from '../components/PeriodToggle.jsx'
+import { PeriodTree, usePeriodSelection } from '../components/PeriodFilterBar.jsx'
 
 const NAVY   = '#02404F'
 const ORANGE = '#EB7D23'
@@ -64,6 +65,43 @@ function adaptApiData(apiData) {
   }
 }
 
+// Re-derives totalBudget/actualYTD (top-level, byBU, byAccount) from each row's
+// already-present `.monthly` (per-month {bud, act}) series, scoped to `selMonths`
+// ([] = YTD/all, matching every other Filter by Period page) — same role
+// BusinessLinePL's computeForMonths plays for business-line P&L. `categories`
+// (the per-BU expense-category hover breakdown) has no monthly series from the
+// backend, so it's left as YTD-only regardless of the period filter.
+function applyPeriodFilter(cb, selMonths) {
+  if (!cb || !selMonths.length) return cb
+  const sumSel = arr => selMonths.reduce((s, i) => s + (arr[i] || 0), 0)
+  const hasActuals = cb.actualYTD != null
+
+  const totalBudget = sumSel(cb.monthly.budget)
+  const actualYTD   = hasActuals ? sumSel(cb.monthly.actual) : null
+
+  const byBU = cb.byBU.map(r => {
+    const budgetYTD   = sumSel(r.monthly.map(m => m.bud))
+    const act         = hasActuals ? sumSel(r.monthly.map(m => m.act)) : null
+    const varianceYTD = hasActuals ? budgetYTD - act : null
+    return {
+      ...r, budgetYTD, actualYTD: act, varianceYTD,
+      varPct:  hasActuals && budgetYTD ? +(varianceYTD / budgetYTD * 100).toFixed(1) : null,
+      utilPct: hasActuals && budgetYTD ? +(act / budgetYTD * 100).toFixed(1) : null,
+    }
+  })
+
+  const byAccount = cb.byAccount.map(r => {
+    const budgetYTD = sumSel(r.monthly.map(m => m.bud))
+    const act       = hasActuals ? sumSel(r.monthly.map(m => m.act)) : null
+    return {
+      ...r, budgetYTD, actualYTD: act,
+      utilPct: hasActuals && budgetYTD ? +(act / budgetYTD * 100).toFixed(1) : null,
+    }
+  })
+
+  return { ...cb, totalBudget, actualYTD, byBU, byAccount }
+}
+
 // ── Shared sub-components ────────────────────────────────────────────────────
 
 function KpiCard({ label, value, sub, color }) {
@@ -91,7 +129,7 @@ function UtilBar({ pct }) {
 
 // ── Tab components ───────────────────────────────────────────────────────────
 
-function OverviewTab({ cb, buLabel }) {
+function OverviewTab({ cb, buLabel, periodLabel }) {
   const [period, setPeriod] = useState('monthly')
   const monthlyData = cb.monthly.labels.map((label, i) => ({
     label,
@@ -124,7 +162,7 @@ function OverviewTab({ cb, buLabel }) {
 
       <div className="bg-white rounded-2xl border border-border p-4">
         <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
-          Top BU Budget YTD
+          Top BU Budget{periodLabel ? ` — ${periodLabel}` : ' YTD'}
         </p>
         <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 220 }}>
           {cb.byBU.slice(0, 12).map(r => (
@@ -585,10 +623,16 @@ export default function BudgetAnalysis({ data }) {
 
   // For the 4 existing tabs: prefer snapshot data (has actuals); fall back to adapted API data
   const snapshotCb = data?.corporateBudget
-  const cb = useMemo(() => {
+  const rawCb = useMemo(() => {
     if (snapshotCb && snapshotCb.budgetName === selectedBudget) return snapshotCb
     return adaptApiData(apiData)
   }, [snapshotCb, apiData, selectedBudget])
+
+  // Filter by Period — same control/behavior as Financial Performance, scoped to
+  // whichever budget's 12 months are currently loaded (`rawCb.monthly.labels`).
+  const mData = useMemo(() => (rawCb?.monthly?.labels || []).map(label => ({ label })), [rawCb])
+  const sel = usePeriodSelection(mData)
+  const cb = useMemo(() => applyPeriodFilter(rawCb, sel.selMonths), [rawCb, sel.selMonths])
 
   const buNames  = apiData?.buNames || {}
   const buLabel  = code => buNames[code] || code
@@ -601,7 +645,10 @@ export default function BudgetAnalysis({ data }) {
 
   return (
     <div className="space-y-4">
-      {/* Header row: title + budget selector + tabs */}
+      {/* Header row: title + budget selector (left), Filter by Period (right) — same
+          top-right placement as Financial Performance/Balance Sheet/P&L by Business
+          Line, pinned with ml-auto so it stays put once Clear filters appears. Tabs
+          moved to their own row below so this one never has to wrap. */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-extrabold text-navy">Corporate Budget Analysis</h1>
@@ -626,27 +673,41 @@ export default function BudgetAnalysis({ data }) {
           </div>
         </div>
 
-        <div className="flex gap-0.5 bg-bg rounded-xl p-1 border border-border flex-wrap">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
-              style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {mData.length > 0 && (
+          <div className="flex flex-wrap items-end gap-2.5 ml-auto">
+            <PeriodTree mData={mData} selected={sel.selMonths} onChange={sel.setSelMonths} />
+            {sel.selMonths.length > 0 && (
+              <button
+                onClick={sel.clearPeriod}
+                className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-0.5 bg-bg rounded-xl p-1 border border-border flex-wrap w-fit">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
+            style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* KPI cards */}
       {cb && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard label="Total Budget" value={fmtM(cb.totalBudget)} sub={`Budget ${selectedBudget}`} />
+          <KpiCard label={sel.selMonths.length ? 'Budget' : 'Total Budget'} value={fmtM(cb.totalBudget)} sub={sel.selMonths.length ? sel.periodLabel : `Budget ${selectedBudget}`} />
           {hasActuals ? (
             <>
-              <KpiCard label="Actual YTD" value={fmtM(cb.actualYTD)} sub="OPEX expenses" color={ORANGE} />
+              <KpiCard label={sel.selMonths.length ? 'Actual' : 'Actual YTD'} value={fmtM(cb.actualYTD)} sub="OPEX expenses" color={ORANGE} />
               <KpiCard
                 label="Variance"
                 value={fmtM(variance)}
@@ -654,9 +715,9 @@ export default function BudgetAnalysis({ data }) {
                 color={variance >= 0 ? GREEN : RED}
               />
               <KpiCard
-                label="Utilization YTD"
+                label={sel.selMonths.length ? 'Utilization' : 'Utilization YTD'}
                 value={fmtPct(utilPct)}
-                sub="vs annual budget"
+                sub={sel.selMonths.length ? 'vs period budget' : 'vs annual budget'}
                 color={(utilPct || 0) > 100 ? RED : (utilPct || 0) > 80 ? ORANGE : TEAL}
               />
             </>
@@ -686,7 +747,7 @@ export default function BudgetAnalysis({ data }) {
         </div>
       ) : (
         <>
-          {tab === 'overview' && <OverviewTab cb={cb} buLabel={buLabel} />}
+          {tab === 'overview' && <OverviewTab cb={cb} buLabel={buLabel} periodLabel={sel.selMonths.length ? sel.periodLabel : null} />}
           {tab === 'bybu'     && <ByBUTab     cb={cb} buLabel={buLabel} />}
           {tab === 'monthly'  && <MonthlyTab  cb={cb} buLabel={buLabel} />}
           {tab === 'opex'     && <OpexTab     cb={cb} />}

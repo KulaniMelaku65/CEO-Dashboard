@@ -31,6 +31,27 @@ const COLORS = {
   ebitda:      '#2EBD85',
 }
 
+// Splits a plain "Month Year" label (e.g. "January 2025") into its two parts so a
+// single-month selection displays as separate Month / Year fields — the same visual
+// format as the People & Culture / HR Analysis filter bar — without changing the
+// underlying control (YTD/quarter/multi-month selection and Compare To still work;
+// a quarter/YTD/multi-month summary has no clean split, so it just shows its own text).
+function splitMonthYear(label) {
+  const m = /^(\D+?)\s+(\d{4})$/.exec(label || '')
+  return m ? [m[1], m[2]] : null
+}
+function SplitLabel({ label }) {
+  const parts = splitMonthYear(label)
+  if (!parts) return <span className="truncate">{label}</span>
+  return (
+    <span className="flex items-center gap-2 min-w-0 flex-1">
+      <span className="truncate">{parts[0]}</span>
+      <span className="w-px self-stretch bg-border flex-shrink-0" />
+      <span className="flex-shrink-0">{parts[1]}</span>
+    </span>
+  )
+}
+
 // Period filter — identical to Financial Performance's PeriodTree (copied rather than
 // shared, matching how Financial2.jsx was built as its own full replica).
 function PeriodTree({ mData, selected, onChange }) {
@@ -73,7 +94,7 @@ function PeriodTree({ mData, selected, onChange }) {
         onClick={() => setOpen(o => !o)}
         className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
       >
-        <span className="truncate">{summary}</span>
+        <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
@@ -155,7 +176,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
         onClick={() => setOpen(o => !o)}
         className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
       >
-        <span className="truncate">{summary}</span>
+        <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
@@ -424,7 +445,12 @@ export default function BusinessLinePL({ data }) {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-end gap-2.5">
+        {/* ml-auto: when this group wraps onto its own line below the business-line
+            buttons (narrower viewports, or once Compare To/Clear filters widen it),
+            flexbox's default justify-between would otherwise snap a lone wrapped item
+            to the line's start (left) — the auto margin keeps it pinned to the right,
+            same as Financial Performance's identical header row. */}
+        <div className="flex flex-wrap items-end gap-2.5 ml-auto">
           <PeriodTree mData={mData} selected={selMonths} onChange={setSelMonths} />
           {compareMode && (
             <ComparePicker

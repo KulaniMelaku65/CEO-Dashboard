@@ -93,6 +93,22 @@ export default function App() {
       .finally(() => setBooting(false))
   }, [])
 
+  // Re-check /api/auth/me periodically so an admin revoking a page or a sensitive
+  // feature (e.g. Payroll Currency Corrections) takes effect for someone already
+  // mid-session, not just on their next login/reload — /api/auth/me itself already
+  // re-reads pageIds/isAdmin from the DB on every call (not from the JWT), this is
+  // just what was missing to actually call it again while the tab stays open.
+  useEffect(() => {
+    if (!user) return
+    const id = setInterval(() => {
+      auth.me()
+        .then(r => r.ok ? r.json() : null)
+        .then(u => { if (u) setUser(u) })
+        .catch(() => {})
+    }, 2 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [!!user])
+
   // Close sidebar when route changes on mobile
   useEffect(() => { setSidebar(false) }, [slide])
 

@@ -1481,20 +1481,24 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     }
   };
 
-  // ── Balance Sheet — trailing 12 months, point-in-time ───────────────────────────────
+  // ── Balance Sheet — trailing 24 months, point-in-time ───────────────────────────────
   // Unlike P&L, Balance Sheet accounts are cumulative since inception, so a given month's
   // figure means "balance AS OF that month's end", not a sum of that month's own activity.
   // Walk every dated GL entry once (glEntriesBS, fetched above in both live and historical
   // mode specifically for this), keeping a running per-account cumulative balance, and
-  // snapshot it at each of the last 12 month-end boundaries — this is what lets the Balance
+  // snapshot it at each of the last 24 month-end boundaries — this is what lets the Balance
   // Sheet page answer "July 2026" automatically straight from BC's own ledger, for any
   // month, instead of depending on whether a historical sync snapshot happens to exist for
-  // that exact date.
+  // that exact date. 24 rather than 12 specifically so a year-over-year comparison (e.g.
+  // July 2026 vs July 2025) has its prior-year month available — both PeriodTree (now
+  // showing as many quarters as the data actually spans, not a hardcoded 4) and
+  // ComparePicker's own "explicit" dropdown reach every month in this array, so last
+  // year's matching month is directly pickable as a Compare To target.
   const bsMonthly = [];
   if (glEntriesBS && glEntriesBS.length) {
     const bsTargetDt = new Date(targetDate);
-    const monthsBS = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(bsTargetDt.getFullYear(), bsTargetDt.getMonth() - (11 - i), 1);
+    const monthsBS = Array.from({ length: 24 }, (_, i) => {
+      const d = new Date(bsTargetDt.getFullYear(), bsTargetDt.getMonth() - (23 - i), 1);
       return {
         label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
         end:   new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
