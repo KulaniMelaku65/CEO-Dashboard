@@ -1,18 +1,44 @@
 import { useEffect, useRef, useState } from 'react'
 
-// "Qtr N" only means something for a calendar-aligned year (N=1 is always Jan-Mar).
-// A rolling multi-year window (e.g. Balance Sheet's 24 trailing months) has no such
-// fixed alignment, so every quarter bucket is labeled by the real months it spans
-// instead — e.g. "May – Jul 2026", or just "Jul 2026" for a single-month bucket at
-// the array's edge. Falls back to a bare month label when the quarter is a single month.
-function quarterLabel(mData, monthIdxs) {
-  if (!monthIdxs?.length) return ''
-  const first = mData[monthIdxs[0]]?.label
-  const last  = mData[monthIdxs[monthIdxs.length - 1]]?.label
-  if (!first) return ''
-  if (!last || first === last) return first
-  const firstMonthOnly = first.split(' ')[0]?.slice(0, 3)
-  return `${firstMonthOnly} – ${last}`
+const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+
+// Parses a month label ("January 2025", or a bare "Jan" with no year — Corporate
+// Budget's labels carry no year since its 12 months are always one budget cycle) into
+// its calendar month index (0-11) and year (string, or null when absent).
+function parseMonthLabel(label) {
+  const parts = String(label || '').trim().split(/\s+/)
+  const mi = MONTH_NAMES.indexOf((parts[0] || '').slice(0, 3).toLowerCase())
+  const year = parts[1] && /^\d{4}$/.test(parts[1]) ? parts[1] : null
+  return mi < 0 ? null : { mi, year }
+}
+
+// Groups mData's month indices into real calendar quarters (Jan-Mar/Apr-Jun/Jul-Sep/
+// Oct-Dec of a given year), not sequential chunks of 3 — a rolling multi-year window
+// (e.g. Balance Sheet's 24 trailing months) doesn't start on a quarter boundary, so
+// chunking by position would mislabel e.g. "Nov/Dec/Jan" as a single quarter. Grouping
+// by each month's own real quarter+year instead means a quarter at either edge of the
+// window can hold 1-3 months (a true partial quarter), same as real financial
+// reporting. Labels without a year (Corporate Budget's bare "Jan".."Dec") are assumed
+// to already be one calendar year in order, so they still land one group per quarter.
+// Returned groups are in chronological order; each carries an `anchor` (its first month
+// index) used as its stable identifier wherever a plain "quarter index" was used before.
+function quarterGroups(mData) {
+  const groups = new Map()
+  mData.forEach((m, i) => {
+    const parsed = parseMonthLabel(m.label)
+    if (!parsed) return
+    const q = Math.floor(parsed.mi / 3)
+    const key = `${parsed.year ?? '_'}-${q}`
+    if (!groups.has(key)) groups.set(key, { q, year: parsed.year, months: [] })
+    groups.get(key).months.push(i)
+  })
+  return [...groups.values()]
+    .sort((a, b) => a.months[0] - b.months[0])
+    .map(g => ({ ...g, anchor: g.months[0], label: `Q${g.q + 1}${g.year ? ` ${g.year}` : ''}` }))
+}
+
+function quarterGroupByAnchor(mData, anchor) {
+  return quarterGroups(mData).find(g => g.anchor === anchor) || null
 }
 
 // Splits a plain "Month Year" label (e.g. "January 2025") into its two parts so a
@@ -61,31 +87,32 @@ export function PeriodTree({ mData, selected, onChange }) {
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [])
 
-  // Quarter count follows mData's own length rather than a hardcoded 4 — Financial
-  // Performance's mData is exactly one calendar year (4 quarters, unchanged behavior
-  // here), but a page like Balance Sheet carries a 24-month rolling window (for
-  // year-over-year comparisons via ComparePicker below), and every quarter in it needs
-  // to stay reachable here too, not just the most recent 4.
-  const quarterCount = Math.max(4, Math.ceil(mData.length / 3))
-  const quarters = Array.from({ length: quarterCount }, (_, q) => q).map(q => {
-    const months = [q * 3, q * 3 + 1, q * 3 + 2].filter(i => i < mData.length)
-    const checkedCount = months.filter(i => selected.includes(i)).length
-    return { q, months, state: months.length === 0 ? 'empty' : checkedCount === 0 ? 'none' : checkedCount === months.length ? 'all' : 'partial' }
-  }).filter(qt => qt.months.length > 0)
+  // Real calendar-quarter buckets (Q1/Q2/Q3/Q4, labeled with a year when mData's labels
+  // carry one) rather than sequential chunks of 3 — see quarterGroups' own comment for
+  // why that distinction matters once mData spans more than one calendar year (Balance
+  // Sheet's 24-month rolling window).
+  const quarters = quarterGroups(mData).map(g => {
+    const checkedCount = g.months.filter(i => selected.includes(i)).length
+    return { ...g, state: checkedCount === 0 ? 'none' : checkedCount === g.months.length ? 'all' : 'partial' }
+  })
 
   const toggleMonth = (i) => onChange(selected.includes(i) ? selected.filter(v => v !== i) : [...selected, i])
   const toggleQuarter = (qt) => onChange(qt.state === 'all'
     ? selected.filter(v => !qt.months.includes(v))
     : [...new Set([...selected, ...qt.months])])
-  const toggleExpanded = (q) => setExpanded(cur => {
+  const toggleExpanded = (anchor) => setExpanded(cur => {
     const next = new Set(cur)
-    next.has(q) ? next.delete(q) : next.add(q)
+    next.has(anchor) ? next.delete(anchor) : next.add(anchor)
     return next
   })
 
-  const fullQuarterMatch = quarters.find(qt => qt.state === 'all' && qt.months.length === 3 && selected.length === 3)
+  // months.length > 1 guards against a quarter that happens to span just one month at
+  // the edge of a rolling window (e.g. "Q4 2026" holding only October so far) — picking
+  // that one month should read as "October 2026", not as a misleadingly quarter-labeled
+  // single month.
+  const fullQuarterMatch = quarters.find(qt => qt.state === 'all' && qt.months.length === selected.length && qt.months.length > 1)
   const summary = selected.length === 0 ? 'YTD'
-    : fullQuarterMatch ? quarterLabel(mData, fullQuarterMatch.months)
+    : fullQuarterMatch ? fullQuarterMatch.label
     : selected.length === 1 ? mData[selected[0]]?.label
     : `${selected.length} months`
 
@@ -109,13 +136,13 @@ export function PeriodTree({ mData, selected, onChange }) {
           </button>
           <div className="border-t border-border my-1" />
           {quarters.map(qt => (
-            <div key={qt.q}>
+            <div key={qt.anchor}>
               <div className="flex items-center gap-1 px-1.5 py-1 hover:bg-[#F0F7F6]">
                 <button
-                  onClick={() => toggleExpanded(qt.q)}
+                  onClick={() => toggleExpanded(qt.anchor)}
                   className="w-5 h-5 flex items-center justify-center text-muted flex-shrink-0"
                 >
-                  {expanded.has(qt.q) ? '−' : '+'}
+                  {expanded.has(qt.anchor) ? '−' : '+'}
                 </button>
                 <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-navy cursor-pointer">
                   <input
@@ -125,10 +152,10 @@ export function PeriodTree({ mData, selected, onChange }) {
                     onChange={() => toggleQuarter(qt)}
                     className="w-3.5 h-3.5 flex-shrink-0"
                   />
-                  {quarterLabel(mData, qt.months)}
+                  {qt.label}
                 </label>
               </div>
-              {expanded.has(qt.q) && (
+              {expanded.has(qt.anchor) && (
                 <div className="pl-9">
                   {qt.months.map(i => (
                     <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
@@ -161,20 +188,22 @@ export function ComparePicker({ mode, mData, current, value, onChange }) {
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [])
 
-  const quarterCount = Math.max(4, Math.ceil(mData.length / 3))
-  const quarterMonths = (q) => [q * 3, q * 3 + 1, q * 3 + 2].filter(i => i < mData.length)
+  // Quarter options/values are identified by their anchor (first month index) rather
+  // than a sequential quarter number — see quarterGroups' own comment.
+  const allQuarters = quarterGroups(mData)
+  const currentQIdx = mode === 'quarter' ? allQuarters.findIndex(g => g.anchor === current) : -1
   const options = mode === 'month'
     ? mData.map((m, i) => ({ value: i, label: m.label })).filter(o => o.value !== current)
-    : Array.from({ length: quarterCount }, (_, q) => q)
-        .map(q => ({ value: q, label: quarterLabel(mData, quarterMonths(q)), months: quarterMonths(q) }))
-        .filter(o => o.months.length === 3 && o.value !== current)
+    : allQuarters
+        .map(g => ({ value: g.anchor, label: g.label, months: g.months }))
+        .filter(o => o.value !== current)
 
   const autoLabel = mode === 'month'
     ? (current > 0 ? mData[current - 1]?.label : null)
-    : (current > 0 ? quarterLabel(mData, quarterMonths(current - 1)) : null)
+    : (currentQIdx > 0 ? allQuarters[currentQIdx - 1]?.label : null)
 
   const summary = value != null
-    ? (mode === 'month' ? mData[value]?.label : quarterLabel(mData, quarterMonths(value)))
+    ? (mode === 'month' ? mData[value]?.label : allQuarters.find(g => g.anchor === value)?.label)
     : autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'
 
   return (
@@ -223,14 +252,18 @@ export function usePeriodSelection(mData) {
   const [compareIdx, setCompareIdx] = useState(null) // explicit baseline the user picked
 
   const singleMonth = selMonths.length === 1 ? selMonths[0] : null
-  const singleQuarterIdx = (() => {
-    if (selMonths.length !== 3) return null
-    const q = Math.floor(selMonths[0] / 3)
-    const expected = [q * 3, q * 3 + 1, q * 3 + 2]
-    return (expected.length === 3 && expected.every(i => selMonths.includes(i))) ? q : null
-  })()
-  const quarterMonthIdxs = (q) => [q * 3, q * 3 + 1, q * 3 + 2].filter(i => i < mData.length)
-  const fullQuarterLabel = singleQuarterIdx != null ? quarterLabel(mData, quarterMonthIdxs(singleQuarterIdx)) : null
+  // Identified by its anchor (first month index), not a sequential quarter number —
+  // see quarterGroups' own comment for why (a rolling multi-year window's quarters
+  // don't start at the same position every year).
+  const allQuarters = quarterGroups(mData)
+  // months.length > 1 guards against a quarter edge-case that holds just one month so
+  // far (e.g. "Q4 2026" = October only) — that should behave as a single-month pick
+  // (MoM Compare To, "October 2026" labeling), not a quarter one.
+  const matchedQuarter = allQuarters.find(g =>
+    g.months.length > 1 && g.months.length === selMonths.length && g.months.every(i => selMonths.includes(i)))
+  const singleQuarterIdx = matchedQuarter ? matchedQuarter.anchor : null
+  const quarterMonthIdxs = (anchor) => quarterGroupByAnchor(mData, anchor)?.months || []
+  const fullQuarterLabel = matchedQuarter ? matchedQuarter.label : null
 
   const compareMode = singleMonth != null ? 'month' : singleQuarterIdx != null ? 'quarter' : null
   useEffect(() => { setCompareIdx(null) }, [compareMode])
@@ -240,18 +273,26 @@ export function usePeriodSelection(mData) {
     : compareMode === 'quarter' && compareIdx !== singleQuarterIdx ? compareIdx
     : null
 
+  // The quarter immediately before the selected one, chronologically — not "anchor - 3"
+  // (anchors aren't sequential across a rolling multi-year window).
+  const prevQuarterGroup = (() => {
+    if (singleQuarterIdx == null) return null
+    const idx = allQuarters.findIndex(g => g.anchor === singleQuarterIdx)
+    return idx > 0 ? allQuarters[idx - 1] : null
+  })()
+
   const priorMonths =
     compareMode === 'month'   && effectiveCompareIdx != null ? [effectiveCompareIdx]
-    : compareMode === 'quarter' && effectiveCompareIdx != null ? [effectiveCompareIdx * 3, effectiveCompareIdx * 3 + 1, effectiveCompareIdx * 3 + 2].filter(i => i < mData.length)
+    : compareMode === 'quarter' && effectiveCompareIdx != null ? quarterMonthIdxs(effectiveCompareIdx)
     : singleMonth != null ? (singleMonth > 0 ? [singleMonth - 1] : null)
-    : singleQuarterIdx != null ? (singleQuarterIdx > 0 ? [singleQuarterIdx * 3 - 3, singleQuarterIdx * 3 - 2, singleQuarterIdx * 3 - 1] : null)
+    : singleQuarterIdx != null ? (prevQuarterGroup ? prevQuarterGroup.months : null)
     : null
 
   const priorLabel =
     compareMode === 'month'   && effectiveCompareIdx != null ? mData[effectiveCompareIdx]?.label
-    : compareMode === 'quarter' && effectiveCompareIdx != null ? quarterLabel(mData, quarterMonthIdxs(effectiveCompareIdx))
+    : compareMode === 'quarter' && effectiveCompareIdx != null ? quarterGroupByAnchor(mData, effectiveCompareIdx)?.label
     : singleMonth != null ? (priorMonths ? mData[priorMonths[0]]?.label : null)
-    : singleQuarterIdx != null ? (priorMonths ? quarterLabel(mData, priorMonths) : null)
+    : singleQuarterIdx != null ? (prevQuarterGroup ? prevQuarterGroup.label : null)
     : null
 
   const periodLabel = selMonths.length === 0

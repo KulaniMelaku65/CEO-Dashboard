@@ -1536,6 +1536,10 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       };
       bsMonthly.push({
         label: m.label,
+        // YYYY-MM-DD month-end — lets the frontend ask the GL drilldown endpoint for
+        // entries "as of" this exact historical month instead of always today's date,
+        // once a period filter picks a month other than the live/current one.
+        asOf: m.end.toISOString().slice(0, 10),
         totalAssets:        toM(mNca + mCa),
         nonCurrentAssets:    toM(mNca),
         currentAssets:       toM(mCa),

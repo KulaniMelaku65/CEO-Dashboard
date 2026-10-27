@@ -102,10 +102,13 @@ function CompareCell({ value }) {
 
 // `onDrill`, when passed along with a non-empty `accounts` list, makes the row clickable
 // to toggle the GL drilldown panel open directly beneath it, in place — same
-// click-a-number-to-see-the-ledger behavior BC itself has. Only available when the
-// statement is showing live (today's) figures — see the caption above the table.
+// click-a-number-to-see-the-ledger behavior BC itself has. Works for a filtered
+// historical period too, not just the live view (every month's sectionsRows carries its
+// own `accounts`) — `asOf` just follows whichever period's figures the row is showing.
+// `compareAsOf`/`compareLabel`, when a Compare To baseline is active, let the panel
+// itself offer a toggle between the primary and compare period's entries.
 // `drillOpen`/`asOf`/`colSpan` are only used when the row is actually clickable.
-function AccountRow({ name, balance, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, colSpan }) {
+function AccountRow({ name, balance, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, compareAsOf, compareLabel, colSpan }) {
   const clickable = onDrill && accounts?.length > 0
   return (
     <>
@@ -119,12 +122,13 @@ function AccountRow({ name, balance, accounts, onDrill, compareValue, showCompar
         </td>
         {showCompare && <CompareCell value={compareValue} />}
       </tr>
-      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={name} accounts={accounts} asOf={asOf} onClose={() => onDrill(name, accounts)} />}
+      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={name} accounts={accounts} asOf={asOf}
+        compareAsOf={compareAsOf} compareLabel={compareLabel} onClose={() => onDrill(name, accounts)} />}
     </>
   )
 }
 
-function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, colSpan }) {
+function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, compareAsOf, compareLabel, colSpan }) {
   const clickable = onDrill && accounts?.length > 0
   return (
     <>
@@ -139,12 +143,13 @@ function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, sho
         </td>
         {showCompare && <CompareCell value={compareValue} />}
       </tr>
-      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={label} accounts={accounts} asOf={asOf} onClose={() => onDrill(label, accounts)} />}
+      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={label} accounts={accounts} asOf={asOf}
+        compareAsOf={compareAsOf} compareLabel={compareLabel} onClose={() => onDrill(label, accounts)} />}
     </>
   )
 }
 
-function GrandTotalRow({ label, total, accent, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, colSpan }) {
+function GrandTotalRow({ label, total, accent, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, compareAsOf, compareLabel, colSpan }) {
   const color = accent || '#FFFFFF'
   const clickable = onDrill && accounts?.length > 0
   return (
@@ -160,12 +165,13 @@ function GrandTotalRow({ label, total, accent, accounts, onDrill, compareValue, 
         </td>
         {showCompare && <CompareCell value={compareValue} />}
       </tr>
-      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={label} accounts={accounts} asOf={asOf} onClose={() => onDrill(label, accounts)} />}
+      {drillOpen && <GLDrilldownPanel colSpan={colSpan} label={label} accounts={accounts} asOf={asOf}
+        compareAsOf={compareAsOf} compareLabel={compareLabel} onClose={() => onDrill(label, accounts)} />}
     </>
   )
 }
 
-function BsSection({ label, section, color, defaultExpanded = true, onDrill, compareRows, showCompare, drillKey, asOf, colSpan }) {
+function BsSection({ label, section, color, defaultExpanded = true, onDrill, compareRows, showCompare, drillKey, asOf, compareAsOf, compareLabel, colSpan }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const rows = section?.rows || []
   const total = section?.total ?? 0
@@ -178,7 +184,7 @@ function BsSection({ label, section, color, defaultExpanded = true, onDrill, com
       {expanded && rows.map((r, i) => (
         <AccountRow key={i} name={r.name} balance={r.balance} accounts={r.accounts} onDrill={onDrill}
           compareValue={compareByName[r.name]} showCompare={showCompare}
-          drillOpen={drillKey === r.name} asOf={asOf} colSpan={colSpan} />
+          drillOpen={drillKey === r.name} asOf={asOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={colSpan} />
       ))}
     </>
   )
@@ -240,14 +246,25 @@ export default function BalanceSheet({ data }) {
   const { ratios, totalAssets, totalLiabilities, equity, currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities } = bs
   const showCompare = !!priorBs
 
-  // Statement rows: live account-level detail (with GL-drilldown account lists) when no
-  // historical period is selected; the selected month's own per-account breakdown
-  // (sectionsRows, added to snapshot-builder.js's monthly computation) otherwise — so the
-  // statement now follows the same period the KPI cards above it do, instead of always
-  // being "today" regardless of the filter. Historical rows don't carry GL account
-  // numbers (only scalar balances), so drilldown stays a live-only feature.
+  // Statement rows: live account-level detail when no historical period is selected;
+  // the selected month's own per-account breakdown (sectionsRows, computed in
+  // snapshot-builder.js alongside every trailing month) otherwise — so the statement
+  // now follows the same period the KPI cards above it do. Each row already carries its
+  // own GL account numbers either way (bsSectionRaw/bsSectionByRows attach `accounts`
+  // per row for every month, not just the live one) — the section-level `accounts` used
+  // by the "Total X" subtotal rows is derived here by unioning each row's own accounts,
+  // so GL drilldown works on a filtered period exactly like it does live.
   const sumRows = (rows) => (rows || []).reduce((s, r) => s + r.balance, 0)
-  const wrapHistorical = (rows) => ({ rows: rows || [], total: sumRows(rows), accounts: [] })
+  const unionAccounts = (rows) => [...new Set((rows || []).flatMap(r => r.accounts || []))].sort()
+  const wrapHistorical = (rows) => ({ rows: rows || [], total: sumRows(rows), accounts: unionAccounts(rows) })
+
+  // The exact as-of date GL drilldown should query — the selected historical month's
+  // own month-end date when a period filter is active, otherwise today's live date.
+  // `compareAsOf`/`compareLabel` let the drilldown panel offer a second option so the
+  // same figure can be inspected for the Compare To baseline too.
+  const stmtAsOf     = periodBs ? periodBs.asOf : liveBs.asOf
+  const compareAsOf  = priorBs ? priorBs.asOf : null
+  const compareLabel = priorBs ? sel.priorLabel : null
   const sections = periodBs
     ? {
         nonCurrentAssets:      wrapHistorical(periodBs.sectionsRows?.nonCurrentAssets),
@@ -349,14 +366,14 @@ export default function BalanceSheet({ data }) {
         <StatCard label="Debt / Equity" value={ratios?.debtToEquity ?? '—'} sub="Total Liabilities / Equity" />
       </div>
 
-      {/* Full Balance Sheet statement — now follows the same period the KPI cards above
-          do (a historical month's own account breakdown when one is selected, GL
-          drilldown only available on the live/today view since historical rows don't
-          carry GL account numbers), plus a Compare To column when that's active. */}
+      {/* Full Balance Sheet statement — follows the same period the KPI cards above do
+          (a historical month's own account breakdown when one is selected), plus a
+          Compare To column when that's active. GL drilldown works for a filtered period
+          same as live — the drilldown panel itself offers a toggle to the Compare To
+          period's entries when one is active. */}
       {periodBs && (
         <p className="text-[11px] text-muted -mb-2">
-          Showing {sel.periodLabel}'s own figures below — GL drilldown (click any figure)
-          is only available on the live view; clear the period filter to use it.
+          Showing {sel.periodLabel}'s own figures below — click any figure to see its GL entries.
         </p>
       )}
       {hasSections ? (
@@ -366,7 +383,7 @@ export default function BalanceSheet({ data }) {
             <p className="text-[10px] text-muted mt-0.5">
               {periodBs ? `As of end of ${sel.periodLabel}` : `As of ${fmtDate(liveBs.asOf)}`}
               {showCompare && ` vs ${sel.priorLabel}`} · click a section header to expand / collapse
-              {!periodBs && ' · click any figure to see its GL entries'}
+              {' · click any figure to see its GL entries'}
             </p>
           </div>
           <table className="w-full text-sm">
@@ -390,20 +407,20 @@ export default function BalanceSheet({ data }) {
               </tr>
 
               <BsSection label="Non-Current Assets" section={sections.nonCurrentAssets} color={TEAL} onDrill={toggleDrill}
-                compareRows={compareOf('nonCurrentAssets')} showCompare={showCompare} drillKey={drillKey} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                compareRows={compareOf('nonCurrentAssets')} showCompare={showCompare} drillKey={drillKey} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
               <SubtotalRow label="Total Non-Current Assets" total={sections.nonCurrentAssets?.total} accounts={sections.nonCurrentAssets?.accounts} onDrill={toggleDrill}
                 compareValue={priorBs ? sumRows(compareOf('nonCurrentAssets')) : null} showCompare={showCompare}
-                drillOpen={drillKey === 'Total Non-Current Assets'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'Total Non-Current Assets'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               <BsSection label="Current Assets" section={sections.currentAssets} color={TEAL} defaultExpanded={false} onDrill={toggleDrill}
-                compareRows={compareOf('currentAssets')} showCompare={showCompare} drillKey={drillKey} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                compareRows={compareOf('currentAssets')} showCompare={showCompare} drillKey={drillKey} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
               <SubtotalRow label="Total Current Assets" total={sections.currentAssets?.total} light accounts={sections.currentAssets?.accounts} onDrill={toggleDrill}
                 compareValue={priorBs ? sumRows(compareOf('currentAssets')) : null} showCompare={showCompare}
-                drillOpen={drillKey === 'Total Current Assets'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'Total Current Assets'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               <GrandTotalRow label="TOTAL ASSETS" total={stmtTotalAssets} accent="#FFFFFF" accounts={sections.totalAssetsAccounts} onDrill={toggleDrill}
                 compareValue={compareTotalAssets} showCompare={showCompare}
-                drillOpen={drillKey === 'TOTAL ASSETS'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'TOTAL ASSETS'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               {/* ── LIABILITIES ───────────────────────── */}
               <tr><td colSpan={stmtColSpan} className="py-2" /></tr>
@@ -414,20 +431,20 @@ export default function BalanceSheet({ data }) {
               </tr>
 
               <BsSection label="Current Liabilities" section={sections.currentLiabilities} color={ORANGE} onDrill={toggleDrill}
-                compareRows={compareOf('currentLiabilities')} showCompare={showCompare} drillKey={drillKey} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                compareRows={compareOf('currentLiabilities')} showCompare={showCompare} drillKey={drillKey} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
               <SubtotalRow label="Total Current Liabilities" total={sections.currentLiabilities?.total} light accounts={sections.currentLiabilities?.accounts} onDrill={toggleDrill}
                 compareValue={priorBs ? sumRows(compareOf('currentLiabilities')) : null} showCompare={showCompare}
-                drillOpen={drillKey === 'Total Current Liabilities'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'Total Current Liabilities'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               <BsSection label="Non-Current Liabilities" section={sections.nonCurrentLiabilities} color={ORANGE} defaultExpanded={false} onDrill={toggleDrill}
-                compareRows={compareOf('nonCurrentLiabilities')} showCompare={showCompare} drillKey={drillKey} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                compareRows={compareOf('nonCurrentLiabilities')} showCompare={showCompare} drillKey={drillKey} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
               <SubtotalRow label="Total Non-Current Liabilities" total={sections.nonCurrentLiabilities?.total} accounts={sections.nonCurrentLiabilities?.accounts} onDrill={toggleDrill}
                 compareValue={priorBs ? sumRows(compareOf('nonCurrentLiabilities')) : null} showCompare={showCompare}
-                drillOpen={drillKey === 'Total Non-Current Liabilities'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'Total Non-Current Liabilities'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               <GrandTotalRow label="TOTAL LIABILITIES" total={stmtTotalLiabilities} accent={ORANGE} accounts={sections.totalLiabilitiesAccounts} onDrill={toggleDrill}
                 compareValue={compareTotalLiabilities} showCompare={showCompare}
-                drillOpen={drillKey === 'TOTAL LIABILITIES'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'TOTAL LIABILITIES'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               {/* ── EQUITY ────────────────────────────── */}
               <tr><td colSpan={stmtColSpan} className="py-2" /></tr>
@@ -438,17 +455,17 @@ export default function BalanceSheet({ data }) {
               </tr>
 
               <BsSection label="Equity" section={sections.equity} color={GREEN} onDrill={toggleDrill}
-                compareRows={compareOf('equity')} showCompare={showCompare} drillKey={drillKey} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                compareRows={compareOf('equity')} showCompare={showCompare} drillKey={drillKey} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
               <GrandTotalRow label="TOTAL EQUITY" total={stmtTotalEquity} accent={GREEN} accounts={sections.equity?.accounts} onDrill={toggleDrill}
                 compareValue={compareTotalEquity} showCompare={showCompare}
-                drillOpen={drillKey === 'TOTAL EQUITY'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'TOTAL EQUITY'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
               {/* ── CHECK ─────────────────────────────── */}
               <tr><td colSpan={stmtColSpan} className="py-2" /></tr>
               <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={stmtTotalLiabilities + stmtTotalEquity} accent="#FFFFFF"
                 accounts={[...new Set([...(sections.totalLiabilitiesAccounts || []), ...(sections.equity?.accounts || [])])]} onDrill={toggleDrill}
                 compareValue={showCompare ? compareTotalLiabilities + compareTotalEquity : null} showCompare={showCompare}
-                drillOpen={drillKey === 'TOTAL LIABILITIES + EQUITY'} asOf={liveBs.asOf} colSpan={stmtColSpan} />
+                drillOpen={drillKey === 'TOTAL LIABILITIES + EQUITY'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
             </tbody>
           </table>
         </div>
