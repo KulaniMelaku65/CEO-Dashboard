@@ -16,6 +16,10 @@ export const auth = {
   }),
 }
 
+export const glDrilldown = {
+  get: (accounts, asOf) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}`),
+}
+
 export const pageFilterSettings = {
   list: () => req('/api/page-filter-settings'),
   set:  (pageId, enabled) => req(`/api/page-filter-settings/${pageId}`, {

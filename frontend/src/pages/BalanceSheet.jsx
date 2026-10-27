@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { fmtETB, fmtDate } from '../lib/fmt.js'
 import { pageFilterSettings } from '../lib/api.js'
 import PeriodFilterBar, { usePeriodSelection } from '../components/PeriodFilterBar.jsx'
+import GLDrilldownModal from '../components/GLDrilldownModal.jsx'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -74,41 +75,58 @@ function SectionHeader({ label, total, color, expanded, onToggle }) {
   )
 }
 
-function AccountRow({ name, balance }) {
+// `onDrill`, when passed along with a non-empty `accounts` list, makes the row clickable
+// to open the GL drilldown modal for exactly the accounts behind that figure — same
+// click-a-number-to-see-the-ledger behavior BC itself has.
+function AccountRow({ name, balance, accounts, onDrill }) {
+  const clickable = onDrill && accounts?.length > 0
   return (
-    <tr className="border-b border-border/40 hover:bg-bg/40">
+    <tr
+      className={`border-b border-border/40 hover:bg-bg/40 ${clickable ? 'cursor-pointer' : ''}`}
+      onClick={clickable ? () => onDrill(name, accounts) : undefined}
+    >
       <td className="px-5 py-2 pl-12 text-[13px] font-medium text-navy">{name}</td>
-      <td className={`px-5 py-2 text-right text-[13px] font-semibold ${balance < 0 ? 'text-red-600' : 'text-navy'}`}>
+      <td className={`px-5 py-2 text-right text-[13px] font-semibold ${balance < 0 ? 'text-red-600' : 'text-navy'} ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
         {balance < 0 ? '(' : ''}ETB {fmtRaw(balance)}{balance < 0 ? ')' : ''}
       </td>
     </tr>
   )
 }
 
-function SubtotalRow({ label, total, light }) {
+function SubtotalRow({ label, total, light, accounts, onDrill }) {
+  const clickable = onDrill && accounts?.length > 0
   return (
-    <tr style={{ background: light ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)' }}>
+    <tr
+      className={clickable ? 'cursor-pointer hover:bg-white/5' : ''}
+      style={{ background: light ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)' }}
+      onClick={clickable ? () => onDrill(label, accounts) : undefined}
+    >
       <td className="px-5 py-2.5 pl-9 text-[13px] font-bold text-navy">{label}</td>
-      <td className="px-5 py-2.5 text-right text-[13px] font-bold text-navy border-t border-border">
+      <td className={`px-5 py-2.5 text-right text-[13px] font-bold text-navy border-t border-border ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
         ETB {fmtRaw(total)}
       </td>
     </tr>
   )
 }
 
-function GrandTotalRow({ label, total, accent }) {
+function GrandTotalRow({ label, total, accent, accounts, onDrill }) {
   const color = accent || '#FFFFFF'
+  const clickable = onDrill && accounts?.length > 0
   return (
-    <tr style={{ background: (accent || NAVY) + '12' }}>
+    <tr
+      className={clickable ? 'cursor-pointer hover:brightness-110' : ''}
+      style={{ background: (accent || NAVY) + '12' }}
+      onClick={clickable ? () => onDrill(label, accounts) : undefined}
+    >
       <td className="px-5 py-3 font-extrabold text-sm" style={{ color }}>{label}</td>
-      <td className="px-5 py-3 text-right font-extrabold text-sm border-t-2" style={{ color, borderColor: color }}>
+      <td className={`px-5 py-3 text-right font-extrabold text-sm border-t-2 ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`} style={{ color, borderColor: color }}>
         ETB {fmtRaw(total)}
       </td>
     </tr>
   )
 }
 
-function BsSection({ label, section, color, negate = false, defaultExpanded = true }) {
+function BsSection({ label, section, color, defaultExpanded = true, onDrill }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const rows = section?.rows || []
   const total = section?.total ?? 0
@@ -117,7 +135,7 @@ function BsSection({ label, section, color, negate = false, defaultExpanded = tr
     <>
       <SectionHeader label={label} total={total} color={color} expanded={expanded} onToggle={() => setExpanded(e => !e)} />
       {expanded && rows.map((r, i) => (
-        <AccountRow key={i} name={r.name} balance={r.balance} />
+        <AccountRow key={i} name={r.name} balance={r.balance} accounts={r.accounts} onDrill={onDrill} />
       ))}
     </>
   )
@@ -147,6 +165,11 @@ export default function BalanceSheet({ data }) {
   // collapsed by default so the top row stays compact.
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [liabOpen, setLiabOpen]     = useState(false)
+
+  // GL drilldown modal — opened by clicking any row/section/grand-total in the statement
+  // table below (every one of them carries the GL account numbers it's built from).
+  const [drill, setDrill] = useState(null) // { label, accounts } | null
+  const openDrill = (label, accounts) => setDrill({ label, accounts })
 
   if (!liveBs) {
     return (
@@ -251,7 +274,7 @@ export default function BalanceSheet({ data }) {
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Balance Sheet Statement</h3>
-            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)} · click a section header to expand / collapse</p>
+            <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)} · click a section header to expand / collapse · click any figure to see its GL entries</p>
           </div>
           <table className="w-full text-sm">
             <tbody>
@@ -262,13 +285,13 @@ export default function BalanceSheet({ data }) {
                 </td>
               </tr>
 
-              <BsSection label="Non-Current Assets" section={sections.nonCurrentAssets} color={TEAL} />
-              <SubtotalRow label="Total Non-Current Assets" total={sections.nonCurrentAssets?.total} />
+              <BsSection label="Non-Current Assets" section={sections.nonCurrentAssets} color={TEAL} onDrill={openDrill} />
+              <SubtotalRow label="Total Non-Current Assets" total={sections.nonCurrentAssets?.total} accounts={sections.nonCurrentAssets?.accounts} onDrill={openDrill} />
 
-              <BsSection label="Current Assets" section={sections.currentAssets} color={TEAL} defaultExpanded={false} />
-              <SubtotalRow label="Total Current Assets" total={sections.currentAssets?.total} light />
+              <BsSection label="Current Assets" section={sections.currentAssets} color={TEAL} defaultExpanded={false} onDrill={openDrill} />
+              <SubtotalRow label="Total Current Assets" total={sections.currentAssets?.total} light accounts={sections.currentAssets?.accounts} onDrill={openDrill} />
 
-              <GrandTotalRow label="TOTAL ASSETS" total={sections.totalAssets} accent="#FFFFFF" />
+              <GrandTotalRow label="TOTAL ASSETS" total={sections.totalAssets} accent="#FFFFFF" accounts={sections.totalAssetsAccounts} onDrill={openDrill} />
 
               {/* ── LIABILITIES ───────────────────────── */}
               <tr><td colSpan={2} className="py-2" /></tr>
@@ -278,13 +301,13 @@ export default function BalanceSheet({ data }) {
                 </td>
               </tr>
 
-              <BsSection label="Current Liabilities" section={sections.currentLiabilities} color={ORANGE} />
-              <SubtotalRow label="Total Current Liabilities" total={sections.currentLiabilities?.total} light />
+              <BsSection label="Current Liabilities" section={sections.currentLiabilities} color={ORANGE} onDrill={openDrill} />
+              <SubtotalRow label="Total Current Liabilities" total={sections.currentLiabilities?.total} light accounts={sections.currentLiabilities?.accounts} onDrill={openDrill} />
 
-              <BsSection label="Non-Current Liabilities" section={sections.nonCurrentLiabilities} color={ORANGE} defaultExpanded={false} />
-              <SubtotalRow label="Total Non-Current Liabilities" total={sections.nonCurrentLiabilities?.total} />
+              <BsSection label="Non-Current Liabilities" section={sections.nonCurrentLiabilities} color={ORANGE} defaultExpanded={false} onDrill={openDrill} />
+              <SubtotalRow label="Total Non-Current Liabilities" total={sections.nonCurrentLiabilities?.total} accounts={sections.nonCurrentLiabilities?.accounts} onDrill={openDrill} />
 
-              <GrandTotalRow label="TOTAL LIABILITIES" total={sections.totalLiabilities} accent={ORANGE} />
+              <GrandTotalRow label="TOTAL LIABILITIES" total={sections.totalLiabilities} accent={ORANGE} accounts={sections.totalLiabilitiesAccounts} onDrill={openDrill} />
 
               {/* ── EQUITY ────────────────────────────── */}
               <tr><td colSpan={2} className="py-2" /></tr>
@@ -294,12 +317,13 @@ export default function BalanceSheet({ data }) {
                 </td>
               </tr>
 
-              <BsSection label="Equity" section={sections.equity} color={GREEN} />
-              <GrandTotalRow label="TOTAL EQUITY" total={sections.totalEquity} accent={GREEN} />
+              <BsSection label="Equity" section={sections.equity} color={GREEN} onDrill={openDrill} />
+              <GrandTotalRow label="TOTAL EQUITY" total={sections.totalEquity} accent={GREEN} accounts={sections.equity?.accounts} onDrill={openDrill} />
 
               {/* ── CHECK ─────────────────────────────── */}
               <tr><td colSpan={2} className="py-2" /></tr>
-              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={sections.totalLiabEquity} accent="#FFFFFF" />
+              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={sections.totalLiabEquity} accent="#FFFFFF"
+                accounts={[...new Set([...(sections.totalLiabilitiesAccounts || []), ...(sections.equity?.accounts || [])])]} onDrill={openDrill} />
             </tbody>
           </table>
         </div>
@@ -340,6 +364,14 @@ export default function BalanceSheet({ data }) {
           </table>
         </div>
       )}
+
+      <GLDrilldownModal
+        open={!!drill}
+        onClose={() => setDrill(null)}
+        label={drill?.label}
+        accounts={drill?.accounts}
+        asOf={liveBs.asOf}
+      />
     </div>
   )
 }

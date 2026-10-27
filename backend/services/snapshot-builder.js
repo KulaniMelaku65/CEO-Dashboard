@@ -1371,8 +1371,12 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
 
   // Balance Sheet — sub-category-grouped account rows for each BS section.
   // Assets are positive (DR normal), liabilities and equity are negated (CR stored).
+  // `accounts` on each row/section (the GL account numbers behind that figure) exists
+  // purely so the frontend can ask the GL drilldown endpoint "show me the entries behind
+  // this number" — same click-to-source-entries behavior as BC itself — without the
+  // frontend needing to know anything about CoA subcategories or how a row was grouped.
   const bsSectionRaw = (acctSet, negate = false) => {
-    const subMap = {}, subMinAcct = {};
+    const subMap = {}, subMinAcct = {}, subAccts = {};
     bsRows.forEach(x => {
       const a = String(x.accountNo);
       if (!acctSet.has(a)) return;
@@ -1381,16 +1385,18 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       const bal = num(x.balance) * (negate ? -1 : 1);
       subMap[sub] = (subMap[sub] || 0) + bal;
       if (!subMinAcct[sub] || a < subMinAcct[sub]) subMinAcct[sub] = a;
+      (subAccts[sub] || (subAccts[sub] = new Set())).add(a);
     });
     const rows = Object.entries(subMap)
       .filter(([, v]) => v !== 0)
       .sort(([a], [b]) => (subMinAcct[a] || '').localeCompare(subMinAcct[b] || ''))
       .map(([rawName, balance]) => ({
         name: rawName.replace(/^\d+\s*[-.\s]+/, '').trim(),
-        balance: Math.round(balance)
+        balance: Math.round(balance),
+        accounts: [...subAccts[rawName]].sort()
       }));
     const total = rows.reduce((s, x) => s + x.balance, 0);
-    return { rows, total };
+    return { rows, total, accounts: [...acctSet].sort() };
   };
 
   // Same shape as bsSectionRaw, but one row per *schedule* row rather than one row per CoA
@@ -1403,11 +1409,13 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
         name: r.label,
         balance: Math.round(bsRows
           .filter(x => r.accounts.has(String(x.accountNo)))
-          .reduce((s, x) => s + num(x.balance) * (negate ? -1 : 1), 0))
+          .reduce((s, x) => s + num(x.balance) * (negate ? -1 : 1), 0)),
+        accounts: [...r.accounts].sort()
       }))
       .filter(r => r.balance !== 0);
     const total = rows.reduce((s, x) => s + x.balance, 0);
-    return { rows, total };
+    const accounts = [...new Set(equityRows.flatMap(r => [...r.accounts]))].sort();
+    return { rows, total, accounts };
   };
 
   const rangeSet = ([lo, hi]) => new Set(bsRows.map(x => String(x.accountNo)).filter(a => inRange(a, [lo, hi])));
@@ -1443,14 +1451,19 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       quickRatio:    cl ? +((ca - inv) / cl).toFixed(2) : null,
       debtToEquity:  eq ? +(liab / eq).toFixed(2) : null
     },
-    // Account-level sections for the Balance Sheet detail page
+    // Account-level sections for the Balance Sheet detail page. The *Accounts arrays
+    // alongside each grand total (themselves plain numbers, read by GrandTotalRow) are
+    // for the GL drilldown — "click this total to see every entry behind it", same as
+    // each row/section already carries its own `accounts` array.
     sections: {
       nonCurrentAssets:      ncaSection,
       currentAssets:         caSection,
       totalAssets:           ncaSection.total + caSection.total,
+      totalAssetsAccounts:   [...new Set([...ncaSection.accounts, ...caSection.accounts])].sort(),
       currentLiabilities:    clSection,
       nonCurrentLiabilities: nclSection,
       totalLiabilities:      clSection.total + nclSection.total,
+      totalLiabilitiesAccounts: [...new Set([...clSection.accounts, ...nclSection.accounts])].sort(),
       equity:                eqSection,
       totalEquity:           eqSection.total,
       totalLiabEquity:       clSection.total + nclSection.total + eqSection.total
