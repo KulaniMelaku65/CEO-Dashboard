@@ -55,6 +55,10 @@ export default function GLDrilldownModal({ open, onClose, label, accounts, asOf 
               General ledger entries{accounts?.length ? ` · ${accounts.length} account${accounts.length !== 1 ? 's' : ''}` : ''}
               {data?.asOf && ` · through ${fmtDate(data.asOf)}`}
             </p>
+            <p className="text-[10px] text-muted mt-1">
+              <span className="text-navy font-semibold">Black</span> = debit / increase to the account ·{' '}
+              <span className="font-semibold" style={{ color: RED }}>Red in parentheses</span> = credit / decrease to the account
+            </p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-navy text-xl leading-none px-2 -mt-1">×</button>
         </div>
