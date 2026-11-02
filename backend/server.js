@@ -17,6 +17,8 @@ const adminUserRoutes = require('./routes/admin-users');
 const pageFilterSettingsRoutes = require('./routes/page-filter-settings');
 const glDrilldownRoutes = require('./routes/gl-drilldown');
 const kpiRoutes = require('./routes/kpi');
+const cashflowRoutes = require('./routes/cashflow');
+const safeeBudgetRoutes = require('./routes/safee-budget');
 const { startScheduler } = require('./services/scheduler');
 const { runStartup }     = require('./services/startup');
 
@@ -46,6 +48,8 @@ app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/page-filter-settings', pageFilterSettingsRoutes);
 app.use('/api/gl-drilldown', glDrilldownRoutes);
 app.use('/api/kpi', kpiRoutes);
+app.use('/api/cashflow', cashflowRoutes);
+app.use('/api/safee-budget', safeeBudgetRoutes);
 
 // Serve the built React frontend (run `cd frontend && npm run build` first)
 const distDir = path.join(__dirname, '..', 'frontend', 'dist');

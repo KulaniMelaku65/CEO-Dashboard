@@ -1,6 +1,14 @@
 const router      = require('express').Router();
 const { bc, isBcConfigured } = require('../services/bc-client');
 const requireAuth = require('../middleware/auth');
+const { BUDGET_YEARS: SAFEE_BUDGET_YEARS } = require('../services/safee-budget');
+
+// BC's GetBudgetName table doesn't expose a "Budget Class" field over OData, so there's
+// no way to filter by it directly — but the Program Finance budgets are exactly the
+// ones SAFEE Budget already uses (10, 10.2..10.5). Corporate Budget Analysis is meant
+// to show General Finance budgets only (e.g. "20.1"), so exclude that known Program
+// Finance set rather than showing every budget name BC has.
+const PROGRAM_FINANCE_BUDGET_NAMES = new Set(SAFEE_BUDGET_YEARS.map(y => y.budgetName));
 
 // 10-minute in-memory cache for rarely-changing data
 let _namesCache = null, _namesCacheAt = 0;
@@ -32,7 +40,7 @@ router.get('/budget-names', requireAuth, async (_req, res) => {
 
     const all   = await bc('GetBudgetName');
     const names = all
-      .filter(b => !b.Blocked)
+      .filter(b => !b.Blocked && !PROGRAM_FINANCE_BUDGET_NAMES.has(b.Name))
       .map(b => ({ name: b.Name, description: b.Description || '' }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     _namesCache    = names;
@@ -51,6 +59,8 @@ router.get('/budget/:name', requireAuth, async (req, res) => {
 
   const safe = safeName(req.params.name);
   if (!safe) return res.status(400).json({ error: 'Invalid budget name.' });
+  if (PROGRAM_FINANCE_BUDGET_NAMES.has(safe))
+    return res.status(400).json({ error: 'That budget is Program Finance — see SAFEE Budget instead.' });
 
   try {
     const now = Date.now();

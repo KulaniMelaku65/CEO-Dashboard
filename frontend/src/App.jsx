@@ -13,6 +13,7 @@ import Financial from './pages/Financial.jsx'
 import Financial2 from './pages/Financial2.jsx'
 import BusinessLinePL from './pages/BusinessLinePL.jsx'
 import BudgetAnalysis from './pages/BudgetAnalysis.jsx'
+import SafeeBudget from './pages/SafeeBudget.jsx'
 import LoanOps from './pages/LoanOps.jsx'
 import Collections from './pages/Collections.jsx'
 import HR from './pages/HR.jsx'
@@ -38,7 +39,7 @@ import AdminUsers from './pages/AdminUsers.jsx'
 // list here) so the Admin page's per-user toggles can import the metadata alone without
 // pulling in every page component (and without a circular import back into this file).
 const PAGE_COMPONENTS = {
-  overview: Overview, finance: Financial, financial: Financial, 'financial-2': Financial2, 'financial-bu': BusinessLinePL, budget: BudgetAnalysis, collections: Collections,
+  overview: Overview, finance: Financial, financial: Financial, 'financial-2': Financial2, 'financial-bu': BusinessLinePL, budget: BudgetAnalysis, 'safee-budget': SafeeBudget, collections: Collections,
   'balance-sheet': BalanceSheet, cashflow: CashFlow, tax: Tax, aging: Aging, lending: LoanOps, risk: Risk,
   hr: HR, 'hr-summary': PeopleHRSummary, 'employee-cost': EmployeeCost,
   'employee-cost-detail': EmployeeCostDetail, 'employee-cost-variance': EmployeeCostVariance,

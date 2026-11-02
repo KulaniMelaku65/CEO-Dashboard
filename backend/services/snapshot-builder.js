@@ -17,9 +17,11 @@ const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 let _bcStaticCache = null;
 async function getBcStatic() {
   if (_bcStaticCache) return _bcStaticCache;
-  const [mgtLines, bsLines, coaEndTotals, coaPostingRows, taxAccounts] = await Promise.all([
+  const [mgtLines, bsLines, cfLines, coaEndTotals, coaPostingRows, taxAccounts] = await Promise.all([
     bc('KFT_MGT_RPT_Lines'),
     bc('KFT_Balance_Sheet_Lines').catch(() => []),
+    // Direct-method Cash Flow Statement schedule ("DIRECT CF") — Cashflow page.
+    bc('KFT_Direct_CF_Lines').catch(() => []),
     bc('Chart_of_Accounts', "?$filter=Account_Type eq 'End-Total'").catch(() => []),
     // 1000-9999 covers both the P&L ranges (5000-9999) and the Balance Sheet ranges (1000-4999)
     bc('Chart_of_Accounts', "?$filter=Account_Type eq 'Posting' and No ge '1000' and No le '9999'").catch(() => []),
@@ -27,7 +29,7 @@ async function getBcStatic() {
     // future tax type added under this subcategory — for the Tax page.
     bc('KFT_Chart_Of_Accounts', "?$filter=accountSubCategory eq '326 - Tax payables' and accountType eq 'Posting'").catch(() => [])
   ]);
-  _bcStaticCache = { mgtLines, bsLines, coaEndTotals, coaPostingRows, taxAccounts };
+  _bcStaticCache = { mgtLines, bsLines, cfLines, coaEndTotals, coaPostingRows, taxAccounts };
   return _bcStaticCache;
 }
 
@@ -111,6 +113,133 @@ function sumRange(rows, k, af = 'accountNo', amf = 'amount') {
   return rows
     .filter(x => inRange(String(x[af]), CONFIG.ranges[k]))
     .reduce((s, x) => s + num(x[amf]), 0);
+}
+
+// Direct Method Cash Flow Statement, from BC's own "DIRECT CF" account schedule
+// (KFT_Direct_CF_Lines) — standalone (not just inlined in buildSnapshot) so the
+// Cashflow page's own Year/Month filter can call it on demand via /api/cashflow for
+// any period, not just the current snapshot's YTD. Same resolveRow-style formula
+// evaluation already used for M-MGT-RPT/Balance Sheet, except each leaf row's RowType
+// decides how its account range is summed: "Net Change" (flow within the period, like
+// a P&L line), "Beginning Balance" (cumulative balance strictly before the period
+// starts), or "Balance at Date" (cumulative balance through the period's end — same
+// convention the Balance Sheet page uses). Formula rows (CFO/CFI/CFF/C000/CA010/T001/
+// T002/CHECK, plus IA004's Total Tangible Assets) are simple +/- chains of other
+// RowNos, evaluated recursively. `glEntriesAll` must already cover every posting up to
+// `periodEnd` (both Income Statement and Balance Sheet accounts) — the caller fetches
+// it, since the main snapshot build and the on-demand route source it differently
+// (the snapshot already has it in hand; the route fetches fresh, scoped to the
+// requested period).
+async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
+  const empty = { rows: [], asOf: periodEnd, periodStart, check: null };
+  try {
+    const { cfLines, coaEndTotals, coaPostingRows } = await getBcStatic();
+    const cfLinesSched = (cfLines || []).filter(r => r.ScheduleName === 'DIRECT CF');
+    const cfRowMap = {};
+    cfLinesSched.forEach(r => { if (r.RowNo) cfRowMap[r.RowNo] = r; });
+
+    const cfCoaPostingAccts = coaPostingRows.length > 0
+      ? new Set(coaPostingRows.map(r => r.No.trim()))
+      : new Set(glEntriesAll.map(e => String(e.accountNo)));
+    const cfCoaRange = {};
+    (coaEndTotals || []).forEach(r => {
+      const m = (r.Totaling || '').match(/^(\d+)\.\.(\d+)$/);
+      if (m) cfCoaRange[r.No.trim()] = [Number(m[1]), Number(m[2])];
+    });
+
+    const sortedAll = [...glEntriesAll].sort((a, b) => new Date(a.postingDate) - new Date(b.postingDate));
+    const periodStartDt = new Date(periodStart + 'T00:00:00');
+    const periodEndDt   = new Date(periodEnd + 'T23:59:59');
+
+    const parseRange = (totaling) => {
+      const m = (totaling || '').trim().match(/^(\d+)(?:\.\.(\d+))?$/);
+      return m ? [Number(m[1]), Number(m[2] || m[1])] : null;
+    };
+    // A "Total Accounts" row's Totaling is a CoA End-Total marker account (e.g.
+    // "2550") whose OWN Totaling gives the real posting-account range — same
+    // convention findSubAccounts uses for M-MGT-RPT further down this file.
+    const resolveAcctRange = (row) => {
+      if (row.TotalingType === 'Total Accounts') {
+        const r = cfCoaRange[row.Totaling.trim()];
+        return r ? [r[0], r[1] - 1] : parseRange(row.Totaling);
+      }
+      return parseRange(row.Totaling);
+    };
+    const acctsInRange = (lo, hi) => [...cfCoaPostingAccts].filter(a => { const n = Number(a); return n >= lo && n <= hi; }).sort();
+
+    const sumEntries = (lo, hi, pred) => sortedAll.reduce((s, e) => {
+      const a = Number(e.accountNo);
+      return (a >= lo && a <= hi && pred(e)) ? s + num(e.amount) : s;
+    }, 0);
+
+    const leafValue = (row) => {
+      const range = resolveAcctRange(row);
+      if (!range) return 0;
+      const [lo, hi] = range;
+      if (row.RowType === 'Beginning Balance') return sumEntries(lo, hi, e => new Date(e.postingDate) < periodStartDt);
+      if (row.RowType === 'Balance at Date')   return sumEntries(lo, hi, e => new Date(e.postingDate) <= periodEndDt);
+      return sumEntries(lo, hi, e => { const d = new Date(e.postingDate); return d >= periodStartDt && d <= periodEndDt; }); // 'Net Change'
+    };
+
+    const evalCache = new Map();
+    const evalRow = (rowNo, visited = new Set()) => {
+      if (evalCache.has(rowNo)) return evalCache.get(rowNo);
+      if (visited.has(rowNo)) return 0;
+      const row = cfRowMap[rowNo];
+      if (!row) return 0;
+      let val;
+      if (row.TotalingType === 'Formula') {
+        const visit = new Set(visited); visit.add(rowNo);
+        const tokens = row.Totaling.match(/[+-]?[A-Za-z0-9]+/g) || [];
+        val = tokens.reduce((s, t) => {
+          const neg = t.startsWith('-');
+          return s + (neg ? -1 : 1) * evalRow(t.replace(/^[+-]/, ''), visit);
+        }, 0);
+      } else {
+        val = leafValue(row);
+      }
+      evalCache.set(rowNo, val);
+      return val;
+    };
+
+    const rows = cfLinesSched
+      .slice()
+      .sort((a, b) => a.LineNo - b.LineNo)
+      .map(r => {
+        const isLeaf = r.TotalingType === 'Posting Accounts' || r.TotalingType === 'Total Accounts';
+        const range = (isLeaf && r.Totaling) ? resolveAcctRange(r) : null;
+        const value = r.RowNo ? evalRow(r.RowNo) : null;
+        return {
+          lineNo: r.LineNo,
+          rowNo: r.RowNo || null,
+          description: r.Description || '',
+          indentation: r.Indentation || 0,
+          bold: !!r.Bold,
+          rowType: r.RowType,
+          value: value != null ? toM(value) : null,
+          accounts: range ? acctsInRange(range[0], range[1]) : []
+        };
+      });
+
+    const byRowNo = Object.fromEntries(rows.filter(r => r.rowNo).map(r => [r.rowNo, r]));
+    return {
+      rows,
+      asOf: periodEnd,
+      periodStart,
+      netCashOperating: byRowNo.CFO?.value ?? null,
+      netCashInvesting: byRowNo.CFI?.value ?? null,
+      netCashFinancing: byRowNo.CFF?.value ?? null,
+      totalChange: byRowNo.C000?.value ?? null,
+      openingCash: byRowNo.CA010?.value ?? null,
+      calculatedClosingCash: byRowNo.T001?.value ?? null,
+      actualEndingCash: byRowNo.T002?.value ?? null,
+      // Should be ~0 — BC's own reconciliation of calculated vs. actual ending cash.
+      check: toM(evalRow('T001') - evalRow('T002'))
+    };
+  } catch (e) {
+    console.warn('  Direct Cash Flow schedule build failed:', e.message);
+    return empty;
+  }
 }
 
 /** Build dashboard JSON for a given date (YYYY-MM-DD). Pass { bypassCache: false } to reuse
@@ -604,6 +733,29 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
   const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
 
+  // Budget-side counterparts, resolved from the exact same M-MGT-RPT schedule account
+  // sets as mgtRevA/mgtCosA/etc. just above — Financial Performance's "vs budget"
+  // figures previously compared these schedule-exact actuals against revB/cosB/etc
+  // (CONFIG.ranges' broad CoA ranges), which include/exclude a different account set
+  // than the schedule itself: the salaries range (8101-8108) has two extra accounts
+  // the schedule's Total-Salaries row (8101-8106) doesn't, and the opex ranges
+  // (7000-8100 / 8110-9199) wrongly include Office Shared Services Fees (8341), which
+  // the schedule explicitly excludes from OPEX and subtracts separately in Net Profit.
+  // That mismatch made every KPI card's budget, variance and utilization % disagree
+  // with what M-MGT-RPT itself shows. Math.abs matches every other budget sum in this
+  // file — BC's budget entries aren't credit/debit-signed the way GL postings are.
+  const sumAcctsBudget = (rows, accts) =>
+    rows.filter(x => accts.has(String(x.accountNo))).reduce((s, x) => s + Math.abs(num(x.amount)), 0);
+  const mgtRevB     = sumAcctsBudget(ytdBudgets, MGT_REV);
+  const mgtCosB     = sumAcctsBudget(ytdBudgets, MGT_COS);
+  const mgtGpB      = mgtRevB - mgtCosB;
+  const mgtSalB     = sumAcctsBudget(ytdBudgets, MGT_SAL);
+  const mgtOpexB    = sumAcctsBudget(ytdBudgets, MGT_OPEX);
+  const mgtTotOpexB = mgtSalB + mgtOpexB;
+  const mgtFinB     = MGT_FIN.size > 0 ? sumAcctsBudget(ytdBudgets, MGT_FIN) : finB;
+  const mgtEbB      = mgtGpB - mgtTotOpexB;
+  const mgtNetB     = mgtEbB - daB - mgtFinB;
+
   // Per-line department drilldowns for Financial Performance's KPI cards (click to
   // expand). Built from the same MGT_* account sets that drive each card's own actual
   // total, so a drilldown's parts always sum back to exactly the card's headline figure.
@@ -719,8 +871,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     'Financial Costs': byDeptFromAccts(actuals, MGT_FIN, false, ytdBudgets),
     // Gross Profit is a derived subtotal, not its own account bucket — show the bridge instead.
     'Gross Profit': [
-      { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(revB)  },
-      { unit: 'Cost of Sales', actual: toM(-mgtCosA), budget: toM(-cosB) }
+      { unit: 'Revenue',       actual: toM(mgtRevA),  budget: toM(mgtRevB)  },
+      { unit: 'Cost of Sales', actual: toM(-mgtCosA), budget: toM(-mgtCosB) }
     ],
     // Two more ways to slice "Expenses" the KPI card doesn't split out on its own —
     // Salaries by department and OPEX by the schedule's own categories.
@@ -729,15 +881,15 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   };
 
   const budgetActual = { lineDrilldowns, lines: [
-    { name: 'Revenue',         budget: toM(revB),     actual: toM(mgtRevA),     higherIsBetter: true  },
-    { name: 'Cost of Sales',   budget: toM(cosB),     actual: toM(mgtCosA),     higherIsBetter: false },
-    { name: 'Gross Profit',    budget: toM(gpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
-    { name: 'Gross Margin %',  budget: revB ? +(gpB / revB * 100).toFixed(1) : null, actual: +(mgtGpA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true },
-    { name: 'OPEX',            budget: toM(salB),     actual: toM(mgtSalA),     higherIsBetter: false },
-    { name: 'Expenses',        budget: toM(totOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
-    { name: 'Financial Costs', budget: toM(finB),     actual: toM(mgtFinA),     higherIsBetter: false },
-    { name: 'EBITDA',          budget: toM(ebB),      actual: toM(mgtEbA),      higherIsBetter: true  },
-    { name: 'EBITDA Margin %', budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: +(mgtEbA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true }
+    { name: 'Revenue',         budget: toM(mgtRevB),     actual: toM(mgtRevA),     higherIsBetter: true  },
+    { name: 'Cost of Sales',   budget: toM(mgtCosB),     actual: toM(mgtCosA),     higherIsBetter: false },
+    { name: 'Gross Profit',    budget: toM(mgtGpB),      actual: toM(mgtGpA),      higherIsBetter: true  },
+    { name: 'Gross Margin %',  budget: mgtRevB ? +(mgtGpB / mgtRevB * 100).toFixed(1) : null, actual: +(mgtGpA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true },
+    { name: 'OPEX',            budget: toM(mgtSalB),     actual: toM(mgtSalA),     higherIsBetter: false },
+    { name: 'Expenses',        budget: toM(mgtTotOpexB), actual: toM(mgtTotOpexA), higherIsBetter: false },
+    { name: 'Financial Costs', budget: toM(mgtFinB),     actual: toM(mgtFinA),     higherIsBetter: false },
+    { name: 'EBITDA',          budget: toM(mgtEbB),      actual: toM(mgtEbA),      higherIsBetter: true  },
+    { name: 'EBITDA Margin %', budget: mgtRevB ? +(mgtEbB / mgtRevB * 100).toFixed(1) : null, actual: +(mgtEbA / mgtRevA * 100).toFixed(1), higherIsBetter: true, isPercent: true }
   ]};
 
   const bm = {}, um = {};
@@ -769,16 +921,21 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const salBMonth = Array(12).fill(0);
   const opBMonth  = Array(12).fill(0);
   const finBMonth = Array(12).fill(0);
+  // Classified by the exact M-MGT-RPT schedule account sets (MGT_REV/MGT_COS/MGT_SAL/
+  // MGT_OPEX/MGT_FIN), not CONFIG.ranges' broad CoA ranges — same mismatch reasoning as
+  // mgtRevB/mgtCosB/etc. above, just at monthly granularity. This feeds the monthly
+  // Budget vs Actual chart, the per-month line drilldowns, and (via revBYTD/cosBYTD/
+  // etc. below) the YTD KPI cards actually sent to the frontend.
   budgets.forEach(x => {
     const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
     if (mi < 0) return;
     const amt = Math.abs(num(x.amount));
     const a = String(x.accountNo);
-    if (inRange(a, CONFIG.ranges.revenue)) { revBMonth[mi] += amt; return; }
-    if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { cosBMonth[mi] += amt; return; }
-    if (inRange(a, CONFIG.ranges.salaries)) { salBMonth[mi] += amt; return; }
-    if (inRange(a, CONFIG.ranges.finCosts)) { finBMonth[mi] += amt; return; }
-    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opBMonth[mi] += amt;
+    if (MGT_REV.has(a)) { revBMonth[mi] += amt; return; }
+    if (MGT_COS.has(a)) { cosBMonth[mi] += amt; return; }
+    if (MGT_SAL.has(a)) { salBMonth[mi] += amt; return; }
+    if (MGT_FIN.has(a)) { finBMonth[mi] += amt; return; }
+    if (MGT_OPEX.has(a)) opBMonth[mi] += amt;
   });
   const gpBMonth      = revBMonth.map((v, i) => v - cosBMonth[i]);
   const totOpexBMonth = salBMonth.map((v, i) => v + opBMonth[i]);
@@ -798,8 +955,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     if (MGT_COS.has(a)) { cosM[mi] += num(x.amount); return; }
     if (MGT_SAL.has(a)) { salM[mi] += num(x.amount); return; }
     if (inRange(a, CONFIG.ranges.depAmort)) { daM[mi] += num(x.amount); return; }
-    if (inRange(a, CONFIG.ranges.finCosts)) { finM[mi] += num(x.amount); return; }
-    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) opM[mi] += num(x.amount);
+    if (MGT_FIN.size > 0 ? MGT_FIN.has(a) : inRange(a, CONFIG.ranges.finCosts)) { finM[mi] += num(x.amount); return; }
+    if (MGT_OPEX.has(a)) opM[mi] += num(x.amount);
   });
 
   // Per (month, virtual company, business unit) breakdown of each raw P&L metric — both
@@ -824,8 +981,11 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     if (MGT_COS.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'cos', amt); return; }
     if (MGT_SAL.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'sal', amt); return; }
     if (MGT_FIN.has(a)) { bumpDimMap(dimActualMap, mi, vc, bu, 'fin', amt); return; }
-    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimActualMap, mi, vc, bu, 'opex', amt);
+    if (MGT_OPEX.has(a)) bumpDimMap(dimActualMap, mi, vc, bu, 'opex', amt);
   });
+  // Same M-MGT-RPT schedule account sets as dimActualMap just above, not CONFIG.ranges —
+  // otherwise Financial Performance's VC/BU-filtered "vs budget" figures mismatch the
+  // schedule the same way the headline KPI cards did (see mgtRevB/mgtCosB/etc. above).
   const dimBudgetMap = {};
   budgets.forEach(x => {
     const a = String(x.accountNo);
@@ -834,11 +994,11 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const vc = (x.globalDim1 || '').trim() || 'Unknown';
     const bu = (x.globalDim2 || '').trim() || 'Unassigned';
     const amt = Math.abs(num(x.amount));
-    if (inRange(a, CONFIG.ranges.revenue)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'rev', amt); return; }
-    if (inRange(a, CONFIG.ranges.cosBpass) || inRange(a, CONFIG.ranges.cosProduct)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'cos', amt); return; }
-    if (inRange(a, CONFIG.ranges.salaries)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'sal', amt); return; }
-    if (inRange(a, CONFIG.ranges.finCosts)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'fin', amt); return; }
-    if (inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB)) bumpDimMap(dimBudgetMap, mi, vc, bu, 'opex', amt);
+    if (MGT_REV.has(a)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'rev', amt); return; }
+    if (MGT_COS.has(a)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'cos', amt); return; }
+    if (MGT_SAL.has(a)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'sal', amt); return; }
+    if (MGT_FIN.has(a)) { bumpDimMap(dimBudgetMap, mi, vc, bu, 'fin', amt); return; }
+    if (MGT_OPEX.has(a)) bumpDimMap(dimBudgetMap, mi, vc, bu, 'opex', amt);
   });
   const mapToDimRows = (map) => Object.entries(map).map(([k, amt]) => {
     const [mi, vc, bu, metric] = k.split('|');
@@ -1304,16 +1464,21 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     { name: 'Net Profit',      value: toM(netA),  type: 'total' }
   ];
 
-  let bsRows, glAccounts, glEntriesBS;
+  let bsRows, glAccounts, glEntriesBS, glEntriesAll;
   if (IS_HISTORICAL) {
     const [glE, rawGlAccounts] = await Promise.all([
-      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`, bypassCache) : Promise.resolve([]),
+      // Unfiltered by incomeBalance (every account, Income Statement + Balance Sheet) —
+      // the Direct Cash Flow statement below needs the full ledger (it touches both
+      // P&L and Balance Sheet account ranges), and glEntriesBS is just this filtered
+      // down, so one fetch now covers both instead of two.
+      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=postingDate le ${targetDate}`, bypassCache) : Promise.resolve([]),
       bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
     glAccounts = rawGlAccounts;
-    glEntriesBS = glE;
+    glEntriesAll = glE;
+    glEntriesBS = glE.filter(e => e.incomeBalance === 'Balance Sheet');
     const bsMap = {};
-    glE.forEach(e => { const k = String(e.accountNo); bsMap[k] = (bsMap[k] || 0) + num(e.amount); });
+    glEntriesBS.forEach(e => { const k = String(e.accountNo); bsMap[k] = (bsMap[k] || 0) + num(e.amount); });
     bsRows = Object.entries(bsMap).map(([accountNo, balance]) => ({ accountNo, balance }));
   } else {
     // Also fetch dated entries in live mode (not just the historical-rebuild path) —
@@ -1321,13 +1486,27 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     // it was at an earlier month-end. The trailing-months computation just below needs the
     // raw dated entries to answer that automatically for any past month, straight from
     // BC's own ledger, rather than depending on whether a historical sync snapshot happens
-    // to exist for that date.
-    [bsRows, glAccounts, glEntriesBS] = await Promise.all([
+    // to exist for that date. Unfiltered by incomeBalance for the same reason as the
+    // historical branch above — the Direct Cash Flow statement needs every account.
+    [bsRows, glAccounts, glEntriesAll] = await Promise.all([
       bcAvail ? cachedBc('KFT_GL_Balances', undefined, bypassCache) : Promise.resolve([]),
       bcAvail ? cachedBc('KFT_GL_Accounts', undefined, bypassCache).catch(() => []) : Promise.resolve([]),
-      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${targetDate}`, bypassCache).catch(() => []) : Promise.resolve([])
+      bcAvail ? cachedBc('KFT_GL_Entries', `?$filter=postingDate le ${targetDate}`, bypassCache).catch(() => []) : Promise.resolve([])
     ]);
+    glEntriesBS = glEntriesAll.filter(e => e.incomeBalance === 'Balance Sheet');
   }
+
+  // ── Cashflow Statement — Direct Method, from BC's own schedule ──────────────────
+  // buildDirectCashflow (standalone function below, also used by the on-demand
+  // /api/cashflow route for the page's own Year/Month filter) replaces the old ad hoc
+  // bank-ledger-derived cashflow view (kept below as `cashflow.flows`/
+  // `monthlyCollections`/etc. — Collections and Executive Overview still read those)
+  // with the real statement BC itself defines via the "DIRECT CF" account schedule.
+  // Exposed as its own key on the already-built `cashflow` object (declared above,
+  // before glEntriesAll was available) — the Cashflow page reads `data.cashflow.directStatement`.
+  cashflow.directStatement = bcAvail
+    ? await buildDirectCashflow({ glEntriesAll, periodStart: CONFIG.FY_START, periodEnd: targetDate })
+    : { rows: [], asOf: targetDate, periodStart: CONFIG.FY_START, check: null };
 
   // Account detail map: accountNo → { name, sub-category, type }
   const acctDetailMap = {};
@@ -1645,14 +1824,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     ],
     pl: plBridge,
     management: [
-      { metric: 'Total Revenue',   month: mRev(curM),      last: prvM !== null ? mRev(prvM)      : null, ytd: toM(mgtRevA),     vsBudget: revB      ? +((mgtRevA     - revB)      / revB      * 100).toFixed(1) : null },
-      { metric: 'Cost of Sales',   month: mCos(curM),      last: prvM !== null ? mCos(prvM)      : null, ytd: toM(mgtCosA),     vsBudget: cosB      ? +((mgtCosA     - cosB)      / cosB      * 100).toFixed(1) : null },
-      { metric: 'Gross Profit',    month: mGP(curM),       last: prvM !== null ? mGP(prvM)       : null, ytd: toM(mgtGpA),      vsBudget: gpB       ? +((mgtGpA      - gpB)       / gpB       * 100).toFixed(1) : null },
+      { metric: 'Total Revenue',   month: mRev(curM),      last: prvM !== null ? mRev(prvM)      : null, ytd: toM(mgtRevA),     vsBudget: mgtRevB      ? +((mgtRevA     - mgtRevB)      / mgtRevB      * 100).toFixed(1) : null },
+      { metric: 'Cost of Sales',   month: mCos(curM),      last: prvM !== null ? mCos(prvM)      : null, ytd: toM(mgtCosA),     vsBudget: mgtCosB      ? +((mgtCosA     - mgtCosB)      / mgtCosB      * 100).toFixed(1) : null },
+      { metric: 'Gross Profit',    month: mGP(curM),       last: prvM !== null ? mGP(prvM)       : null, ytd: toM(mgtGpA),      vsBudget: mgtGpB       ? +((mgtGpA      - mgtGpB)       / mgtGpB       * 100).toFixed(1) : null },
       { metric: 'Gross Margin %',  month: mGPMgn(curM),    last: prvM !== null ? mGPMgn(prvM)    : null, ytd: ytdGPMgn,         vsBudget: null,  isPercent: true },
-      { metric: 'Total OPEX',      month: mOpex(curM),     last: prvM !== null ? mOpex(prvM)     : null, ytd: toM(mgtTotOpexA), vsBudget: totOpexB  ? +((mgtTotOpexA - totOpexB)  / totOpexB  * 100).toFixed(1) : null },
-      { metric: 'EBITDA',          month: mEB(curM),       last: prvM !== null ? mEB(prvM)       : null, ytd: toM(mgtEbA),      vsBudget: ebB       ? +((mgtEbA      - ebB)       / ebB       * 100).toFixed(1) : null },
+      { metric: 'Total OPEX',      month: mOpex(curM),     last: prvM !== null ? mOpex(prvM)     : null, ytd: toM(mgtTotOpexA), vsBudget: mgtTotOpexB  ? +((mgtTotOpexA - mgtTotOpexB)  / mgtTotOpexB  * 100).toFixed(1) : null },
+      { metric: 'EBITDA',          month: mEB(curM),       last: prvM !== null ? mEB(prvM)       : null, ytd: toM(mgtEbA),      vsBudget: mgtEbB       ? +((mgtEbA      - mgtEbB)       / mgtEbB       * 100).toFixed(1) : null },
       { metric: 'EBITDA Margin %', month: mEBMgn(curM),    last: prvM !== null ? mEBMgn(prvM)    : null, ytd: ytdEBMgn,         vsBudget: null,  isPercent: true },
-      { metric: 'Net Profit',      month: mNet(curM),      last: prvM !== null ? mNet(prvM)      : null, ytd: toM(mgtNetA),     vsBudget: netB      ? +((mgtNetA     - netB)      / netB      * 100).toFixed(1) : null },
+      { metric: 'Net Profit',      month: mNet(curM),      last: prvM !== null ? mNet(prvM)      : null, ytd: toM(mgtNetA),     vsBudget: mgtNetB      ? +((mgtNetA     - mgtNetB)      / mgtNetB      * 100).toFixed(1) : null },
     ]
   };
 
@@ -3961,5 +4140,5 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   };
 }
 
-module.exports = { buildSnapshot };
+module.exports = { buildSnapshot, buildDirectCashflow };
 

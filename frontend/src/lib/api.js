@@ -20,6 +20,33 @@ export const glDrilldown = {
   get: (accounts, asOf) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}`),
 }
 
+export const cashflow = {
+  // month omitted = that whole calendar year. Powers the Cashflow page's own
+  // Year/Month filter, computed fresh server-side for whatever period is picked.
+  get: (year, month) => req(`/api/cashflow?year=${year}${month ? `&month=${month}` : ''}`),
+}
+
+export const safeeBudget = {
+  // months: array of 0-based PeriodTree month indices, relative to that budget year's
+  // own ~12-month cycle — [] or omitted means the full year.
+  overview: (months) => req(`/api/safee-budget/overview${months?.length ? `?months=${months.join(',')}` : ''}`),
+  year: (budgetName, months, team, intervention) => {
+    const params = new URLSearchParams({ budgetName })
+    if (months?.length) params.set('months', months.join(','))
+    if (team) params.set('team', team)
+    if (intervention) params.set('intervention', intervention)
+    return req(`/api/safee-budget/year?${params.toString()}`)
+  },
+  // The real BC entries behind one line's Utilized figure — click-the-number drilldown.
+  drilldown: (budgetName, catCode, lineCode, months, team, intervention) => {
+    const params = new URLSearchParams({ budgetName, catCode, lineCode })
+    if (months?.length) params.set('months', months.join(','))
+    if (team) params.set('team', team)
+    if (intervention) params.set('intervention', intervention)
+    return req(`/api/safee-budget/drilldown?${params.toString()}`)
+  },
+}
+
 export const pageFilterSettings = {
   list: () => req('/api/page-filter-settings'),
   set:  (pageId, enabled) => req(`/api/page-filter-settings/${pageId}`, {
