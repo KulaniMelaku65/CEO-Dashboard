@@ -1298,10 +1298,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     '840': 'Staff Welfare'
   };
   const cbBudU = {}, cbActU = {}, cbBudA = {}, cbActA = {};
-  // Department × category cross-tab — powers the "hover a department to see its
-  // expense category breakdown" drilldown (rentals, consultancy, utilities, etc.)
-  // on the Budget Analysis "By Business Unit" tab.
+  // Department × category cross-tab — powers the "By Business Unit" tab's expense
+  // category breakdown (rentals, consultancy, utilities, etc.).
   const cbBudUA = {}, cbActUA = {};
+  // Account numbers actually posted to, per department and per department×category —
+  // lets the frontend drill into the real GL entries behind a department's Actual
+  // figure (same click-a-number-to-see-the-ledger as Balance Sheet), scoped to just the
+  // accounts that make up that figure rather than every expense account in the chart.
+  const cbAcctsByU = {}, cbAcctsByUPfx = {};
 
   budgets.forEach(x => {
     const u  = x.globalDim2 || 'Unassigned';
@@ -1329,22 +1333,32 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     if (mi < 0) return;
     if (!cbActU[u]) cbActU[u] = Array(12).fill(0);
     cbActU[u][mi] += num(x.amount);
+    (cbAcctsByU[u] || (cbAcctsByU[u] = new Set())).add(a);
     const pfx = a.slice(0, 3);
     if (CB_ACCT_LABELS[pfx]) {
       if (!cbActA[pfx]) cbActA[pfx] = Array(12).fill(0);
       cbActA[pfx][mi] += num(x.amount);
       if (!cbActUA[u]) cbActUA[u] = {};
       cbActUA[u][pfx] = (cbActUA[u][pfx] || 0) + num(x.amount);
+      const byPfx = cbAcctsByUPfx[u] || (cbAcctsByUPfx[u] = {});
+      (byPfx[pfx] || (byPfx[pfx] = new Set())).add(a);
     }
   });
 
   const cbAllU  = new Set([...Object.keys(cbBudU), ...Object.keys(cbActU)]);
   const arrSum  = arr => (arr || []).reduce((s, v) => s + v, 0);
 
+  // Raw ETB throughout (not toM()'d) — a department's actual OPEX can be well under
+  // the ~100K-ETB precision 1-decimal-millions rounding allows for, which was
+  // rendering as a misleading "0.0M" instead of its real (smaller) figure. The
+  // frontend now does its own scale-appropriate formatting (K/M as the value warrants).
+  const cbYtdFrom = `${today.slice(0, 4)}-01-01`;
   const corporateBudget = {
     budgetName:  CONFIG.BUDGET_NAME,
-    totalBudget: toM(Array.from(cbAllU).reduce((s, u) => s + arrSum(cbBudU[u]), 0)),
-    actualYTD:   toM(Math.abs(Array.from(cbAllU).reduce((s, u) => s + arrSum(cbActU[u]), 0))),
+    totalBudget: Array.from(cbAllU).reduce((s, u) => s + arrSum(cbBudU[u]), 0),
+    actualYTD:   Math.abs(Array.from(cbAllU).reduce((s, u) => s + arrSum(cbActU[u]), 0)),
+    ytdFrom:     cbYtdFrom,
+    ytdTo:       today,
 
     byBU: Array.from(cbAllU)
       .map(u => {
@@ -1353,17 +1367,20 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
         const variance = bud - act;
         return {
           unit:        u,
-          budgetYTD:   toM(bud),
-          actualYTD:   toM(act),
-          varianceYTD: toM(variance),
+          budgetYTD:   bud,
+          actualYTD:   act,
+          varianceYTD: variance,
           varPct:      bud ? parseFloat((variance / bud * 100).toFixed(1)) : null,
           utilPct:     bud ? parseFloat((act / bud * 100).toFixed(1)) : null,
           monthly: mN.map((_, i) => ({
-            bud: toM(cbBudU[u]?.[i] || 0),
-            act: toM(Math.abs(cbActU[u]?.[i] || 0))
+            bud: cbBudU[u]?.[i] || 0,
+            act: Math.abs(cbActU[u]?.[i] || 0)
           })),
-          // Expense category breakdown for this one department — hover detail on
-          // the "By Business Unit" tab (rentals, consultancy, utilities, etc.)
+          // Every account actually posted to for this department — drives the
+          // click-the-Actual-number GL drilldown (/api/gl-drilldown with `from`).
+          accounts: [...(cbAcctsByU[u] || [])].sort(),
+          // Expense category breakdown for this one department — click-through
+          // drilldown on the "By Business Unit" tab (rentals, consultancy, etc.)
           categories: Object.keys(CB_ACCT_LABELS)
             .filter(pfx => (cbBudUA[u]?.[pfx]) || (cbActUA[u]?.[pfx]))
             .map(pfx => {
@@ -1371,8 +1388,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
               const cAct = Math.abs(cbActUA[u]?.[pfx] || 0);
               return {
                 code: pfx, name: CB_ACCT_LABELS[pfx],
-                budgetYTD: toM(cBud), actualYTD: toM(cAct),
-                utilPct: cBud ? parseFloat((cAct / cBud * 100).toFixed(1)) : null
+                budgetYTD: cBud, actualYTD: cAct,
+                utilPct: cBud ? parseFloat((cAct / cBud * 100).toFixed(1)) : null,
+                accounts: [...(cbAcctsByUPfx[u]?.[pfx] || [])].sort()
               };
             })
             .sort((a, b) => (b.actualYTD || b.budgetYTD || 0) - (a.actualYTD || a.budgetYTD || 0))
@@ -1383,8 +1401,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
 
     monthly: {
       labels: mN,
-      budget: mN.map((_, i) => toM(Array.from(cbAllU).reduce((s, u) => s + (cbBudU[u]?.[i] || 0), 0))),
-      actual: mN.map((_, i) => toM(Math.abs(Array.from(cbAllU).reduce((s, u) => s + (cbActU[u]?.[i] || 0), 0))))
+      budget: mN.map((_, i) => Array.from(cbAllU).reduce((s, u) => s + (cbBudU[u]?.[i] || 0), 0)),
+      actual: mN.map((_, i) => Math.abs(Array.from(cbAllU).reduce((s, u) => s + (cbActU[u]?.[i] || 0), 0)))
     },
 
     byAccount: Object.keys(CB_ACCT_LABELS)
@@ -1392,14 +1410,14 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       .map(pfx => ({
         code:      pfx,
         name:      CB_ACCT_LABELS[pfx],
-        budgetYTD: toM(arrSum(cbBudA[pfx])),
-        actualYTD: toM(Math.abs(arrSum(cbActA[pfx]))),
+        budgetYTD: arrSum(cbBudA[pfx]),
+        actualYTD: Math.abs(arrSum(cbActA[pfx])),
         utilPct:   arrSum(cbBudA[pfx])
           ? parseFloat((Math.abs(arrSum(cbActA[pfx])) / arrSum(cbBudA[pfx]) * 100).toFixed(1))
           : null,
         monthly: mN.map((_, i) => ({
-          bud: toM(cbBudA[pfx]?.[i] || 0),
-          act: toM(Math.abs(cbActA[pfx]?.[i] || 0))
+          bud: cbBudA[pfx]?.[i] || 0,
+          act: Math.abs(cbActA[pfx]?.[i] || 0)
         }))
       }))
       .sort((a, b) => (b.budgetYTD || 0) - (a.budgetYTD || 0))

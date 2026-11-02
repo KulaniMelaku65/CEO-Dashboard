@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend
@@ -7,12 +7,74 @@ import { budget as budgetApi } from '../lib/api.js'
 import { aggregateByPeriod } from '../lib/period.js'
 import PeriodToggle from '../components/PeriodToggle.jsx'
 import { PeriodTree, usePeriodSelection } from '../components/PeriodFilterBar.jsx'
+import GLDrilldownPanel from '../components/GLDrilldownPanel.jsx'
 
 const NAVY   = '#02404F'
 const ORANGE = '#EB7D23'
 const GREEN  = '#2EBD85'
 const RED    = '#E5544B'
 const TEAL   = '#1FB6A6'
+
+// Same dark-theme section/zebra-stripe palette as HR Analysis's own tables
+// (HRPageReview.jsx) and SAFEE Budget Analysis — keeps this page's drill-down tables
+// visually consistent with the rest of the app instead of a one-off hover/white style.
+const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
+const SEC_BG = { open: '#123C46', closed: '#0C3841' }
+
+// Rolls this page's own section-level Business Unit rows (e.g. "MSP-001") up under the
+// SAME parent Business Unit grouping HR Analysis uses (hr.sectionToDept/deptDisplayNames
+// in the snapshot — the BC "BUS UNIT & DEPART" dimension's Begin-Total/section
+// hierarchy), so "Business Unit" means the same 7-or-so parent units everywhere in the
+// app instead of this page's own flat list of ~40 section codes.
+function groupByParentBU(byBU, sectionToDept, deptDisplayNames, buLabel) {
+  const groups = {}
+  byBU.forEach(r => {
+    const parentCode = sectionToDept[r.unit] || r.unit
+    const parentName = deptDisplayNames[parentCode] || buLabel(parentCode)
+    const g = groups[parentCode] || (groups[parentCode] = {
+      code: parentCode, name: parentName, children: [],
+      budgetYTD: 0, actualYTD: 0, hasActuals: false
+    })
+    g.children.push(r)
+    g.budgetYTD += r.budgetYTD || 0
+    if (r.actualYTD != null) { g.hasActuals = true; g.actualYTD += r.actualYTD || 0 }
+  })
+  return Object.values(groups).map(g => {
+    const varianceYTD = g.hasActuals ? g.budgetYTD - g.actualYTD : null
+    return {
+      ...g,
+      actualYTD: g.hasActuals ? g.actualYTD : null,
+      varianceYTD,
+      varPct:  g.hasActuals && g.budgetYTD ? +(varianceYTD / g.budgetYTD * 100).toFixed(1) : null,
+      utilPct: g.hasActuals && g.budgetYTD ? +(g.actualYTD / g.budgetYTD * 100).toFixed(1) : null,
+      children: [...g.children].sort((a, b) => (b.budgetYTD || 0) - (a.budgetYTD || 0)),
+    }
+  }).sort((a, b) => (b.budgetYTD || 0) - (a.budgetYTD || 0))
+}
+
+// Dynamically imports xlsx only when Export is actually clicked, same pattern as
+// GLDrilldownPanel.jsx, so the ~700KB library never loads as part of this page's
+// normal bundle.
+async function exportRowsToExcel(filename, sheetName, rows) {
+  const XLSX = await import('xlsx')
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  XLSX.writeFile(wb, filename)
+}
+
+function ExportButton({ onExport, label }) {
+  const [exporting, setExporting] = useState(false)
+  return (
+    <button
+      onClick={async () => { setExporting(true); try { await onExport() } finally { setExporting(false) } }}
+      disabled={exporting}
+      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+    >
+      {exporting ? 'Exporting…' : (label || '⬇ Export Excel')}
+    </button>
+  )
+}
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -22,45 +84,51 @@ const TABS = [
   { id: 'matrix',   label: 'Budget Matrix' },
 ]
 
-const fmtM   = v => v == null ? '—' : `${v.toFixed(1)}M`
-const fmtPct = v => v == null ? '—' : `${v.toFixed(1)}%`
-const fmtAmt = v => {
-  if (!v) return '—'
+// Scale-appropriate formatting for a raw ETB amount — M above 1M, K above 1K,
+// the exact figure (with thousands separators) below that. Replaces the old flat
+// "always 1-decimal-millions" fmtM, which rounded anything under ~100K ETB down to a
+// misleading "0.0M" — a department whose real spend was e.g. 42,000 ETB (well short of
+// 0.1M) looked indistinguishable from one that spent nothing at all.
+const fmtM = v => {
+  if (v == null) return '—'
   const abs = Math.abs(v)
   if (abs >= 1e6) return `${(v / 1e6).toFixed(1)}M`
-  if (abs >= 1e3) return `${(v / 1e3).toFixed(0)}K`
-  return v.toFixed(0)
+  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}K`
+  return Math.round(v).toLocaleString('en-US')
 }
+const fmtPct = v => v == null ? '—' : `${v.toFixed(1)}%`
+const fmtAmt = fmtM
 
-// Convert raw API budget data to the shape the existing 4 tabs expect
+// Convert raw API budget data to the shape the existing 4 tabs expect — apiData
+// amounts are already raw, unscaled ETB (routes/bc.js never divides/rounds them), so
+// this just reshapes the payload rather than converting units.
 function adaptApiData(apiData) {
   if (!apiData) return null
-  const toM = v => Math.round(v / 1e6 * 10) / 10
   return {
     budgetName:  apiData.budgetName,
-    totalBudget: toM(apiData.totals.total),
+    totalBudget: apiData.totals.total,
     actualYTD:   null,
     monthly: {
       labels: apiData.months,
-      budget: apiData.totals.monthly.map(toM),
+      budget: apiData.totals.monthly,
       actual: Array(12).fill(0),
     },
     byBU: apiData.byBU.map(bu => ({
       unit:        bu.unit,
-      budgetYTD:   toM(bu.total),
+      budgetYTD:   bu.total,
       actualYTD:   null,
       varianceYTD: null,
       varPct:      null,
       utilPct:     null,
-      monthly:     bu.monthly.map(v => ({ bud: toM(v), act: 0 })),
+      monthly:     bu.monthly.map(v => ({ bud: v, act: 0 })),
     })),
     byAccount: apiData.byCategory.map(c => ({
       code:      c.code,
       name:      c.name,
-      budgetYTD: toM(c.total),
+      budgetYTD: c.total,
       actualYTD: null,
       utilPct:   null,
-      monthly:   c.monthly.map(v => ({ bud: toM(v), act: 0 })),
+      monthly:   c.monthly.map(v => ({ bud: v, act: 0 })),
     })),
   }
 }
@@ -129,14 +197,22 @@ function UtilBar({ pct }) {
 
 // ── Tab components ───────────────────────────────────────────────────────────
 
-function OverviewTab({ cb, buLabel, periodLabel }) {
+function OverviewTab({ cb, buLabel, periodLabel, sectionToDept, deptDisplayNames }) {
   const [period, setPeriod] = useState('monthly')
+  const [expanded, setExpanded] = useState({})
   const monthlyData = cb.monthly.labels.map((label, i) => ({
     label,
     Budget: cb.monthly.budget[i] || 0,
     Actual: cb.monthly.actual[i] || 0,
   }))
   const chartData = aggregateByPeriod(monthlyData, period)
+
+  // Same parent Business Unit grouping as HR Analysis / By Business Unit tab, so "Top
+  // BU Budget" means the same business units everywhere on this page.
+  const groups = useMemo(
+    () => groupByParentBU(cb.byBU, sectionToDept, deptDisplayNames, buLabel),
+    [cb.byBU, sectionToDept, deptDisplayNames] // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -151,10 +227,10 @@ function OverviewTab({ cb, buLabel, periodLabel }) {
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} unit="M" />
-            <Tooltip formatter={v => [`${v}M`, '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="Budget" fill={`${NAVY}40`} radius={[2, 2, 0, 0]} />
+            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+            <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -164,171 +240,251 @@ function OverviewTab({ cb, buLabel, periodLabel }) {
         <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
           Top BU Budget{periodLabel ? ` — ${periodLabel}` : ' YTD'}
         </p>
-        <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 220 }}>
-          {cb.byBU.slice(0, 12).map(r => (
-            <div key={r.unit}>
-              <div className="flex justify-between text-xs mb-0.5">
-                <span className="text-navy font-semibold truncate max-w-[160px]">{buLabel(r.unit)}</span>
-                <span className="text-muted">
-                  {r.utilPct != null
-                    ? `${fmtM(r.actualYTD)} / ${fmtM(r.budgetYTD)}`
-                    : fmtM(r.budgetYTD)}
-                </span>
-              </div>
-              {r.utilPct != null
-                ? <UtilBar pct={r.utilPct} />
-                : (
-                  <div className="h-1.5 bg-bg rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-navy/30" style={{ width: '100%' }} />
+        <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 260 }}>
+          {groups.map(r => {
+            const isOpen = !!expanded[r.code]
+            return (
+              <div key={r.code}>
+                <div
+                  className="flex justify-between text-xs mb-0.5 cursor-pointer select-none"
+                  onClick={() => setExpanded(p => ({ ...p, [r.code]: !p[r.code] }))}
+                >
+                  <span className="text-navy font-semibold truncate max-w-[160px] flex items-center gap-1">
+                    <span className="inline-block w-2.5 text-muted transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                    {r.name}
+                  </span>
+                  <span className="text-muted">
+                    {r.utilPct != null
+                      ? `${fmtM(r.actualYTD)} / ${fmtM(r.budgetYTD)}`
+                      : fmtM(r.budgetYTD)}
+                  </span>
+                </div>
+                {r.utilPct != null
+                  ? <UtilBar pct={r.utilPct} />
+                  : (
+                    <div className="h-1.5 bg-bg rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-navy/30" style={{ width: '100%' }} />
+                    </div>
+                  )}
+                {isOpen && (
+                  <div className="mt-1.5 mb-1 pl-4 space-y-1.5 border-l border-border/60">
+                    {r.children.map(c => (
+                      <div key={c.unit}>
+                        <div className="flex justify-between text-[11px] mb-0.5">
+                          <span className="text-muted truncate max-w-[140px]">{buLabel(c.unit)}</span>
+                          <span className="text-muted">
+                            {c.utilPct != null ? `${fmtM(c.actualYTD)} / ${fmtM(c.budgetYTD)}` : fmtM(c.budgetYTD)}
+                          </span>
+                        </div>
+                        {c.utilPct != null && <UtilBar pct={c.utilPct} />}
+                      </div>
+                    ))}
                   </div>
                 )}
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
   )
 }
 
-// Hover popover — expense category breakdown for one department (rentals,
-// consultancy, utilities, etc.), per the "hover to see the detail" requirement.
-function CategoryHoverDetail({ categories }) {
-  if (!categories || categories.length === 0) return null
+// One section's expense-category breakdown — an inline drill-down row beneath the
+// section that was clicked (same in-place expand pattern as SAFEE Budget Analysis's
+// CommitmentDrilldownPanel), replacing the old hover popover so the detail is a real
+// click-to-open page element rather than something that vanishes when the mouse moves.
+function CategoryDrilldown({ unit, buLabel, categories, colSpan }) {
   return (
-    <div
-      className="absolute left-0 top-full mt-1 bg-white rounded-xl border border-border shadow-xl overflow-hidden"
-      style={{ zIndex: 50, width: 320 }}
-    >
-      <div className="px-3 py-2 border-b border-border bg-bg">
-        <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Expense Category Breakdown</p>
-      </div>
-      <div className="max-h-56 overflow-y-auto">
-        <table className="w-full text-[11px]">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-left px-3 py-1.5 font-bold text-muted">Category</th>
-              <th className="text-right px-2 py-1.5 font-bold text-muted">Budget</th>
-              <th className="text-right px-2 py-1.5 font-bold text-muted">Actual</th>
-              <th className="text-right px-3 py-1.5 font-bold text-muted">Util %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((c, i) => (
-              <tr key={c.code} className={i % 2 === 0 ? 'bg-white' : 'bg-bg/50'}>
-                <td className="px-3 py-1.5 font-semibold text-navy">{c.name}</td>
-                <td className="px-2 py-1.5 text-right text-muted">{fmtM(c.budgetYTD)}</td>
-                <td className="px-2 py-1.5 text-right font-semibold text-navy">{fmtM(c.actualYTD)}</td>
-                <td className="px-3 py-1.5 text-right font-bold"
-                  style={{ color: (c.utilPct || 0) > 100 ? RED : (c.utilPct || 0) > 80 ? ORANGE : GREEN }}>
-                  {fmtPct(c.utilPct)}
-                </td>
+    <tr>
+      <td colSpan={colSpan} className="p-0">
+        <div className="mx-4 my-2 rounded-xl border border-border overflow-hidden" style={{ background: 'rgba(0,0,0,0.18)' }}>
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+            <p className="text-xs font-extrabold text-navy">{buLabel(unit)} — expense category breakdown</p>
+            <ExportButton
+              label="⬇ Export"
+              onExport={() => exportRowsToExcel(
+                `${buLabel(unit)} - Expense Categories.xlsx`, 'Categories',
+                categories.map(c => ({ Category: c.name, Code: c.code, Budget: c.budgetYTD, Actual: c.actualYTD, 'Util %': c.utilPct }))
+              )}
+            />
+          </div>
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr>
+                <th className="text-left px-3 py-1.5 font-bold text-muted">Category</th>
+                <th className="text-right px-2 py-1.5 font-bold text-muted">Budget</th>
+                <th className="text-right px-2 py-1.5 font-bold text-muted">Actual</th>
+                <th className="text-right px-3 py-1.5 font-bold text-muted">Util %</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            </thead>
+            <tbody>
+              {categories.map((c, i) => (
+                <tr key={c.code} style={{ background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
+                  <td className="px-3 py-1.5 font-semibold text-navy">{c.name}</td>
+                  <td className="px-2 py-1.5 text-right text-muted">{fmtM(c.budgetYTD)}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold text-navy">{fmtM(c.actualYTD)}</td>
+                  <td className="px-3 py-1.5 text-right font-bold"
+                    style={{ color: (c.utilPct || 0) > 100 ? RED : (c.utilPct || 0) > 80 ? ORANGE : GREEN }}>
+                    {fmtPct(c.utilPct)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </td>
+    </tr>
   )
 }
 
-function ByBUTab({ cb, buLabel }) {
-  const [sort, setSort] = useState('budgetYTD')
-  const [hoverUnit, setHoverUnit] = useState(null)
-  const sorted = [...cb.byBU].sort((a, b) => (b[sort] || 0) - (a[sort] || 0))
-  const hasActuals = cb.byBU.some(r => r.actualYTD != null)
+// One parent Business Unit's row (collapsed by default) plus its child sections,
+// revealed on click — same collapsible pattern as SAFEE Budget Analysis's CategoryTable.
+function BUGroupRows({ g, hasActuals, buLabel, expanded, onToggle, drillUnit, onToggleDrill, glUnit, onToggleGl, colSpan, ytdFrom, ytdTo }) {
+  const secBg = { background: expanded ? SEC_BG.open : SEC_BG.closed }
+  return (
+    <>
+      <tr style={secBg} className="cursor-pointer select-none" onClick={onToggle}>
+        <td className="px-4 py-1.5 font-extrabold text-navy" style={secBg}>
+          <span className="inline-block w-3 mr-1 text-muted transition-transform" style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}>▸</span>
+          {g.name}
+          <span className="ml-2 text-[10px] font-semibold text-muted">({g.children.length})</span>
+        </td>
+        <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtM(g.budgetYTD)}</td>
+        {hasActuals && <>
+          <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtM(g.actualYTD)}</td>
+          <td className="px-4 py-1.5 text-right font-extrabold" style={{ color: (g.varianceYTD || 0) >= 0 ? GREEN : RED }}>{fmtM(g.varianceYTD)}</td>
+          <td className="px-4 py-1.5 text-right text-navy">{fmtPct(g.varPct)}</td>
+          <td className="px-4 py-1.5 text-right font-extrabold" style={{ color: (g.utilPct || 0) > 100 ? RED : '#fff' }}>{fmtPct(g.utilPct)}</td>
+        </>}
+      </tr>
+      {expanded && g.children.map((r, i) => {
+        const rowBg = { background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd }
+        const hasCategories = r.categories && r.categories.length > 0
+        const hasAccounts = r.accounts && r.accounts.length > 0
+        const open = drillUnit === r.unit
+        const glOpen = glUnit === r.unit
+        return (
+          <Fragment key={r.unit}>
+            <tr style={rowBg}>
+              <td
+                className={`px-4 py-1.5 pl-8 text-navy ${hasCategories ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                onClick={hasCategories ? () => onToggleDrill(r.unit) : undefined}
+                title={hasCategories ? 'Click to see the expense category breakdown' : undefined}
+              >
+                {buLabel(r.unit)}
+              </td>
+              <td className="px-4 py-1.5 text-right text-navy">{fmtM(r.budgetYTD)}</td>
+              {hasActuals && <>
+                <td
+                  className={`px-4 py-1.5 text-right font-semibold text-navy ${hasAccounts ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                  onClick={hasAccounts ? () => onToggleGl(r.unit) : undefined}
+                  title={hasAccounts ? 'Click to see the Business Central GL entries behind this figure' : undefined}
+                >
+                  {fmtM(r.actualYTD)}
+                </td>
+                <td className="px-4 py-1.5 text-right" style={{ color: (r.varianceYTD || 0) >= 0 ? GREEN : RED }}>{fmtM(r.varianceYTD)}</td>
+                <td className="px-4 py-1.5 text-right text-muted">{fmtPct(r.varPct)}</td>
+                <td className="px-4 py-1.5 text-right font-bold" style={{ color: (r.utilPct || 0) > 100 ? RED : '#fff' }}>{fmtPct(r.utilPct)}</td>
+              </>}
+            </tr>
+            {open && <CategoryDrilldown unit={r.unit} buLabel={buLabel} categories={r.categories} colSpan={colSpan} />}
+            {glOpen && (
+              <GLDrilldownPanel
+                colSpan={colSpan} label={buLabel(r.unit)} accounts={r.accounts}
+                asOf={ytdTo} from={ytdFrom} showDescDoc={false} onClose={() => onToggleGl(r.unit)}
+              />
+            )}
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
 
-  const cols = [
-    { key: 'budgetYTD',   label: 'Budget (Annual)' },
-    ...(hasActuals ? [
-      { key: 'actualYTD',   label: 'Actual YTD' },
-      { key: 'varianceYTD', label: 'Variance' },
-      { key: 'varPct',      label: 'Var %' },
-      { key: 'utilPct',     label: 'Utilization %' },
-    ] : []),
-  ]
+function ByBUTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
+  const [expanded, setExpanded] = useState({})
+  const [drillUnit, setDrillUnit] = useState(null)
+  const [glUnit, setGlUnit] = useState(null)
+  const hasActuals = cb.byBU.some(r => r.actualYTD != null)
+  const colSpan = hasActuals ? 6 : 2
+  const groups = useMemo(
+    () => groupByParentBU(cb.byBU, sectionToDept, deptDisplayNames, buLabel),
+    [cb.byBU, sectionToDept, deptDisplayNames] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
+  const cols = hasActuals
+    ? ['Budget (Annual)', 'Actual YTD', 'Variance', 'Var %', 'Utilization %']
+    : ['Budget (Annual)']
+
+  const totBud = cb.byBU.reduce((s, r) => s + (r.budgetYTD || 0), 0)
+  const totAct = cb.byBU.reduce((s, r) => s + (r.actualYTD || 0), 0)
+  const totVar = totBud - totAct
+
+  const handleExport = () => {
+    const rows = []
+    groups.forEach(g => {
+      rows.push({ 'Business Unit': g.name, Section: '(All sections)', Budget: g.budgetYTD, Actual: g.actualYTD, Variance: g.varianceYTD, 'Util %': g.utilPct })
+      g.children.forEach(c => {
+        rows.push({ 'Business Unit': g.name, Section: buLabel(c.unit), Budget: c.budgetYTD, Actual: c.actualYTD, Variance: c.varianceYTD, 'Util %': c.utilPct })
+      })
+    })
+    return exportRowsToExcel(`Corporate Budget by Business Unit - ${cb.budgetName}.xlsx`, 'By Business Unit', rows)
+  }
 
   return (
-    <div className="bg-white rounded-2xl border border-border overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border bg-bg">
-              <th className="text-left px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">
-                Business Unit
-              </th>
-              {cols.map(c => (
-                <th
-                  key={c.key}
-                  className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider cursor-pointer hover:text-navy transition-colors"
-                  onClick={() => setSort(c.key)}
-                  style={sort === c.key ? { color: '#FFFFFF' } : {}}
-                >
-                  {c.label} {sort === c.key ? '↓' : ''}
-                </th>
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <ExportButton onExport={handleExport} />
+      </div>
+      <div className="bg-white rounded-2xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-bg">
+                <th className="text-left px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">Business Unit</th>
+                {cols.map(c => (
+                  <th key={c} className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(g => (
+                <BUGroupRows
+                  key={g.code} g={g} hasActuals={hasActuals} buLabel={buLabel} colSpan={colSpan}
+                  expanded={!!expanded[g.code]} onToggle={() => setExpanded(p => ({ ...p, [g.code]: !p[g.code] }))}
+                  drillUnit={drillUnit} onToggleDrill={u => setDrillUnit(p => (p === u ? null : u))}
+                  glUnit={glUnit} onToggleGl={u => setGlUnit(p => (p === u ? null : u))}
+                  ytdFrom={cb.ytdFrom} ytdTo={cb.ytdTo}
+                />
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r, i) => {
-              const over = (r.utilPct || 0) > 100
-              const hasCategories = r.categories && r.categories.length > 0
-              return (
-                <tr key={r.unit} className={i % 2 === 0 ? 'bg-white' : 'bg-bg/50'}>
-                  <td
-                    className={`relative px-4 py-2 font-semibold text-navy ${hasCategories ? 'cursor-help' : ''}`}
-                    onMouseEnter={() => hasCategories && setHoverUnit(r.unit)}
-                    onMouseLeave={() => setHoverUnit(null)}
-                  >
-                    {buLabel(r.unit)}
-                    {hasCategories && <span className="ml-1 text-[9px] text-muted" title="Hover for expense category breakdown">ⓘ</span>}
-                    {hoverUnit === r.unit && <CategoryHoverDetail categories={r.categories} />}
-                  </td>
-                  <td className="px-4 py-2 text-right text-muted">{fmtM(r.budgetYTD)}</td>
-                  {hasActuals && <>
-                    <td className="px-4 py-2 text-right font-semibold text-navy">{fmtM(r.actualYTD)}</td>
-                    <td className="px-4 py-2 text-right" style={{ color: (r.varianceYTD || 0) >= 0 ? GREEN : RED }}>
-                      {fmtM(r.varianceYTD)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted">{fmtPct(r.varPct)}</td>
-                    <td className="px-4 py-2 text-right font-bold" style={{ color: over ? RED : '#FFFFFF' }}>
-                      {fmtPct(r.utilPct)}
-                    </td>
-                  </>}
-                </tr>
-              )
-            })}
-            {/* Total row */}
-            {(() => {
-              const totBud = cb.byBU.reduce((s, r) => s + (r.budgetYTD || 0), 0)
-              const totAct = cb.byBU.reduce((s, r) => s + (r.actualYTD || 0), 0)
-              const totVar = totBud - totAct
-              return (
-                <tr className="border-t-2 border-border font-extrabold bg-bg">
-                  <td className="px-4 py-2 text-navy">Total</td>
-                  <td className="px-4 py-2 text-right text-muted">{fmtM(totBud)}</td>
-                  {hasActuals && <>
-                    <td className="px-4 py-2 text-right text-navy">{fmtM(totAct)}</td>
-                    <td className="px-4 py-2 text-right" style={{ color: totVar >= 0 ? GREEN : RED }}>{fmtM(totVar)}</td>
-                    <td className="px-4 py-2 text-right text-muted">{fmtPct(totBud ? (totVar / totBud * 100) : null)}</td>
-                    <td className="px-4 py-2 text-right text-navy">
-                      {fmtPct(totBud ? (totAct / totBud * 100) : null)}
-                    </td>
-                  </>}
-                </tr>
-              )
-            })()}
-          </tbody>
-        </table>
+              <tr className="border-t-2 border-border font-extrabold bg-bg">
+                <td className="px-4 py-2 text-navy">Total</td>
+                <td className="px-4 py-2 text-right text-muted">{fmtM(totBud)}</td>
+                {hasActuals && <>
+                  <td className="px-4 py-2 text-right text-navy">{fmtM(totAct)}</td>
+                  <td className="px-4 py-2 text-right" style={{ color: totVar >= 0 ? GREEN : RED }}>{fmtM(totVar)}</td>
+                  <td className="px-4 py-2 text-right text-muted">{fmtPct(totBud ? (totVar / totBud * 100) : null)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtPct(totBud ? (totAct / totBud * 100) : null)}</td>
+                </>}
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
 }
 
-function MonthlyTab({ cb, buLabel }) {
+function MonthlyTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
   const [selectedBU, setSelectedBU] = useState('__all__')
   const [period, setPeriod] = useState('monthly')
 
-  const buList = [{ unit: '__all__', label: 'All Business Units' }, ...cb.byBU.map(r => ({ unit: r.unit, label: buLabel(r.unit) }))]
+  const groups = useMemo(
+    () => groupByParentBU(cb.byBU, sectionToDept, deptDisplayNames, buLabel),
+    [cb.byBU, sectionToDept, deptDisplayNames] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const group = groups.find(g => g.code === selectedBU)
 
   let monthlyData
   if (selectedBU === '__all__') {
@@ -336,6 +492,13 @@ function MonthlyTab({ cb, buLabel }) {
       label,
       Budget: cb.monthly.budget[i] || 0,
       Actual: cb.monthly.actual[i] || 0,
+    }))
+  } else if (group) {
+    // Parent Business Unit selected — sum its child sections' monthly series.
+    monthlyData = cb.monthly.labels.map((label, i) => ({
+      label,
+      Budget: group.children.reduce((s, r) => s + (r.monthly?.[i]?.bud || 0), 0),
+      Actual: group.children.reduce((s, r) => s + (r.monthly?.[i]?.act || 0), 0),
     }))
   } else {
     const bu = cb.byBU.find(r => r.unit === selectedBU)
@@ -347,6 +510,8 @@ function MonthlyTab({ cb, buLabel }) {
   }
   const chartData = aggregateByPeriod(monthlyData, period)
 
+  const selectedLabel = selectedBU === '__all__' ? 'All Business Units' : (group ? group.name : buLabel(selectedBU))
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 flex-wrap">
@@ -356,26 +521,36 @@ function MonthlyTab({ cb, buLabel }) {
           onChange={e => setSelectedBU(e.target.value)}
           className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-navy outline-none focus:border-navy"
         >
-          {buList.map(b => (
-            <option key={b.unit} value={b.unit}>{b.label}</option>
+          <option value="__all__">All Business Units</option>
+          {groups.map(g => (
+            <optgroup key={g.code} label={g.name}>
+              <option value={g.code}>{g.name} (All sections)</option>
+              {g.children.map(c => <option key={c.unit} value={c.unit}>{buLabel(c.unit)}</option>)}
+            </optgroup>
           ))}
         </select>
         <PeriodToggle value={period} onChange={setPeriod} />
+        <div className="ml-auto">
+          <ExportButton onExport={() => exportRowsToExcel(
+            `Corporate Budget Monthly Trend - ${selectedLabel} - ${cb.budgetName}.xlsx`, 'Monthly Trend',
+            chartData.map(d => ({ Period: d.label, Budget: d.Budget, Actual: d.Actual }))
+          )} />
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-border p-4">
         <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
-          Budget vs Actual — {selectedBU === '__all__' ? 'All Business Units' : buLabel(selectedBU)}
+          Budget vs Actual — {selectedLabel}
           {period !== 'monthly' && ` · ${period === 'quarterly' ? 'Quarterly' : 'Annual'}`}
         </p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} unit="M" />
-            <Tooltip formatter={v => [`${v}M`, '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="Budget" fill={`${NAVY}40`} radius={[2, 2, 0, 0]} />
+            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+            <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -436,18 +611,18 @@ function OpexTab({ cb }) {
                 horizontal={selectedAcct !== '__all__'} vertical={selectedAcct === '__all__'} />
               {selectedAcct === '__all__' ? (
                 <>
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} unit="M" />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                   <YAxis type="category" dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={30} />
                 </>
               ) : (
                 <>
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} unit="M" />
+                  <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                 </>
               )}
-              <Tooltip formatter={v => [`${v}M`, '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Budget" fill={`${NAVY}40`} radius={[2, 2, 0, 0]} />
+              <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+              <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -494,11 +669,26 @@ function OpexTab({ cb }) {
   )
 }
 
-function BudgetMatrixTab({ apiData, loading, error, buLabel }) {
+function BudgetMatrixTab({ apiData, loading, error, buLabel, sectionToDept, deptDisplayNames }) {
   const [buFilter, setBuFilter] = useState('__all__')
 
   // Reset BU filter when budget changes
   useEffect(() => { setBuFilter('__all__') }, [apiData?.budgetName])
+
+  // Same parent-BU grouping as HR Analysis — apiData.BUs is this budget's own flat
+  // section-code list, rolled up under its Begin-Total parent so the dropdown reads as
+  // Business Unit -> sections instead of ~40 section codes in one flat list.
+  const buGroups = useMemo(() => {
+    if (!apiData) return []
+    const groups = {}
+    apiData.BUs.forEach(bu => {
+      const parentCode = sectionToDept[bu] || bu
+      const parentName = deptDisplayNames[parentCode] || buLabel(parentCode)
+      const g = groups[parentCode] || (groups[parentCode] = { code: parentCode, name: parentName, children: [] })
+      g.children.push(bu)
+    })
+    return Object.values(groups).sort((a, b) => a.name.localeCompare(b.name))
+  }, [apiData, sectionToDept, deptDisplayNames]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return (
     <div className="flex items-center justify-center h-48">
@@ -515,8 +705,12 @@ function BudgetMatrixTab({ apiData, loading, error, buLabel }) {
   )
   if (!apiData) return null
 
-  const getMonthly = acct =>
-    buFilter === '__all__' ? acct.monthly : (acct.byBU[buFilter] || Array(12).fill(0))
+  const buGroup = buGroups.find(g => g.code === buFilter)
+  const getMonthly = acct => {
+    if (buFilter === '__all__') return acct.monthly
+    if (buGroup) return Array(12).fill(0).map((_, i) => buGroup.children.reduce((s, code) => s + (acct.byBU[code]?.[i] || 0), 0))
+    return acct.byBU[buFilter] || Array(12).fill(0)
+  }
 
   const filteredAccounts = apiData.accounts.filter(a => getMonthly(a).some(v => v !== 0))
 
@@ -534,7 +728,12 @@ function BudgetMatrixTab({ apiData, loading, error, buLabel }) {
           className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-navy outline-none focus:border-navy"
         >
           <option value="__all__">All Business Units</option>
-          {apiData.BUs.map(bu => <option key={bu} value={bu}>{buLabel(bu)}</option>)}
+          {buGroups.map(g => (
+            <optgroup key={g.code} label={g.name}>
+              <option value={g.code}>{g.name} (All sections)</option>
+              {g.children.map(code => <option key={code} value={code}>{buLabel(code)}</option>)}
+            </optgroup>
+          ))}
         </select>
         <span className="text-xs text-muted ml-auto">{filteredAccounts.length} accounts · {fmtAmt(grandTotal)} total</span>
       </div>
@@ -637,6 +836,13 @@ export default function BudgetAnalysis({ data }) {
   const buNames  = apiData?.buNames || {}
   const buLabel  = code => buNames[code] || code
 
+  // Same parent Business Unit grouping HR Analysis uses (hr.sectionToDept resolves a
+  // section code like "MSP-001" to its Begin-Total parent, e.g. "MSP"; deptDisplayNames
+  // holds that parent's display name) — shared across By Business Unit, Monthly Trend
+  // and Budget Matrix below so "Business Unit" means the same thing everywhere.
+  const sectionToDept    = data?.hr?.sectionToDept    || {}
+  const deptDisplayNames = data?.hr?.deptDisplayNames || {}
+
   const hasActuals  = cb?.actualYTD != null
   const utilPct     = cb?.totalBudget ? ((cb.actualYTD || 0) / cb.totalBudget * 100) : null
   const variance    = (cb?.totalBudget || 0) - (cb?.actualYTD || 0)
@@ -733,7 +939,7 @@ export default function BudgetAnalysis({ data }) {
 
       {/* Tab content */}
       {tab === 'matrix' ? (
-        <BudgetMatrixTab apiData={apiData} loading={apiLoading} error={apiError} buLabel={buLabel} />
+        <BudgetMatrixTab apiData={apiData} loading={apiLoading} error={apiError} buLabel={buLabel} sectionToDept={sectionToDept} deptDisplayNames={deptDisplayNames} />
       ) : isTabLoading ? (
         <div className="flex items-center justify-center h-48">
           <div className="flex flex-col items-center gap-2">
@@ -747,9 +953,9 @@ export default function BudgetAnalysis({ data }) {
         </div>
       ) : (
         <>
-          {tab === 'overview' && <OverviewTab cb={cb} buLabel={buLabel} periodLabel={sel.selMonths.length ? sel.periodLabel : null} />}
-          {tab === 'bybu'     && <ByBUTab     cb={cb} buLabel={buLabel} />}
-          {tab === 'monthly'  && <MonthlyTab  cb={cb} buLabel={buLabel} />}
+          {tab === 'overview' && <OverviewTab cb={cb} buLabel={buLabel} periodLabel={sel.selMonths.length ? sel.periodLabel : null} sectionToDept={sectionToDept} deptDisplayNames={deptDisplayNames} />}
+          {tab === 'bybu'     && <ByBUTab     cb={cb} buLabel={buLabel} sectionToDept={sectionToDept} deptDisplayNames={deptDisplayNames} />}
+          {tab === 'monthly'  && <MonthlyTab  cb={cb} buLabel={buLabel} sectionToDept={sectionToDept} deptDisplayNames={deptDisplayNames} />}
           {tab === 'opex'     && <OpexTab     cb={cb} />}
         </>
       )}

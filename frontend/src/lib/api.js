@@ -17,7 +17,9 @@ export const auth = {
 }
 
 export const glDrilldown = {
-  get: (accounts, asOf) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}`),
+  // `from` switches the query to a date-range Income Statement lookup instead of a
+  // cumulative-since-inception Balance Sheet one — see routes/gl-drilldown.js.
+  get: (accounts, asOf, from) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}${from ? `&from=${from}` : ''}`),
 }
 
 export const cashflow = {
@@ -37,9 +39,12 @@ export const safeeBudget = {
     if (intervention) params.set('intervention', intervention)
     return req(`/api/safee-budget/year?${params.toString()}`)
   },
-  // The real BC entries behind one line's Utilized figure — click-the-number drilldown.
+  // The real BC entries behind one line's (or one intervention's, with catCode/lineCode
+  // omitted) Utilized figure — click-the-number drilldown.
   drilldown: (budgetName, catCode, lineCode, months, team, intervention) => {
-    const params = new URLSearchParams({ budgetName, catCode, lineCode })
+    const params = new URLSearchParams({ budgetName })
+    if (catCode) params.set('catCode', catCode)
+    if (lineCode) params.set('lineCode', lineCode)
     if (months?.length) params.set('months', months.join(','))
     if (team) params.set('team', team)
     if (intervention) params.set('intervention', intervention)

@@ -28,7 +28,10 @@ const MAX_ROWS = 300
 // `compareAsOf`/`compareLabel`, when a page has an active Compare To baseline, add a
 // Current/Compare toggle so the same account list can be inspected as of either period
 // without closing and reopening the panel on a different row.
-export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, compareAsOf, compareLabel, onClose }) {
+// `showDescDoc` (default true): some sources behind this panel (e.g. Corporate
+// Budget's department-level drilldown) don't carry a description/document number on
+// their entries — pass false to drop those two columns instead of showing them empty.
+export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from, compareAsOf, compareLabel, showDescDoc = true, onClose }) {
   const [viewAsOf, setViewAsOf] = useState(asOf)
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
@@ -42,12 +45,12 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, compa
   useEffect(() => {
     if (!accounts?.length) return
     setLoading(true); setError(''); setData(null)
-    glDrilldown.get(accounts, viewAsOf)
+    glDrilldown.get(accounts, viewAsOf, from)
       .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load GL entries.')))
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [accounts, viewAsOf])
+  }, [accounts, viewAsOf, from])
 
   const entries = data?.entries || []
   const shown = entries.slice(0, MAX_ROWS)
@@ -65,14 +68,18 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, compa
         Date:            e.postingDate ? e.postingDate.slice(0, 10) : '',
         Account:         e.accountNo,
         'Account Name':  e.accountName || '',
-        Description:     e.description || '',
-        Document:        e.documentNo || '',
-        'Document Type': e.documentType || '',
+        ...(showDescDoc ? { Description: e.description || '', Document: e.documentNo || '', 'Document Type': e.documentType || '' } : {}),
         Amount:          e.amount,
       }))
-      rows.push({ Date: '', Account: '', 'Account Name': '', Description: '', Document: '', 'Document Type': 'Total', Amount: data.total })
+      rows.push({
+        Date: '', Account: '', 'Account Name': '',
+        ...(showDescDoc ? { Description: '', Document: '', 'Document Type': 'Total' } : {}),
+        Amount: data.total
+      })
       const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 28 }, { wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 16 }]
+      ws['!cols'] = showDescDoc
+        ? [{ wch: 12 }, { wch: 10 }, { wch: 28 }, { wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 16 }]
+        : [{ wch: 12 }, { wch: 10 }, { wch: 28 }, { wch: 16 }]
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'GL Entries')
       const safeLabel = String(label || 'GL Entries').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60)
@@ -142,8 +149,10 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, compa
                   <tr>
                     <th className="text-left px-4 py-1.5 font-extrabold text-muted uppercase tracking-wider">Date</th>
                     <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Account</th>
-                    <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Description</th>
-                    <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Document</th>
+                    {showDescDoc && <>
+                      <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Description</th>
+                      <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Document</th>
+                    </>}
                     <th className="text-right px-4 py-1.5 font-extrabold text-muted uppercase tracking-wider">Amount</th>
                   </tr>
                 </thead>
@@ -152,8 +161,10 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, compa
                     <tr key={i} className="border-t border-border/30 hover:bg-white/5">
                       <td className="px-4 py-1.5 text-navy whitespace-nowrap">{fmtDate(e.postingDate)}</td>
                       <td className="px-3 py-1.5 text-navy whitespace-nowrap">{e.accountNo}{e.accountName ? ` — ${e.accountName}` : ''}</td>
-                      <td className="px-3 py-1.5 text-navy">{e.description || '—'}</td>
-                      <td className="px-3 py-1.5 text-muted whitespace-nowrap">{e.documentNo || '—'}</td>
+                      {showDescDoc && <>
+                        <td className="px-3 py-1.5 text-navy">{e.description || '—'}</td>
+                        <td className="px-3 py-1.5 text-muted whitespace-nowrap">{e.documentNo || '—'}</td>
+                      </>}
                       <td className={`px-4 py-1.5 text-right font-semibold whitespace-nowrap ${e.amount < 0 ? 'text-red-500' : 'text-navy'}`}>
                         {e.amount < 0 ? '(' : ''}ETB {fmtAmt(e.amount)}{e.amount < 0 ? ')' : ''}
                       </td>

@@ -75,25 +75,10 @@ function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }) {
   )
 }
 
-// One row of the statement, matching BC's own "DIRECT CF" account schedule layout
-// exactly (same row order/indentation/bold as BC's own report) — section headers
-// (no rowNo, bold) render as a colored uppercase heading, blank rows (no rowNo, no
-// description) render as spacing, everything else as a line item or bold subtotal.
+// One non-header row of the statement, matching BC's own "DIRECT CF" account schedule
+// layout exactly (same row order/indentation/bold as BC's own report).
 function StatementRow({ row }) {
   if (!row.rowNo && !row.description) return <tr><td colSpan={2} className="py-1.5" /></tr>
-
-  if (!row.rowNo) {
-    // Section header (CASH FROM OPERATING EXPENSES, INVESTING ACTIVITIES, ...) — same
-    // tinted-background + white-text pattern the Balance Sheet statement uses, so it
-    // stays readable against both the light-mode white card and the dark-mode navy one.
-    return (
-      <tr style={{ background: NAVY + '10' }}>
-        <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
-          {row.description}
-        </td>
-      </tr>
-    )
-  }
 
   const { text, color } = fmtSigned(row.value)
   const pad = 20 + (row.indentation || 0) * 16
@@ -107,6 +92,25 @@ function StatementRow({ row }) {
         {text}
       </td>
     </tr>
+  )
+}
+
+// One collapsible section (CASH FROM OPERATING ACTIVITIES, INVESTING ACTIVITIES, ...) —
+// same tinted-header + click-to-expand/collapse pattern as the Balance Sheet statement,
+// so the two statements read as one consistent "system" instead of Cashflow being a
+// single long flat table next to Balance Sheet's collapsible one.
+function StatementSection({ header, rows, defaultExpanded = true }) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+  return (
+    <>
+      <tr className="cursor-pointer select-none" style={{ background: NAVY + '10' }} onClick={() => setExpanded(e => !e)}>
+        <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
+          <span className="mr-2 text-[10px]">{expanded ? '▼' : '▶'}</span>
+          {header.description}
+        </td>
+      </tr>
+      {expanded && rows.map(row => <StatementRow key={row.lineNo} row={row} />)}
+    </>
   )
 }
 
@@ -144,6 +148,18 @@ export default function CashFlow({ data }) {
   const cf = year ? filteredCf : liveCf
   const rows = cf?.rows || []
   const checkOk = cf?.check != null && Math.abs(cf.check) < 1 // within ETB 1M of reconciling
+
+  // Group the flat row list into sections at each header row (no rowNo, has a
+  // description) — same shape Balance Sheet's statement collapses by, so the two pages'
+  // tables behave the same way (click a section header to expand/collapse).
+  const sections = []
+  rows.forEach(row => {
+    if (!row.rowNo && row.description) {
+      sections.push({ header: row, rows: [] })
+    } else if (sections.length) {
+      sections[sections.length - 1].rows.push(row)
+    }
+  })
 
   return (
     <div className="space-y-6">
@@ -232,12 +248,14 @@ export default function CashFlow({ data }) {
               <div className="px-5 py-4 border-b border-border">
                 <h3 className="text-sm font-bold text-navy">Cashflow Statement</h3>
                 <p className="text-[10px] text-muted mt-0.5">
-                  {fmtDate(cf.periodStart)} – {fmtDate(cf.asOf)} · amounts in ETB
+                  {fmtDate(cf.periodStart)} – {fmtDate(cf.asOf)} · amounts in ETB · click a section header to expand / collapse
                 </p>
               </div>
               <table className="w-full text-sm">
                 <tbody>
-                  {rows.map(row => <StatementRow key={row.lineNo} row={row} />)}
+                  {sections.map((s, i) => (
+                    <StatementSection key={s.header.lineNo ?? i} header={s.header} rows={s.rows} />
+                  ))}
                 </tbody>
               </table>
             </div>

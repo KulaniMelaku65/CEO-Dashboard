@@ -12,7 +12,10 @@ const TEAL   = '#1FB6A6'
 const ORANGE = '#EB7D23'
 const GREEN  = '#2EBD85'
 const RED    = '#E5544B'
-const PIE_COLORS = [ORANGE, TEAL, NAVY, GREEN, RED, '#8E5FD9', '#4A90E2', '#C9A227']
+// NAVY deliberately excluded — this page's cards render on a dark-navy background in
+// dark mode, so a navy pie slice (or bar) was blending straight into it, making
+// whichever category landed on that color (e.g. "Delivery Fee") invisible.
+const PIE_COLORS = [ORANGE, TEAL, GREEN, RED, '#8E5FD9', '#4A90E2', '#C9A227', '#F2B705']
 
 // Same dark-theme zebra-stripe/section palette as HR Analysis's own tables (HRPageReview.jsx)
 // — explicit hex rather than relying on index.css's bg-white dark-mode remap, so this
@@ -227,7 +230,7 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
           <tbody>
             {categories.map(cat => (
               <CategoryRows
-                key={cat.code} cat={cat} showQuarters={showQuarters}
+                key={cat.code} cat={cat} showQuarters={showQuarters} quarters={quarters}
                 expanded={!!expanded[cat.code]} onToggleCategory={() => toggleCategory(cat.code)}
                 openDrill={openDrill} onToggleDrill={toggleDrill} colSpan={colSpan}
                 budgetName={budgetName} selMonths={selMonths} team={team} intervention={intervention}
@@ -268,13 +271,26 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
   )
 }
 
-function CategoryRows({ cat, showQuarters, expanded, onToggleCategory, openDrill, onToggleDrill, colSpan, budgetName, selMonths, team, intervention }) {
+function CategoryRows({ cat, showQuarters, quarters, expanded, onToggleCategory, openDrill, onToggleDrill, colSpan, budgetName, selMonths, team, intervention }) {
   // Same section/zebra-stripe palette as HR Analysis's own tables (SEC_BG/ROW_BG,
   // HRPageReview.jsx) — an explicit dark-navy background (not a translucent tint) so
   // the sticky first column reads identically to the rest of the row at any scroll
   // position, and the table matches HR Analysis's look rather than its own one-off tint.
   const secBg = { background: expanded ? SEC_BG.open : SEC_BG.closed }
   const canDrill = !showQuarters && budgetName
+  // vs Quarter's category summary row used to render a single blank cell here — every
+  // figure was only visible once a category was expanded down to its lines. Roll the
+  // lines' own per-quarter figures up to the category level so the collapsed row shows
+  // real numbers too, same as the non-quarter table already does.
+  const catByQuarter = showQuarters && quarters
+    ? quarters.map(q => {
+        const agg = cat.lines.reduce((s, l) => {
+          const lq = l.byQuarter.find(x => x.q === q.q) || { budget: 0, utilized: 0, unutilized: 0 }
+          return { budget: s.budget + lq.budget, utilized: s.utilized + lq.utilized, unutilized: s.unutilized + lq.unutilized }
+        }, { budget: 0, utilized: 0, unutilized: 0 })
+        return { q: q.q, ...agg, pctUnutilized: agg.budget ? (agg.unutilized / agg.budget * 100) : null }
+      })
+    : []
   return (
     <>
       <tr style={secBg} className="cursor-pointer select-none" onClick={onToggleCategory}>
@@ -290,7 +306,14 @@ function CategoryRows({ cat, showQuarters, expanded, onToggleCategory, openDrill
             <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.unutilized)}</td>
             <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtPct(cat.pctUnutilized, 1)}</td>
           </>
-        ) : <td colSpan={99} />}
+        ) : catByQuarter.map(q => (
+          <Fragment key={q.q}>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy border-l border-border">{fmtETB(q.budget)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(q.utilized)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(q.unutilized)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtPct(q.pctUnutilized, 1)}</td>
+          </Fragment>
+        ))}
       </tr>
       {expanded && cat.lines.map((line, i) => {
         const drillKey = `${cat.code}|${line.code}`
@@ -337,7 +360,8 @@ function CategoryRows({ cat, showQuarters, expanded, onToggleCategory, openDrill
   )
 }
 
-function InterventionTable({ interventions }) {
+function InterventionTable({ interventions, budgetName, selMonths, team }) {
+  const [openIntervention, setOpenIntervention] = useState(null)
   const total = interventions.reduce((s, i) => ({
     budget: s.budget + i.budget, utilized: s.utilized + i.utilized, unutilized: s.unutilized + i.unutilized
   }), { budget: 0, utilized: 0, unutilized: 0 })
@@ -354,17 +378,36 @@ function InterventionTable({ interventions }) {
           </tr>
         </thead>
         <tbody>
-          {interventions.map((i, idx) => (
-            <tr key={i.code} style={{ background: idx % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
-              <td className="px-4 py-2 font-semibold text-navy">
-                <span className="text-muted mr-1">{i.code}</span>{i.name}
-              </td>
-              <td className="px-4 py-2 text-right text-navy">{fmtETB(i.budget)}</td>
-              <td className="px-4 py-2 text-right text-navy">{fmtETB(i.utilized)}</td>
-              <td className="px-4 py-2 text-right text-navy">{fmtETB(i.unutilized)}</td>
-              <td className="px-4 py-2 text-right" style={{ color: (i.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(i.pctUnutilized, 1)}</td>
-            </tr>
-          ))}
+          {interventions.map((i, idx) => {
+            const open = openIntervention === i.code
+            return (
+              <Fragment key={i.code}>
+                <tr style={{ background: idx % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
+                  <td className="px-4 py-2 font-semibold text-navy">
+                    <span className="text-muted mr-1">{i.code}</span>{i.name}
+                  </td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.budget)}</td>
+                  <td
+                    className={`px-4 py-2 text-right text-navy ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                    onClick={budgetName ? () => setOpenIntervention(open ? null : i.code) : undefined}
+                    title={budgetName ? 'Click to see the Business Central entries behind this figure' : undefined}
+                  >
+                    {fmtETB(i.utilized)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.unutilized)}</td>
+                  <td className="px-4 py-2 text-right" style={{ color: (i.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(i.pctUnutilized, 1)}</td>
+                </tr>
+                {open && (
+                  <CommitmentDrilldownPanel
+                    colSpan={5} label={`${i.code}: ${i.name}`}
+                    budgetName={budgetName} catCode={null} lineCode={null}
+                    selMonths={selMonths} team={team} intervention={i.code}
+                    onClose={() => setOpenIntervention(null)}
+                  />
+                )}
+              </Fragment>
+            )
+          })}
           <tr className="border-t-2 border-border font-extrabold bg-bg">
             <td className="px-4 py-2 text-navy">Total</td>
             <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget)}</td>
@@ -545,13 +588,13 @@ export default function SafeeBudget() {
             </div>
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <h3 className="text-sm font-bold text-navy mb-3">Budget Amount vs Unutilized</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={categories} margin={{ top: 8, right: 8, left: -10, bottom: 40 }}>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={categories} margin={{ top: 24, right: 8, left: -10, bottom: 90 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" interval={0} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={90} />
                   <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                   <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
-                  <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                  <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                   <Bar dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -579,14 +622,14 @@ export default function SafeeBudget() {
           </div>
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
             <h3 className="text-sm font-bold text-navy mb-3">Budget and % Unutilized by Intervention</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={interventions} margin={{ top: 8, right: 8, left: -10, bottom: 50 }}>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={interventions} margin={{ top: 24, right: 8, left: -10, bottom: 80 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" interval={0} />
+                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
                 <YAxis yAxisId="l" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="r" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                 <Bar yAxisId="l" dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
                 <Bar yAxisId="r" dataKey="pctUnutilized" name="% Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -594,13 +637,13 @@ export default function SafeeBudget() {
           </div>
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card xl:col-span-2">
             <h3 className="text-sm font-bold text-navy mb-3">Budget vs Unutilized by Intervention</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={interventions} margin={{ top: 8, right: 8, left: -10, bottom: 50 }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={interventions} margin={{ top: 24, right: 8, left: -10, bottom: 80 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-30} textAnchor="end" interval={0} />
+                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
                 <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                 <Bar dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -663,7 +706,7 @@ export default function SafeeBudget() {
 
       {/* ── Program Activity vs Budget Intervention ──────────────────────────── */}
       {tab === 'int-budget' && !loading && !error && yearDetail && (
-        <InterventionTable interventions={interventions} />
+        <InterventionTable interventions={interventions} budgetName={budgetName} selMonths={sel.selMonths} team={team} />
       )}
     </div>
   )

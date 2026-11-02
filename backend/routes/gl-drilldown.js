@@ -16,7 +16,7 @@ const ACCOUNT_FILTER_THRESHOLD = 40;
 // re-fetch thousands of rows each click) and an hour for account names (change rarely).
 // Not shared with snapshot-builder.js's own cache (a different module's closure) — this
 // one only needs to survive across drilldown clicks within roughly the same session.
-const _bulkEntriesCache = new Map(); // asOf -> { at, entries }
+const _bulkEntriesCache = new Map(); // "incomeBalance|from|to" -> { at, entries }
 const BULK_TTL_MS = 10 * 60 * 1000;
 let _acctNameCache = { at: 0, map: null };
 const ACCT_NAME_TTL_MS = 60 * 60 * 1000;
@@ -30,11 +30,12 @@ async function getAccountNames() {
   return map;
 }
 
-async function getBulkEntries(asOf) {
-  const cached = _bulkEntriesCache.get(asOf);
+async function getBulkEntries(incomeBalance, dateFilter) {
+  const key = `${incomeBalance}|${dateFilter}`;
+  const cached = _bulkEntriesCache.get(key);
   if (cached && (Date.now() - cached.at) < BULK_TTL_MS) return cached.entries;
-  const entries = await bc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${asOf}`);
-  _bulkEntriesCache.set(asOf, { at: Date.now(), entries });
+  const entries = await bc('KFT_GL_Entries', `?$filter=incomeBalance eq '${incomeBalance}' and ${dateFilter}`);
+  _bulkEntriesCache.set(key, { at: Date.now(), entries });
   return entries;
 }
 
@@ -46,6 +47,11 @@ async function getBulkEntries(asOf) {
 // Balance Sheet accounts are cumulative since inception, so this is every entry up to
 // `asOf` (default: today), not just one period's activity — matching how the figure
 // itself was computed.
+//
+// Passing `from` (in addition to `asOf` as the end date) switches to an Income
+// Statement, DATE-RANGE query instead — for P&L/OPEX figures (Corporate Budget's "By
+// Business Unit" actuals, e.g.), which are a period's activity, not a cumulative
+// balance, and live under incomeBalance 'Income Statement' rather than 'Balance Sheet'.
 router.get('/', requireAuth, async (req, res) => {
   try {
     if (!isBcConfigured()) return res.status(503).json({ error: 'Business Central is not configured.' });
@@ -56,12 +62,15 @@ router.get('/', requireAuth, async (req, res) => {
     if (!accounts.length) return res.status(400).json({ error: 'accounts is required (comma-separated account numbers).' });
 
     const asOf = /^\d{4}-\d{2}-\d{2}$/.test(req.query.asOf || '') ? req.query.asOf : new Date().toISOString().slice(0, 10);
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+    const incomeBalance = from ? 'Income Statement' : 'Balance Sheet';
+    const dateFilter = from ? `postingDate ge ${from} and postingDate le ${asOf}` : `postingDate le ${asOf}`;
     const acctSet = new Set(accounts);
 
     const [rawEntries, nameByAcct] = await Promise.all([
       accounts.length <= ACCOUNT_FILTER_THRESHOLD
-        ? bc('KFT_GL_Entries', `?$filter=incomeBalance eq 'Balance Sheet' and postingDate le ${asOf} and (${accounts.map(a => `accountNo eq '${a}'`).join(' or ')})`)
-        : getBulkEntries(asOf).then(all => all.filter(e => acctSet.has(String(e.accountNo)))),
+        ? bc('KFT_GL_Entries', `?$filter=incomeBalance eq '${incomeBalance}' and ${dateFilter} and (${accounts.map(a => `accountNo eq '${a}'`).join(' or ')})`)
+        : getBulkEntries(incomeBalance, dateFilter).then(all => all.filter(e => acctSet.has(String(e.accountNo)))),
       getAccountNames()
     ]);
 
@@ -79,7 +88,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     const total = entries.reduce((s, e) => s + e.amount, 0);
 
-    res.json({ accounts, asOf, total, count: entries.length, entries });
+    res.json({ accounts, asOf, from, total, count: entries.length, entries });
   } catch (e) {
     console.error('[gl-drilldown]', e.message);
     res.status(500).json({ error: e.message });
