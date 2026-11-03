@@ -252,8 +252,15 @@ async function buildYearDetail({ budgetName, selMonths, team, intervention } = {
     .map(code => ({ code, name: intNames[code] || code }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Budget vs Utilized by month — same role as Corporate Budget Analysis's own
+  // "Budget vs Actual — Monthly" chart, for the SAFEE Budget Analysis Monthly tab.
+  const monthly = months.map(m => {
+    const mrows = rows.filter(r => r.budgetDate.slice(0, 7) === m.key);
+    return { label: m.label, ...sumBU(mrows) };
+  });
+
   return {
-    budgetName, months, quarters: quarters.map(q => ({ q: q.q, label: q.label })),
+    budgetName, months, quarters: quarters.map(q => ({ q: q.q, label: q.label })), monthly,
     startLabel: months[0]?.label || null, endLabel: months[months.length - 1]?.label || null,
     totals: sumBU(rows), categories, interventions,
     filters: { teams: teamOptions, interventions: interventionOptions }

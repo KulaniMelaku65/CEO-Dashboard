@@ -101,7 +101,9 @@ export default function ProcBudget({ data }) {
   return (
     <div className="space-y-4">
       <PageHeader category="Budget" title="Budget vs Actual Procurement Spend" subtitle="Allocations against commitments, per budget" asOf={data?.asOf} />
-      <ProcData data={data} need="budget">{proc => <Body proc={proc} data={data} />}</ProcData>
+      {/* No Filter by Period here — each budget (10.x/20.1) already defines its own
+          span, not a calendar year, so a month/quarter filter wouldn't mean anything. */}
+      <ProcData data={data} need="budget" noPeriodFilter>{proc => <Body proc={proc} data={data} />}</ProcData>
     </div>
   )
 }

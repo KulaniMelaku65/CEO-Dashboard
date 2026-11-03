@@ -604,15 +604,14 @@ function OpexTab({ cb }) {
           <p className="text-xs font-extrabold text-muted uppercase tracking-wider mb-3">
             {selectedAcct === '__all__' ? 'Budget vs Actual by Account' : 'Monthly Trend'}
           </p>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={chartData} layout={selectedAcct === '__all__' ? 'vertical' : 'horizontal'}
-              margin={{ top: 0, right: 8, bottom: 0, left: selectedAcct === '__all__' ? 30 : -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2"
-                horizontal={selectedAcct !== '__all__'} vertical={selectedAcct === '__all__'} />
+          <ResponsiveContainer width="100%" height={selectedAcct === '__all__' ? 280 : 240}>
+            <BarChart data={chartData}
+              margin={{ top: 8, right: 8, bottom: selectedAcct === '__all__' ? 60 : 0, left: -10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
               {selectedAcct === '__all__' ? (
                 <>
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-                  <YAxis type="category" dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={30} />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={60} />
+                  <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                 </>
               ) : (
                 <>

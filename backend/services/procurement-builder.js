@@ -99,6 +99,7 @@ async function buildProcurement(asOfDate, bypassCache = true) {
   const doaByPo = new Map(fetched.doa.map(r => [r.poNo, r]));
   const agingByPo = new Map(fetched.poAging.map(r => [r.poNo, r]));
   const poCurrency = new Map(poSummary.map(r => [r.poNo, normCur(r.currencyCode)]));
+  const poOrderDate = new Map(poSummary.map(r => [r.poNo, cleanDate(r.orderDate)]));
   const vendorName = new Map(poSummary.map(r => [r.vendorNo, r.vendorName]));
   fetched.doa.forEach(r => { if (!vendorName.has(r.vendorNo)) vendorName.set(r.vendorNo, r.vendorName); });
 
@@ -155,6 +156,17 @@ async function buildProcurement(asOfDate, bypassCache = true) {
       po: l.poNo, ln: l.lineNo, no: l.no, desc: l.description, vn: l.vendorNo, v: vendorName.get(l.vendorNo) || l.vendorNo,
       qty: l.quantity, qr: l.quantityReceived, qi: l.quantityInvoiced, amt: round2(l.amount), out: round2(l.outstandingAmount), bu: l.globalDim2 || '',
     })),
+    // Compact per-line rows (date comes from the parent PO — lines carry none of their
+    // own) so the frontend can re-derive every total/byBU/byVendor/topLine above for
+    // whatever period a Filter by Period control selects, the same way it already does
+    // for PO Summary/Spend/Requisitions from their own raw rows.
+    rows: varEtb.map(l => ({
+      po: l.poNo, date: poOrderDate.get(l.poNo) || null, ln: l.lineNo, no: l.no, desc: l.description,
+      vn: l.vendorNo, v: vendorName.get(l.vendorNo) || l.vendorNo, bu: l.globalDim2 || '',
+      qty: l.quantity, qr: l.quantityReceived, qi: l.quantityInvoiced,
+      amt: round2(l.amount), recAmt: round2(l.recAmt), invAmt: round2(l.invAmt),
+      rni: round2(l.amtRcdNotInvoiced || 0), out: round2(l.outstandingAmount),
+    })),
   };
 
   // Commitment ledger entries (amountLCY is the ETB figure and is negative by BC convention
@@ -174,6 +186,13 @@ async function buildProcurement(asOfDate, bypassCache = true) {
     topDocs: groupSum(com, r => r.sourceDocNo || r.documentNo, { lcy: r => -r.amountLCY, usd: r => -r.amount })
       .map(g => ({ doc: g.key, n: g.n, lcy: round2(g.lcy), usd: round2(g.usd) }))
       .sort((a, b) => b.lcy - a.lcy).slice(0, 25),
+    // Compact per-entry rows, sign-flipped to positive "committed" like every aggregate
+    // above — lets the frontend re-derive totals/byMonth/byBU/byBudget/topDocs for
+    // whatever period a Filter by Period control selects.
+    rows: com.map(r => ({
+      date: r.date, bu: r.globalDim2 || '', budget: r.budgetName,
+      doc: r.sourceDocNo || r.documentNo, lcy: round2(-r.amountLCY), usd: round2(-r.amount),
+    })),
   };
 
   // Procurement spend — posted purchase-invoice lines, ETB, ex-VAT (`amount`). Zero-amount
@@ -237,9 +256,8 @@ async function buildProcurement(asOfDate, bypassCache = true) {
 
   // Purchases outside contract. A PO line counts as "on contract" only if it references a
   // blanket order (the framework-agreement document in Business Central); every other line is
-  // off-contract. Aggregated here (2k lines) rather than shipped raw. Order date and vendor
-  // name come from the parent PO. Foreign-currency lines are reported separately, never summed.
-  const poInfo = new Map(poSummary.map(r => [r.poNo, r]));
+  // off-contract. Order date and vendor name come from the parent PO. Foreign-currency lines
+  // are reported separately, never summed.
   const offLines = fetched.offContract;
   const offEtb = offLines.filter(l => normCur(l.currencyCode) === 'ETB');
   const onContract = l => !!(l.blanketOrderNo && l.blanketOrderNo.trim());
@@ -272,8 +290,15 @@ async function buildProcurement(asOfDate, bypassCache = true) {
     vendors: vendorAgg.size,
     byBU: groupSum(offOnly, l => l.globalDim2 || '', { value: l => l.lineAmount })
       .map(g => ({ bu: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => b.value - a.value).slice(0, 15),
-    byMonth: groupSum(offOnly.filter(l => poInfo.get(l.poNo)?.orderDate), l => monthOf(poInfo.get(l.poNo).orderDate), { value: l => l.lineAmount })
+    byMonth: groupSum(offOnly.filter(l => poOrderDate.get(l.poNo)), l => monthOf(poOrderDate.get(l.poNo)), { value: l => l.lineAmount })
       .map(g => ({ m: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => a.m.localeCompare(b.m)),
+    // Compact rows (off-contract lines, with an onContract flag and date from the parent
+    // PO) so the frontend can re-derive every total/byVendor/byBU/byMonth above for
+    // whatever period a Filter by Period control selects.
+    rows: offEtb.map(l => ({
+      po: l.poNo, date: poOrderDate.get(l.poNo) || null, vn: l.vendorNo, v: vendorName.get(l.vendorNo) || l.vendorNo,
+      bu: l.globalDim2 || '', value: l.lineAmount || 0, onContract: onContract(l),
+    })),
   };
 
   // Vendor delivery: one row per posted purchase receipt. Promised/requested receipt dates

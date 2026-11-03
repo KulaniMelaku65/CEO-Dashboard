@@ -14,7 +14,7 @@ export const PAGE_REGISTRY = [
   { id: 'financial-2',   label: 'Detailed Financial Performance', parentId: 'finance' },
   { id: 'financial-bu',  label: 'P&L by Business Line',           parentId: 'finance' },
   { id: 'balance-sheet', label: 'Balance Sheet',                  parentId: 'finance' },
-  { id: 'budget',        label: 'Corporate Budget',               parentId: 'finance' },
+  { id: 'budget',        label: 'Corporate Budget Analysis',      parentId: 'finance' },
   { id: 'safee-budget',  label: 'SAFEE Budget Analysis',          parentId: 'finance' },
   { id: 'collections',   label: 'Collections & Revenue',          parentId: 'finance' },
   { id: 'cashflow',      label: 'Cashflow',                       parentId: 'finance' },

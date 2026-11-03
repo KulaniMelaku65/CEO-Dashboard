@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { PeriodTree, usePeriodSelection } from '../../components/PeriodFilterBar.jsx'
 
 // Explicit hex everywhere for structural surfaces (see the note in Procurement.jsx) — same
 // palette as Aging / Financial Performance so the finance pages read as one family.
@@ -47,6 +48,131 @@ export function groupBy(rows, keyFn, valFn = () => 1) {
   const m = new Map()
   rows.forEach(r => { const k = keyFn(r); const g = m.get(k) || { key: k, n: 0, total: 0 }; g.n++; g.total += valFn(r) || 0; m.set(k, g) })
   return [...m.values()]
+}
+// Same shape as procurement-builder.js's own groupSum — multiple summed fields per
+// group instead of groupBy's single `total` — used to re-derive the commitments/
+// variance/offContract aggregates client-side for whatever period is selected.
+function groupSumMulti(rows, keyFn, valFns) {
+  const m = new Map()
+  rows.forEach(r => {
+    const k = keyFn(r)
+    if (!m.has(k)) m.set(k, { key: k, n: 0, ...Object.fromEntries(Object.keys(valFns).map(f => [f, 0])) })
+    const g = m.get(k)
+    g.n++
+    Object.entries(valFns).forEach(([f, fn]) => { g[f] += fn(r) || 0 })
+  })
+  return [...m.values()]
+}
+const round2 = n => Math.round((n || 0) * 100) / 100
+const monthOf = d => (d || '').slice(0, 7)
+
+// ── Filter by Period ─────────────────────────────────────────────────────────────
+// Procurement is baked into the snapshot already scoped to one calendar year
+// (procurement-builder.js's own default-to-current-year filter) — this control lets a
+// page narrow that further to one quarter or month. Same PeriodTree/usePeriodSelection
+// (YTD/Quarter/Month checkbox tree) Financial Performance uses, not a one-off control —
+// mData is just that one year's 12 real calendar months, so PeriodTree's own quarter
+// grouping lines up with real Jan-Mar/Apr-Jun/etc. quarters.
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+export const buildProcMonthData = year => MONTH_NAMES.map(m => ({ label: `${m} ${year}` }))
+
+function inPeriod(dateStr, year, monthSet) {
+  if (!monthSet) return true
+  if (!dateStr) return false
+  return Number(dateStr.slice(0, 4)) === Number(year) && monthSet.has(Number(dateStr.slice(5, 7)) - 1)
+}
+const filterRows = (rows, dateKey, year, monthSet) => (!monthSet ? rows : rows.filter(r => inPeriod(r[dateKey], year, monthSet)))
+
+// Re-derive commitments/variance/offContract's own totals/byMonth/byBU/byVendor/
+// byBudget/topDocs/topLines from their (now period-filtered) raw rows — the exact same
+// aggregation procurement-builder.js does server-side for the unfiltered/full-year
+// view, just run here so a period change doesn't need a new snapshot sync.
+function rebuildCommitments(rows) {
+  const dates = rows.map(r => r.date).filter(Boolean).sort()
+  return {
+    entries: rows.length,
+    totals: { lcy: round2(sumBy(rows, r => r.lcy)), usd: round2(sumBy(rows, r => r.usd)) },
+    dateFrom: dates[0] || null, dateTo: dates[dates.length - 1] || null,
+    byMonth: groupSumMulti(rows, r => monthOf(r.date), { lcy: r => r.lcy, usd: r => r.usd })
+      .map(g => ({ m: g.key, n: g.n, lcy: round2(g.lcy), usd: round2(g.usd) })).sort((a, b) => a.m.localeCompare(b.m)),
+    byBU: groupSumMulti(rows, r => r.bu || '', { lcy: r => r.lcy, usd: r => r.usd })
+      .map(g => ({ bu: g.key, n: g.n, lcy: round2(g.lcy), usd: round2(g.usd) })).sort((a, b) => b.lcy - a.lcy).slice(0, 15),
+    byBudget: groupSumMulti(rows, r => r.budget, { lcy: r => r.lcy, usd: r => r.usd })
+      .map(g => ({ budget: g.key, n: g.n, lcy: round2(g.lcy), usd: round2(g.usd) })),
+    topDocs: groupSumMulti(rows, r => r.doc, { lcy: r => r.lcy, usd: r => r.usd })
+      .map(g => ({ doc: g.key, n: g.n, lcy: round2(g.lcy), usd: round2(g.usd) })).sort((a, b) => b.lcy - a.lcy).slice(0, 25),
+  }
+}
+function rebuildVariance(rows, foreign) {
+  const vNameByNo = {}
+  rows.forEach(r => { if (!vNameByNo[r.vn]) vNameByNo[r.vn] = r.v })
+  return {
+    lines: rows.length, etbLines: rows.length,
+    totals: {
+      ordered: round2(sumBy(rows, r => r.amt)), received: round2(sumBy(rows, r => r.recAmt)), invoiced: round2(sumBy(rows, r => r.invAmt)),
+      receivedNotInvoiced: round2(sumBy(rows, r => r.rni)), outstandingInclVat: round2(sumBy(rows, r => r.out)),
+      linesWithReceipt: rows.filter(r => r.qr > 0).length, linesWithInvoice: rows.filter(r => r.qi > 0).length,
+    },
+    foreign,
+    byBU: groupSumMulti(rows, r => r.bu || '', { ordered: r => r.amt, outstanding: r => r.out })
+      .map(g => ({ bu: g.key, lines: g.n, ordered: round2(g.ordered), outstanding: round2(g.outstanding) })).sort((a, b) => b.ordered - a.ordered).slice(0, 15),
+    byVendor: groupSumMulti(rows, r => r.vn, { ordered: r => r.amt, outstanding: r => r.out })
+      .map(g => ({ vn: g.key, v: vNameByNo[g.key] || g.key, lines: g.n, ordered: round2(g.ordered), outstanding: round2(g.outstanding) })).sort((a, b) => b.ordered - a.ordered).slice(0, 15),
+    topLines: [...rows].sort((a, b) => b.amt - a.amt).slice(0, 25).map(l => ({
+      po: l.po, ln: l.ln, no: l.no, desc: l.desc, vn: l.vn, v: l.v, qty: l.qty, qr: l.qr, qi: l.qi, amt: l.amt, out: l.out, bu: l.bu,
+    })),
+  }
+}
+function rebuildOffContract(rows, foreign) {
+  const offOnly = rows.filter(r => !r.onContract)
+  const offValue = sumBy(offOnly, r => r.value)
+  const onValue = sumBy(rows.filter(r => r.onContract), r => r.value)
+  const vendorAgg = new Map()
+  offOnly.forEach(l => {
+    const a = vendorAgg.get(l.vn) || { vn: l.vn, v: l.v, poSet: new Set(), lines: 0, value: 0 }
+    a.poSet.add(l.po); a.lines++; a.value += l.value || 0
+    vendorAgg.set(l.vn, a)
+  })
+  return {
+    lines: rows.length, pos: new Set(rows.map(r => r.po)).size, etbLines: rows.length, etbPos: new Set(rows.map(r => r.po)).size,
+    onContractLines: rows.filter(r => r.onContract).length, zeroValueLines: rows.filter(r => !r.value).length,
+    totals: {
+      value: round2(offValue + onValue), offContract: round2(offValue), onContract: round2(onValue),
+      offContractPct: offValue + onValue > 0 ? round2((offValue / (offValue + onValue)) * 100) : null,
+    },
+    foreign,
+    byVendor: [...vendorAgg.values()].map(a => ({ vn: a.vn, v: a.v, pos: a.poSet.size, lines: a.lines, value: round2(a.value) })).sort((a, b) => b.value - a.value).slice(0, 25),
+    vendors: vendorAgg.size,
+    byBU: groupSumMulti(offOnly, r => r.bu || '', { value: r => r.value }).map(g => ({ bu: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => b.value - a.value).slice(0, 15),
+    byMonth: groupSumMulti(offOnly.filter(r => r.date), r => monthOf(r.date), { value: r => r.value }).map(g => ({ m: g.key, lines: g.n, value: round2(g.value) })).sort((a, b) => a.m.localeCompare(b.m)),
+  }
+}
+
+// Applies the selected period to every entity ProcData hands to a page — raw-row
+// entities (po/spend/requisitions/pendingPr/vendorDelivery) just get their `.rows`
+// filtered (the pages already aggregate those client-side); commitments/variance/
+// offContract get their own aggregates rebuilt from their (now filtered) rows so every
+// total/chart/table downstream stays correct instead of silently reverting to the
+// full year. `budget` is deliberately left alone — a programme budget's own span
+// already defines its scope (Corporate/SAFEE Budget Analysis), not this calendar period.
+function applyPeriod(proc, year, monthSet) {
+  if (!monthSet) return proc
+  const poRows = filterRows(proc.po?.rows || [], 'od', year, monthSet)
+  const spendRows = filterRows(proc.spend?.rows || [], 'd', year, monthSet)
+  const reqRows = filterRows(proc.requisitions?.rows || [], 'd', year, monthSet)
+  const pendRows = filterRows(proc.pendingPr?.rows || [], 'd', year, monthSet)
+  const vdRows = filterRows(proc.vendorDelivery?.rows || [], 'pd', year, monthSet)
+  return {
+    ...proc,
+    po: { rows: poRows },
+    spend: { rows: spendRows },
+    requisitions: { ...proc.requisitions, rows: reqRows, count: reqRows.length },
+    pendingPr: { ...proc.pendingPr, rows: pendRows, count: pendRows.length },
+    vendorDelivery: { ...proc.vendorDelivery, rows: vdRows, count: vdRows.length },
+    commitments: rebuildCommitments(filterRows(proc.commitments?.rows || [], 'date', year, monthSet)),
+    variance: rebuildVariance(filterRows(proc.variance?.rows || [], 'date', year, monthSet), proc.variance?.foreign),
+    offContract: rebuildOffContract(filterRows(proc.offContract?.rows || [], 'date', year, monthSet), proc.offContract?.foreign),
+  }
 }
 
 export function Kpi({ label, value, sub, accent, onClick, selected }) {
@@ -149,9 +275,18 @@ export function DrillTable({ columns, rows, emptyLabel, maxHeight }) {
 
 // Gate for every data-driven procurement page. Explains exactly *why* there's nothing to
 // show — snapshot predates procurement, endpoint missing (404), or endpoint connected but
-// returning zero rows — instead of rendering empty charts that look like a bug.
-export function ProcData({ data, need, children }) {
+// returning zero rows — instead of rendering empty charts that look like a bug. Also
+// renders the Filter by Period control (unless `noPeriodFilter`) and re-scopes every
+// entity it hands to `children` to whatever period is selected — see applyPeriod above.
+export function ProcData({ data, need, children, noPeriodFilter }) {
   const proc = data?.procurement
+  // Hooks run unconditionally (before the early returns below) per the Rules of Hooks —
+  // mData only needs procYear, which is on every snapshot regardless of whether this
+  // particular entity's endpoint is ok.
+  const year = proc?.procYear || new Date().getFullYear()
+  const mData = useMemo(() => buildProcMonthData(year), [year])
+  const sel = usePeriodSelection(mData)
+
   if (!proc) {
     return (
       <Notice tone="warn" title="Procurement data isn't in this snapshot">
@@ -179,7 +314,26 @@ export function ProcData({ data, need, children }) {
       )
     }
   }
-  return children(proc)
+  const monthSet = sel.selMonths.length ? new Set(sel.selMonths) : null
+  const scoped = applyPeriod(proc, year, monthSet)
+  return (
+    <>
+      {!noPeriodFilter && (
+        <div className="flex flex-wrap items-end gap-2.5 justify-end">
+          <PeriodTree mData={mData} selected={sel.selMonths} onChange={sel.setSelMonths} />
+          {sel.selMonths.length > 0 && (
+            <button
+              onClick={sel.clearPeriod}
+              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+      {children(scoped)}
+    </>
+  )
 }
 
 // Foreign-currency POs can't be added into ETB totals (no FX rate anywhere on these

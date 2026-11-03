@@ -37,8 +37,8 @@ const TABS = [
   { id: 'program',      label: 'Program View' },
   { id: 'intervention', label: 'Intervention View' },
   { id: 'activity',     label: 'Budget Activity' },
-  { id: 'annual',       label: 'Annual Summary' },
-  { id: 'quarter',      label: 'vs Quarter' },
+  { id: 'annual',       label: 'Annual Summary' }, // merged Annual Summary + vs Quarter — the quarter table's own Total row already is the annual figure
+  { id: 'monthly',      label: 'Monthly' },
   { id: 'int-budget',   label: 'vs Intervention' },
 ]
 
@@ -477,6 +477,7 @@ export default function SafeeBudget() {
   const interventions = yearDetail?.interventions || []
   const quarters = yearDetail?.quarters || []
   const totals = yearDetail?.totals
+  const monthlyChartData = (yearDetail?.monthly || []).map(m => ({ label: m.label, Budget: m.budget, Utilized: m.utilized }))
 
   const yearLabel = BUDGET_YEARS.find(y => y.budgetName === budgetName)?.label || budgetName
 
@@ -532,17 +533,17 @@ export default function SafeeBudget() {
       {tab === 'overview' && overview && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <StatCard label="Total Budget" value={`ETB ${fmtETB(overview.totalBudget)}`} accent={ORANGE} />
-            <StatCard label="Total Utilized" value={`ETB ${fmtETB(overview.totalUtilized)}`} accent={TEAL} />
-            <StatCard label="Total Unutilized" value={`ETB ${fmtETB(overview.totalUnutilized)}`} accent={NAVY} />
+            <StatCard label="Total Budget" value={`ETB ${fmtETB(overview.totalBudget)}`} accent={TEAL} />
+            <StatCard label="Total Utilized" value={`ETB ${fmtETB(overview.totalUtilized)}`} accent={ORANGE} />
+            <StatCard label="Total Unutilized" value={`ETB ${fmtETB(overview.totalUnutilized)}`} accent={RED} />
             <StatCard label="% Utilized" value={overview.pctUtilized != null ? `${overview.pctUtilized.toFixed(2)}%` : '—'} accent={(overview.pctUtilized || 0) >= 50 ? GREEN : RED} />
             <StatCard label="% Unutilized" value={overview.pctUnutilized != null ? `${overview.pctUnutilized.toFixed(2)}%` : '—'} accent={(overview.pctUnutilized || 0) > 50 ? RED : GREEN} />
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
             {[
               { title: '5 Year Budget vs Yearly Budget', key: 'Budget', ref: 'Total Budget', color: TEAL },
-              { title: '5 Year Budget vs Yearly Utilized', key: 'Utilized', ref: 'Budget', color: TEAL },
-              { title: '5 Year Budget vs Yearly Unutilized', key: 'Unutilized', ref: 'Budget', color: NAVY },
+              { title: '5 Year Budget vs Yearly Utilized', key: 'Utilized', ref: 'Budget', color: ORANGE },
+              { title: '5 Year Budget vs Yearly Unutilized', key: 'Unutilized', ref: 'Budget', color: RED },
             ].map(chart => (
               <div key={chart.title} className="bg-white rounded-2xl border border-border p-5 shadow-card">
                 <h3 className="text-sm font-bold text-navy mb-3">{chart.title}</h3>
@@ -553,7 +554,7 @@ export default function SafeeBudget() {
                     <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                     <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
                     <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
-                    <Bar dataKey={chart.ref} fill={`${ORANGE}40`} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey={chart.ref} fill={`${TEAL}30`} radius={[3, 3, 0, 0]} />
                     <Bar dataKey={chart.key} fill={chart.color} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -567,9 +568,9 @@ export default function SafeeBudget() {
       {tab === 'program' && !loading && !error && totals && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <StatCard label={`${yearLabel}: Budget`} value={`ETB ${fmtETB(totals.budget)}`} accent={ORANGE} />
-            <StatCard label={`${yearLabel}: Utilized`} value={`ETB ${fmtETB(totals.utilized)}`} accent={TEAL} />
-            <StatCard label={`${yearLabel}: Unutilized`} value={`ETB ${fmtETB(totals.unutilized)}`} accent={NAVY} />
+            <StatCard label={`${yearLabel}: Budget`} value={`ETB ${fmtETB(totals.budget)}`} accent={TEAL} />
+            <StatCard label={`${yearLabel}: Utilized`} value={`ETB ${fmtETB(totals.utilized)}`} accent={ORANGE} />
+            <StatCard label={`${yearLabel}: Unutilized`} value={`ETB ${fmtETB(totals.unutilized)}`} accent={RED} />
             <StatCard label="% Utilized" value={fmtPct(totals.pctUtilized, 2)} accent={(totals.pctUtilized || 0) >= 50 ? GREEN : RED} />
             <StatCard label="% Unutilized" value={fmtPct(totals.pctUnutilized, 2)} accent={(totals.pctUnutilized || 0) > 50 ? RED : GREEN} />
           </div>
@@ -595,7 +596,7 @@ export default function SafeeBudget() {
                   <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                   <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
                   <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
-                  <Bar dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -630,7 +631,7 @@ export default function SafeeBudget() {
                 <YAxis yAxisId="r" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
                 <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
-                <Bar yAxisId="l" dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
+                <Bar yAxisId="l" dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar yAxisId="r" dataKey="pctUnutilized" name="% Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -644,7 +645,7 @@ export default function SafeeBudget() {
                 <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
                 <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
-                <Bar dataKey="budget" name="Budget" fill={ORANGE} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -694,14 +695,30 @@ export default function SafeeBudget() {
         </div>
       )}
 
-      {/* ── Program Activity Annual Budget Summary ───────────────────────────── */}
+      {/* ── Program Activity Annual Budget Summary (merged with vs Quarter — the
+          quarter table's own Total row already is the annual figure, so one table
+          covers both "the annual summary" and "broken down by quarter") ─────────── */}
       {tab === 'annual' && !loading && !error && yearDetail && (
-        <CategoryTable categories={categories} budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
+        <CategoryTable categories={categories} quarters={quarters} showQuarters budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
       )}
 
-      {/* ── Program Activity vs Quarter Budgets Analysis ─────────────────────── */}
-      {tab === 'quarter' && !loading && !error && yearDetail && (
-        <CategoryTable categories={categories} quarters={quarters} showQuarters budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
+      {/* ── Monthly — same "Budget vs Actual (Utilized)" monthly chart as Corporate
+          Budget Analysis's own Overview tab ──────────────────────────────────────── */}
+      {tab === 'monthly' && !loading && !error && yearDetail && (
+        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
+          <h3 className="text-sm font-bold text-navy mb-3">Budget vs Utilized — Monthly</h3>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={monthlyChartData} margin={{ top: 24, right: 8, left: -10, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-35} textAnchor="end" interval={0} height={60} />
+              <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
+              <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+              <Bar dataKey="Budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Utilized" name="Utilized" fill={ORANGE} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       )}
 
       {/* ── Program Activity vs Budget Intervention ──────────────────────────── */}
