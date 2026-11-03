@@ -552,7 +552,7 @@ export default function SafeeBudget() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
+                    <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                     <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                     <Bar dataKey={chart.ref} fill={`${TEAL}30`} radius={[3, 3, 0, 0]} />
                     <Bar dataKey={chart.key} fill={chart.color} radius={[3, 3, 0, 0]} />
@@ -582,7 +582,7 @@ export default function SafeeBudget() {
                   <Pie data={categories} dataKey="budget" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={1}>
                     {categories.map((c, i) => <Cell key={c.code} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
+                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                   <Legend wrapperStyle={{ fontSize: 10, color: "#6B7C93" }} layout="vertical" align="right" verticalAlign="middle" />
                 </PieChart>
               </ResponsiveContainer>
@@ -590,11 +590,11 @@ export default function SafeeBudget() {
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <h3 className="text-sm font-bold text-navy mb-3">Budget Amount vs Unutilized</h3>
               <ResponsiveContainer width="100%" height={340}>
-                <BarChart data={categories} margin={{ top: 24, right: 8, left: -10, bottom: 90 }}>
+                <BarChart data={categories} margin={{ top: 24, right: 8, left: 20, bottom: 90 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={90} />
                   <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
+                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                   <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                   <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
@@ -616,7 +616,7 @@ export default function SafeeBudget() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
                 <XAxis type="number" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={150} />
-                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                 <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -624,12 +624,12 @@ export default function SafeeBudget() {
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
             <h3 className="text-sm font-bold text-navy mb-3">Budget and % Unutilized by Intervention</h3>
             <ResponsiveContainer width="100%" height={340}>
-              <BarChart data={interventions} margin={{ top: 24, right: 8, left: -10, bottom: 80 }}>
+              <BarChart data={interventions} margin={{ top: 24, right: 8, left: 20, bottom: 80 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
                 <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
                 <YAxis yAxisId="l" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="r" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                 <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                 <Bar yAxisId="l" dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar yAxisId="r" dataKey="pctUnutilized" name="% Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
@@ -639,11 +639,11 @@ export default function SafeeBudget() {
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card xl:col-span-2">
             <h3 className="text-sm font-bold text-navy mb-3">Budget vs Unutilized by Intervention</h3>
             <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={interventions} margin={{ top: 24, right: 8, left: -10, bottom: 80 }}>
+              <BarChart data={interventions} margin={{ top: 24, right: 8, left: 20, bottom: 80 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
                 <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
                 <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
                 <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
                 <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
@@ -708,11 +708,11 @@ export default function SafeeBudget() {
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <h3 className="text-sm font-bold text-navy mb-3">Budget vs Utilized — Monthly</h3>
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={monthlyChartData} margin={{ top: 24, right: 8, left: -10, bottom: 60 }}>
+            <BarChart data={monthlyChartData} margin={{ top: 24, right: 8, left: 20, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-35} textAnchor="end" interval={0} height={60} />
               <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} />
+              <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
               <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
               <Bar dataKey="Budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
               <Bar dataKey="Utilized" name="Utilized" fill={ORANGE} radius={[3, 3, 0, 0]} />

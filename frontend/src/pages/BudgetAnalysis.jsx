@@ -228,7 +228,7 @@ function OverviewTab({ cb, buLabel, periodLabel, sectionToDept, deptDisplayNames
             <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
             <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
@@ -548,7 +548,7 @@ function MonthlyTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
             <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
             <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
@@ -606,7 +606,7 @@ function OpexTab({ cb }) {
           </p>
           <ResponsiveContainer width="100%" height={selectedAcct === '__all__' ? 280 : 240}>
             <BarChart data={chartData}
-              margin={{ top: 8, right: 8, bottom: selectedAcct === '__all__' ? 60 : 0, left: -10 }}>
+              margin={{ top: 8, right: 8, bottom: selectedAcct === '__all__' ? 60 : 0, left: selectedAcct === '__all__' ? 20 : -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
               {selectedAcct === '__all__' ? (
                 <>
@@ -619,7 +619,7 @@ function OpexTab({ cb }) {
                   <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                 </>
               )}
-              <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
               <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
               <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
