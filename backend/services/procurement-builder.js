@@ -70,30 +70,12 @@ async function buildProcurement(asOfDate, bypassCache = true) {
     }
   }));
 
-  // Default every procurement page to the current calendar year's own activity — 2025
-  // (and any other year) stays out of every total/breakdown below unless a future
-  // change exposes a year picker, matching how the rest of the dashboard already
-  // defaults to the latest year rather than showing everything since inception.
-  // Filtered BEFORE the aggregation below runs, so every downstream total/byBU/byMonth
-  // figure inherits the scope "for all" without needing its own separate filter.
-  // PO Variance/DOA/Aging/Off-Contract carry no date of their own (they're per-line or
-  // per-PO-metadata feeds) — they're scoped by which PO they belong to instead, via the
-  // same year-filtered PO Summary list.
+  // `procYear` is shipped as the suggested/default year only — every entity below
+  // carries its FULL multi-year history (not filtered to one year here), so the
+  // frontend's Filter by Period + Year control (ProcData in shared.jsx) can scope to
+  // whichever year/quarter/month is selected, defaulting to this one, without needing a
+  // new snapshot sync to look at a different year.
   const procYear = String(asOfDate || new Date().toISOString().slice(0, 10)).slice(0, 4);
-  const inProcYear = d => !!d && String(d).slice(0, 4) === procYear;
-  fetched.poSummary = fetched.poSummary.filter(r => inProcYear(cleanDate(r.orderDate)));
-  const _allowedPoNos = new Set(fetched.poSummary.map(r => r.poNo));
-  fetched.poVariance   = fetched.poVariance.filter(l => _allowedPoNos.has(l.poNo));
-  fetched.doa          = fetched.doa.filter(r => _allowedPoNos.has(r.poNo));
-  fetched.poAging      = fetched.poAging.filter(r => _allowedPoNos.has(r.poNo));
-  fetched.offContract  = fetched.offContract.filter(l => _allowedPoNos.has(l.poNo));
-  fetched.commitments  = fetched.commitments.filter(r => inProcYear(cleanDate(r.date)));
-  fetched.spend        = fetched.spend.filter(r => inProcYear(cleanDate(r.postingDate)));
-  fetched.requisitions = fetched.requisitions.filter(r => inProcYear(cleanDate(r.documentDate)));
-  fetched.pendingPr    = fetched.pendingPr.filter(r => inProcYear(cleanDate(r.documentDate)));
-  fetched.vendorDelivery = fetched.vendorDelivery.filter(r => inProcYear(cleanDate(r.postingDate)));
-  // fetched.budget is intentionally left unfiltered — a budget name (10.x/20.1) already
-  // defines its own year scope via Corporate/SAFEE Budget Analysis, not this calendar year.
 
   const poSummary = fetched.poSummary;
   const doaByPo = new Map(fetched.doa.map(r => [r.poNo, r]));

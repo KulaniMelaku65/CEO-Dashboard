@@ -67,21 +67,32 @@ const round2 = n => Math.round((n || 0) * 100) / 100
 const monthOf = d => (d || '').slice(0, 7)
 
 // ── Filter by Period ─────────────────────────────────────────────────────────────
-// Procurement is baked into the snapshot already scoped to one calendar year
-// (procurement-builder.js's own default-to-current-year filter) — this control lets a
-// page narrow that further to one quarter or month. Same PeriodTree/usePeriodSelection
-// (YTD/Quarter/Month checkbox tree) Financial Performance uses, not a one-off control —
-// mData is just that one year's 12 real calendar months, so PeriodTree's own quarter
-// grouping lines up with real Jan-Mar/Apr-Jun/etc. quarters.
+// Each entity now carries its FULL multi-year history (procurement-builder.js no
+// longer pre-filters to one year) — this Year dropdown + the same PeriodTree/
+// usePeriodSelection (YTD/Quarter/Month checkbox tree) Financial Performance uses
+// together pick the year first, then optionally narrow to a quarter/month within it.
+// mData is that selected year's 12 real calendar months, so PeriodTree's own quarter
+// grouping lines up with real Jan-Mar/Apr-Jun/etc. quarters. The year is always
+// enforced (not just when a quarter/month is picked), so "YTD" still means "this
+// year", not "every year since inception" — same default-to-current-year outcome the
+// previous backend-side filter gave, just interactive instead of fixed.
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 export const buildProcMonthData = year => MONTH_NAMES.map(m => ({ label: `${m} ${year}` }))
+// Years offered go back to the earliest year BC has any procurement activity for (same
+// 2024 floor Cashflow's own Year/Month filter uses) through the current calendar year.
+export function procYearOptions() {
+  const current = new Date().getFullYear()
+  const years = []
+  for (let y = current; y >= 2024; y--) years.push(y)
+  return years
+}
 
 function inPeriod(dateStr, year, monthSet) {
-  if (!monthSet) return true
   if (!dateStr) return false
-  return Number(dateStr.slice(0, 4)) === Number(year) && monthSet.has(Number(dateStr.slice(5, 7)) - 1)
+  if (Number(dateStr.slice(0, 4)) !== Number(year)) return false
+  return !monthSet || monthSet.has(Number(dateStr.slice(5, 7)) - 1)
 }
-const filterRows = (rows, dateKey, year, monthSet) => (!monthSet ? rows : rows.filter(r => inPeriod(r[dateKey], year, monthSet)))
+const filterRows = (rows, dateKey, year, monthSet) => rows.filter(r => inPeriod(r[dateKey], year, monthSet))
 
 // Re-derive commitments/variance/offContract's own totals/byMonth/byBU/byVendor/
 // byBudget/topDocs/topLines from their (now period-filtered) raw rows — the exact same
@@ -156,7 +167,6 @@ function rebuildOffContract(rows, foreign) {
 // full year. `budget` is deliberately left alone — a programme budget's own span
 // already defines its scope (Corporate/SAFEE Budget Analysis), not this calendar period.
 function applyPeriod(proc, year, monthSet) {
-  if (!monthSet) return proc
   const poRows = filterRows(proc.po?.rows || [], 'od', year, monthSet)
   const spendRows = filterRows(proc.spend?.rows || [], 'd', year, monthSet)
   const reqRows = filterRows(proc.requisitions?.rows || [], 'd', year, monthSet)
@@ -281,9 +291,10 @@ export function DrillTable({ columns, rows, emptyLabel, maxHeight }) {
 export function ProcData({ data, need, children, noPeriodFilter }) {
   const proc = data?.procurement
   // Hooks run unconditionally (before the early returns below) per the Rules of Hooks —
-  // mData only needs procYear, which is on every snapshot regardless of whether this
-  // particular entity's endpoint is ok.
-  const year = proc?.procYear || new Date().getFullYear()
+  // the default year only needs procYear, which is on every snapshot regardless of
+  // whether this particular entity's endpoint is ok.
+  const defaultYear = proc?.procYear || new Date().getFullYear()
+  const [year, setYear] = useState(defaultYear)
   const mData = useMemo(() => buildProcMonthData(year), [year])
   const sel = usePeriodSelection(mData)
 
@@ -320,10 +331,20 @@ export function ProcData({ data, need, children, noPeriodFilter }) {
     <>
       {!noPeriodFilter && (
         <div className="flex flex-wrap items-end gap-2.5 justify-end">
+          <div className="flex flex-col gap-1" style={{ minWidth: 100 }}>
+            <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Year</span>
+            <select
+              value={year}
+              onChange={e => { setYear(Number(e.target.value)); sel.setSelMonths([]) }}
+              className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none focus:border-navy"
+            >
+              {procYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
           <PeriodTree mData={mData} selected={sel.selMonths} onChange={sel.setSelMonths} />
-          {sel.selMonths.length > 0 && (
+          {(sel.selMonths.length > 0 || year !== defaultYear) && (
             <button
-              onClick={sel.clearPeriod}
+              onClick={() => { sel.clearPeriod(); setYear(defaultYear) }}
               className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
             >
               Clear filters
