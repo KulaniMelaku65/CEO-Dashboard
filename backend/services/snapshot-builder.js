@@ -1,5 +1,6 @@
 const { bc, isBcConfigured } = require('./bc-client');
 const { buildProcurement } = require('./procurement-builder');
+const { buildOverview: buildSafeeOverview } = require('./safee-budget');
 const db = require('../db');
 
 const _jobTitleUpsert = db.prepare(
@@ -3922,6 +3923,21 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     }
   }
 
+  // SAFEE Budget Analysis's own 5-year overview, baked into the snapshot so the AI
+  // chatbot can actually see it — the page itself fetches live from
+  // /api/safee-budget/* (it needs per-year/per-period drilldowns this snapshot summary
+  // doesn't carry), so without this the snapshot had no SAFEE budget data at all and
+  // the assistant could never answer a SAFEE Budget question correctly. A failure here
+  // never breaks the rest of the snapshot.
+  let safeeBudget = null;
+  if (bcAvail && !IS_HISTORICAL) {
+    try {
+      safeeBudget = await buildSafeeOverview({ selMonths: [] });
+    } catch (e) {
+      console.warn('  SAFEE Budget overview build failed:', e.message);
+    }
+  }
+
   // P&L by Business Line — BUS-003 PL / BUS-004PL / BUS-007 PL, three Account Schedules
   // added in BC specifically for this (ScheduleName values confirmed live against
   // KFT_MGT_RPT_Lines, not guessed — 'BUS-004PL' has no space before 'PL', unlike the
@@ -4139,6 +4155,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     budgetActualIfrs18,
     budgetOverview,
     corporateBudget,
+    safeeBudget,
     cashflow,
     reports,
     balanceSheet,

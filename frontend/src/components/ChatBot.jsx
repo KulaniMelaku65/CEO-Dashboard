@@ -15,6 +15,7 @@ const PAGE_DATA_KEYS = {
   'financial-2':              ['reports', 'budgetActualIfrs18', 'budgetOverview', 'corporateBudget', 'financialSS', 'dimensionNames'],
   'financial-bu':             ['businessLines'],
   'budget':                   ['corporateBudget', 'budgetOverview'],
+  'safee-budget':             ['safeeBudget'],
   'collections':              ['budgetOverview', 'financialSS', 'loanOps'],
   'balance-sheet':            ['balanceSheet'],
   'cashflow':                 ['cashflow'],
