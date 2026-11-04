@@ -1,14 +1,55 @@
+import { useEffect, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, Cell
 } from 'recharts'
 import KpiCard from '../components/KpiCard.jsx'
 import { fmtETB } from '../lib/fmt.js'
+import { cashflow as cashflowApi } from '../lib/api.js'
+import { YearMonthFilter } from './CashFlow.jsx'
 
 const BANK_COLORS = ['#02404F', '#1FB6A6', '#EB7D23', '#2EBD85', '#3A4656', '#F5A870', '#6B7C93']
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 export default function Collections({ data }) {
-  const cf        = data.cashflow || {}
+  const liveCf = data.cashflow || {}
+
+  // Year/Month filter for Total Collections + Monthly Collections Trend — the only two
+  // figures on this page backed by a period-queryable source: routes/cashflow.js now
+  // builds a fresh bank-ledger Collections figure for whichever period is requested
+  // (snapshot-builder.js's buildBankCollections), the same /api/cashflow endpoint the
+  // Cashflow page already uses for its own Direct CF Statement. Revenue Accrued,
+  // Operating/CapEx Outflows and the Disbursements-by-Bank/Revenue-by-Bank sections below
+  // have no such historical source (they're account-balance/loan/Superset figures with no
+  // period-scoped backend query) — they stay live/YTD-only, and say so explicitly instead
+  // of silently ignoring the filter once it's active.
+  const [year, setYear]       = useState(null)
+  const [month, setMonth]     = useState(null)
+  const [filteredCollections, setFilteredCollections] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    if (!year) { setFilteredCollections(null); setError(''); return }
+    let cancelled = false
+    setLoading(true); setError('')
+    cashflowApi.get(year, month)
+      .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error || 'Failed to load.'))))
+      .then(j => { if (!cancelled) setFilteredCollections(j.collections || null) })
+      .catch(e => { if (!cancelled) setError(typeof e.message === 'string' ? e.message : 'Failed to load collections for that period.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [year, month])
+
+  // Years offered go back to the earliest year BC has any ledger activity for — same
+  // 2024 floor the Cashflow/Procurement Year filters use.
+  const currentYear = new Date().getFullYear()
+  const years = []
+  for (let y = currentYear; y >= 2024; y--) years.push(y)
+
+  const periodLabel = year ? (month ? `${MONTH_NAMES[month - 1]} ${year}` : String(year)) : 'YTD'
+  const cf = year ? (filteredCollections || {}) : liveCf
+
   const colByBank = data.loanOps?.disbByBank || []
   const monthly   = cf.monthlyCollections
   const revenueByBank = data.financialSS?.revenueByBank || []
@@ -29,38 +70,55 @@ export default function Collections({ data }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Receivables & Collections</h2>
-        <p className="text-xs text-muted font-medium">Cash collected via BPASS banking partners (GL 5013–5026)</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-navy mb-0.5">Receivables & Collections</h2>
+          <p className="text-xs text-muted font-medium">Cash collected via BPASS banking partners (GL 5013–5026)</p>
+        </div>
+        <YearMonthFilter
+          year={year} month={month}
+          onYear={y => { setYear(y); setMonth(null) }}
+          onMonth={setMonth}
+          onClear={() => { setYear(null); setMonth(null) }}
+          years={years}
+        />
       </div>
+
+      {error && <p className="text-xs font-semibold" style={{ color: '#E5544B' }}>{error}</p>}
+      {year && (
+        <p className="text-[11px] text-muted font-medium -mt-3">
+          Total Collections and the Monthly Collections Trend below follow this filter. Revenue Accrued, Operating/CapEx
+          Outflows, and the Revenue/Disbursements-by-Bank charts have no historical source yet and always show live YTD figures.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KpiCard
           label="Total Collections"
-          value={`ETB ${fmtETB(cf.flows?.collections)}`}
-          sub="YTD cash received"
+          value={loading ? '…' : `ETB ${fmtETB(cf.flows?.collections)}`}
+          sub={`${periodLabel} cash received`}
           trend="up"
           accent="#02404F"
         />
         <KpiCard
           label="Revenue Accrued"
           value={revenueAccruedAmount != null ? `ETB ${fmtETB(revenueAccruedAmount)}` : '—'}
-          sub={revenueAccruedLabel ? `Latest accrued month — ${revenueAccruedLabel}` : 'No accrual data yet'}
+          sub={revenueAccruedLabel ? `Latest accrued month — ${revenueAccruedLabel} (live only)` : 'No accrual data yet'}
           accent="#1FB6A6"
         />
         <KpiCard
           label="Operating Outflows"
-          value={`ETB ${fmtETB(cf.flows?.operatingOut)}`}
-          sub="YTD operating costs"
+          value={`ETB ${fmtETB(liveCf.flows?.operatingOut)}`}
+          sub="YTD operating costs (live only)"
         />
         <KpiCard
           label="CapEx Outflows"
-          value={`ETB ${fmtETB(cf.flows?.capexOut)}`}
-          sub="YTD capital expenditure"
+          value={`ETB ${fmtETB(liveCf.flows?.capexOut)}`}
+          sub="YTD capital expenditure (live only)"
         />
       </div>
 
-      {/* Revenue by Partner Bank — YTD */}
+      {/* Revenue by Partner Bank — YTD (no period-scoped source yet, see note above) */}
       {revenueByBank.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <h3 className="text-sm font-bold text-navy mb-1">Revenue by Partner Bank — YTD (ETB)</h3>
@@ -78,7 +136,7 @@ export default function Collections({ data }) {
         </div>
       )}
 
-      {/* Collections by bank bar chart */}
+      {/* Collections by bank bar chart — Disbursements, YTD only (no period-scoped source yet) */}
       <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
         <h3 className="text-sm font-bold text-navy mb-4">Disbursements by Partner Bank — YTD (ETB)</h3>
         {colByBank.length > 0 ? (
@@ -107,10 +165,10 @@ export default function Collections({ data }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Monthly trend */}
+        {/* Monthly trend — follows the Year/Month filter above */}
         {monthlyData.length > 0 && (
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-4">Monthly Collections Trend (ETB)</h3>
+            <h3 className="text-sm font-bold text-navy mb-4">Monthly Collections Trend — {periodLabel} (ETB)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={monthlyData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />

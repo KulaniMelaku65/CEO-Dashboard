@@ -76,7 +76,16 @@ function SplitLabel({ label }) {
 // built for Financial Performance — shared here (with usePeriodSelection below) so any
 // page can opt into the exact same YTD/Quarter/Month + Compare To UI via the Admin
 // page's "Period Filter — Pages" toggle, without re-implementing this logic each time.
-export function PeriodTree({ mData, selected, onChange }) {
+// `yearFilter`, when given, only shows quarters belonging to that year — a purely visual
+// narrowing (quarterGroups already tags each group with its real calendar year) that lets
+// a page add a Year dropdown in front of this tree, Procurement-style, for a page whose
+// mData spans multiple years (e.g. Balance Sheet's 24-month rolling window), WITHOUT
+// renumbering month indices: `selected`/`onChange` still refer to positions in the full
+// mData array exactly as before, so cross-year Compare To lookups (a January comparing
+// against the prior December) keep working unchanged. The "YTD (all)" option is left
+// alone too — what emptying the selection means for a year-scoped page is the calling
+// page's own choice to interpret, not this component's.
+export function PeriodTree({ mData, selected, onChange, yearFilter }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set())
   const ref = useRef(null)
@@ -91,10 +100,11 @@ export function PeriodTree({ mData, selected, onChange }) {
   // carry one) rather than sequential chunks of 3 — see quarterGroups' own comment for
   // why that distinction matters once mData spans more than one calendar year (Balance
   // Sheet's 24-month rolling window).
-  const quarters = quarterGroups(mData).map(g => {
+  const allQuartersInTree = quarterGroups(mData).map(g => {
     const checkedCount = g.months.filter(i => selected.includes(i)).length
     return { ...g, state: checkedCount === 0 ? 'none' : checkedCount === g.months.length ? 'all' : 'partial' }
   })
+  const quarters = yearFilter ? allQuartersInTree.filter(qt => qt.year === String(yearFilter)) : allQuartersInTree
 
   const toggleMonth = (i) => onChange(selected.includes(i) ? selected.filter(v => v !== i) : [...selected, i])
   const toggleQuarter = (qt) => onChange(qt.state === 'all'
@@ -322,6 +332,58 @@ export default function PeriodFilterBar({ sel, mData }) {
           value={sel.effectiveCompareIdx}
           onChange={sel.setCompareIdx}
         />
+      )}
+    </div>
+  )
+}
+
+// Which calendar years mData's labels actually cover, newest first — used to populate a
+// Year dropdown for a page whose mData is a rolling multi-year window (Balance Sheet) with
+// no fixed, caller-known year range of its own (unlike Procurement's procYearOptions,
+// which can offer any year back to 2024 since its raw rows aren't bounded to a window).
+export function yearsFromMonthData(mData) {
+  const years = new Set()
+  mData.forEach(m => { const p = parseMonthLabel(m.label); if (p?.year) years.add(p.year) })
+  return [...years].sort((a, b) => b - a)
+}
+
+// Procurement-style "Year, then Filter by Period within it" layout for a page whose mData
+// spans multiple years — same two controls as PeriodFilterBar above, just with a Year
+// dropdown in front that narrows which quarters PeriodTree shows (see PeriodTree's
+// `yearFilter`). Index semantics are untouched (see PeriodTree's comment), so the calling
+// page decides what an empty selection means for a non-live year — see YearPeriodFilterBar
+// callers for how Balance Sheet resolves that ("YTD" for the live year, latest month of
+// that year otherwise).
+export function YearPeriodFilterBar({ sel, mData, year, years, onYearChange, onClear }) {
+  return (
+    <div className="flex flex-wrap items-end gap-2.5">
+      <div className="flex flex-col gap-1" style={{ minWidth: 100 }}>
+        <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Year</span>
+        <select
+          value={year}
+          onChange={e => onYearChange(e.target.value)}
+          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none"
+        >
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+      <PeriodTree mData={mData} selected={sel.selMonths} onChange={sel.setSelMonths} yearFilter={year} />
+      {sel.compareMode && (
+        <ComparePicker
+          mode={sel.compareMode}
+          mData={mData}
+          current={sel.compareMode === 'month' ? sel.singleMonth : sel.singleQuarterIdx}
+          value={sel.effectiveCompareIdx}
+          onChange={sel.setCompareIdx}
+        />
+      )}
+      {onClear && (
+        <button
+          onClick={onClear}
+          className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+        >
+          Clear filters
+        </button>
       )}
     </div>
   )

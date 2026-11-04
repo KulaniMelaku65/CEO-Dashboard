@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ai, departmentOverrides } from '../lib/api.js'
+import { ai, departmentOverrides, kpi } from '../lib/api.js'
 import { renderMarkdown } from '../lib/markdown.jsx'
 
 // Which top-level snapshot keys are relevant per page — without this, the context
@@ -142,6 +142,12 @@ function buildContext(data, pageId) {
   if (pageId?.startsWith('procurement')) {
     return JSON.stringify({ asOf: data?.asOf, procurement: summarizeProcurement(data?.procurement) }).slice(0, 20000)
   }
+  // Group KPI Dashboard + department pages aren't backed by this snapshot at all (see the
+  // kpiBlock fetch below) — falling through to the Object.keys(data) default here would
+  // just spend the char budget on unrelated financial data instead of leaving it empty.
+  if (pageId === 'kpi-dashboard' || pageId?.startsWith('kpi-')) {
+    return JSON.stringify({ asOf: data?.asOf })
+  }
   const keys = PAGE_DATA_KEYS[pageId] || Object.keys(data || {})
   const relevant = { asOf: data?.asOf }
   keys.forEach(k => { if (data?.[k] !== undefined) relevant[k] = stripHeavy(data[k]) })
@@ -271,10 +277,23 @@ export default function ChatBot({ data, pageId, pageLabel }) {
           overridesBlock = `\nDashboard-only department transfers (not reflected in Business Central itself — from_section/section_code are the section codes moved from/to, with human-readable names alongside): ${JSON.stringify(enrichedList).slice(0, 4000)}`
         } catch { /* best-effort — omit if unavailable */ }
       }
+      // The Group KPI Dashboard and its 12 department pages aren't backed by the daily
+      // BC/Superset snapshot at all — their RAG grid, targets and submissions live in a
+      // separate DB-backed feed (routes/kpi.js), so without this fetch the chatbot would
+      // have no real KPI data to answer from on these pages.
+      let kpiBlock = ''
+      if (pageId === 'kpi-dashboard' || pageId?.startsWith('kpi-')) {
+        try {
+          const period = new Date().toISOString().slice(0, 7)
+          const kr = pageId === 'kpi-dashboard' ? await kpi.overview(period) : await kpi.department(pageId, period)
+          const kj = kr.ok ? await kr.json() : null
+          if (kj) kpiBlock = `\nGroup KPI Dashboard data for period ${period} (RAG = Red/Amber/Green rating against target): ${JSON.stringify(kj).slice(0, 16000)}`
+        } catch { /* best-effort — omit if unavailable */ }
+      }
       const employeeBlock = buildEmployeeBlock(findEmployeeMatches(text, data), data)
       const system = `You are an executive dashboard assistant for Kifiya Financial Technology. Be concise.
 The user is currently viewing the "${pageLabel || 'dashboard'}" page — prioritize that page's data when answering.
-Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${employeeBlock}`
+Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${kpiBlock}${employeeBlock}`
       const r = await ai.chat([{ role: 'system', content: system }, ...next])
       const j = await r.json()
       const reply = j.choices?.[0]?.message?.content || j.error || 'No response.'

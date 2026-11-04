@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { fmtETB, fmtPct } from '../lib/fmt.js'
 import { safeeBudget as safeeBudgetApi } from '../lib/api.js'
-import { PeriodTree, usePeriodSelection } from '../components/PeriodFilterBar.jsx'
+import PeriodToggle from '../components/PeriodToggle.jsx'
 
 const NAVY   = '#02404F'
 const TEAL   = '#1FB6A6'
@@ -24,25 +24,75 @@ const PIE_COLORS = [ORANGE, TEAL, GREEN, RED, '#8E5FD9', '#4A90E2', '#C9A227', '
 const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
 const SEC_BG = { open: '#123C46', closed: '#0C3841' }
 
-const BUDGET_YEARS = [
-  { budgetName: '10',   label: 'Year 1' },
-  { budgetName: '10.2', label: 'Year 2' },
-  { budgetName: '10.3', label: 'Year 3' },
-  { budgetName: '10.4', label: 'Year 4' },
-  { budgetName: '10.5', label: 'Year 5' },
-]
-
 const TABS = [
   { id: 'overview',     label: 'Overview' },
   { id: 'program',      label: 'Program View' },
   { id: 'intervention', label: 'Intervention View' },
-  { id: 'activity',     label: 'Budget Activity' },
-  { id: 'annual',       label: 'Annual Summary' }, // merged Annual Summary + vs Quarter — the quarter table's own Total row already is the annual figure
-  { id: 'monthly',      label: 'Monthly' },
+  { id: 'activity',     label: 'Budget Activity' }, // Annual Summary + vs Quarter + Monthly all merged in here, switched via the Monthly/Quarterly/Annually toggle
   { id: 'int-budget',   label: 'vs Intervention' },
 ]
 
-const tooltipFmt = v => [`ETB ${fmtETB(v)}`, '']
+const tooltipFmt = v => [`ETB ${fmtETB(v, 4, true)}`, '']
+
+// Dynamically imports xlsx only when Export is actually clicked, same lazy pattern
+// Corporate Budget Analysis's own per-table export uses — the ~700KB library never
+// loads as part of this page's normal bundle.
+async function exportRowsToExcel(filename, sheetName, rows) {
+  const XLSX = await import('xlsx')
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  XLSX.writeFile(wb, filename)
+}
+
+function ExportButton({ onExport, label }) {
+  const [exporting, setExporting] = useState(false)
+  return (
+    <button
+      onClick={async () => { setExporting(true); try { await onExport() } finally { setExporting(false) } }}
+      disabled={exporting}
+      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+    >
+      {exporting ? 'Exporting…' : (label || '⬇ Export Excel')}
+    </button>
+  )
+}
+
+// Flattens the Budget Activity table (category totals + each line) into one row per
+// line, with columns matching whatever granularity is currently on screen — Annually
+// exports a single Budget/Utilized/Unutilized/% group, Quarterly/Monthly exports one
+// such group per period, same breakdown the table itself is showing.
+function buildActivityExportRows(categories, granularity, periods, periodKey) {
+  const rows = []
+  const pct1 = v => v == null ? null : +v.toFixed(1)
+  categories.forEach(cat => {
+    if (granularity === 'annually') {
+      rows.push({
+        Category: cat.name, Line: '(Category Total)',
+        'Budget (M)': cat.budget, 'Utilized (M)': cat.utilized, 'Unutilized (M)': cat.unutilized,
+        '% Unutilized': pct1(cat.pctUnutilized),
+      })
+      cat.lines.forEach(line => rows.push({
+        Category: cat.name, Line: `${line.code}: ${line.name}`,
+        'Budget (M)': line.budget, 'Utilized (M)': line.utilized, 'Unutilized (M)': line.unutilized,
+        '% Unutilized': pct1(line.pctUnutilized),
+      }))
+    } else {
+      cat.lines.forEach(line => {
+        const row = { Category: cat.name, Line: `${line.code}: ${line.name}` }
+        periods.forEach(p => {
+          const lp = line[periodKey].find(x => x.id === p.id) || { budget: 0, utilized: 0, unutilized: 0, pctUnutilized: null }
+          row[`${p.label} Budget (M)`]     = lp.budget
+          row[`${p.label} Utilized (M)`]   = lp.utilized
+          row[`${p.label} Unutilized (M)`] = lp.unutilized
+          row[`${p.label} % Unutilized`]   = pct1(lp.pctUnutilized)
+        })
+        rows.push(row)
+      })
+    }
+  })
+  return rows
+}
 
 function StatCard({ label, value, sub, accent }) {
   return (
@@ -57,36 +107,29 @@ function StatCard({ label, value, sub, accent }) {
   )
 }
 
-// "Select Budget" Year 1-5 toggle — an explicit TEAL fill (not bg-navy) for the
-// selected pill, rather than relying on index.css's dark-mode bg-white/bg-navy
-// remapping for contrast: that remap turns bg-white into roughly the same dark navy
-// the page background already is, which made an unselected "bg-white" pill and a
-// selected "bg-navy" pill nearly indistinguishable from each other in dark mode.
-// Each pill also shows its own budget period (start – end) once `years` loads, so
-// it's clear what date range that year actually covers.
+// "Select Budget" dropdown — same style/placement as Corporate Budget Analysis's own
+// "Budget:" selector (label + a bordered <select>, "code – description" option text),
+// instead of the previous row of Year 1-5 pills, for visual consistency between the two
+// budget pages. `years` is whatever budget years actually exist right now (see
+// services/safee-budget.js's discoverBudgetYears) — a newly added year appears here with
+// no code change, same as Corporate Budget Analysis's own dynamic list.
 function BudgetYearPicker({ value, onChange, years }) {
-  const byName = Object.fromEntries((years || []).map(y => [y.budgetName, y]))
   return (
-    <div className="flex flex-wrap gap-2">
-      {BUDGET_YEARS.map(y => {
-        const info = byName[y.budgetName]
-        const selected = y.budgetName === value
-        return (
-          <button
-            key={y.budgetName}
-            onClick={() => onChange(y.budgetName)}
-            className="px-3 py-1.5 rounded-xl border text-left transition-colors"
-            style={selected
-              ? { background: TEAL, borderColor: TEAL, color: '#fff' }
-              : { background: 'transparent', borderColor: '#6B7C9360', color: '#fff' }}
-          >
-            <span className="block text-xs font-extrabold">{y.label}</span>
-            {info?.startLabel && (
-              <span className="block text-[9px] opacity-80 whitespace-nowrap">{info.startLabel} – {info.endLabel}</span>
-            )}
-          </button>
-        )
-      })}
+    <div className="flex items-center gap-2">
+      <p className="text-xs text-muted">Budget:</p>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="text-xs font-bold border border-border rounded-lg px-2.5 py-1 bg-bg text-navy outline-none focus:border-navy"
+      >
+        {years?.length
+          ? years.map(y => (
+              <option key={y.budgetName} value={y.budgetName}>
+                {y.budgetName} – {y.label}{y.startLabel ? ` (${y.startLabel} – ${y.endLabel})` : ''}
+              </option>
+            ))
+          : <option value={value}>{value || 'Loading…'}</option>}
+      </select>
     </div>
   )
 }
@@ -175,32 +218,45 @@ function CommitmentDrilldownPanel({ colSpan, label, budgetName, catCode, lineCod
 }
 
 // Nested Category -> Line table (Category Description, Budget, Utilized, Unutilized,
-// % Unutilized) — the base table behind Budget Activity View / Annual Summary, and
-// (with quarters=true) Program Activity vs Quarter Budgets Analysis. Categories start
-// collapsed (just the group name + totals) and expand on click to reveal their lines —
-// keeps the table scannable instead of dumping every line at once. In non-quarter mode,
-// clicking a line's Utilized figure opens an inline panel with the real BC entries
-// behind it (see CommitmentDrilldownPanel above).
-function CategoryTable({ categories, quarters, showQuarters, budgetName, selMonths, team, intervention }) {
+// % Unutilized) — the base table behind the Budget Activity tab's Monthly/Quarterly/
+// Annually toggle (same three granularities Corporate Budget Analysis's own chart
+// toggle offers, just rendered as a table here instead of bars — see PeriodToggle).
+// `granularity === 'annually'` is the flat Annual total (one Budget/Utilized/Unutilized/%
+// column group, same as this table always showed before); 'quarter'/'month' instead
+// repeat that same 4-column group once per period, reading each line's own byQuarter/
+// byMonth breakdown (see services/safee-budget.js). Categories start collapsed (just
+// the group name + totals) and expand on click to reveal their lines — keeps the table
+// scannable instead of dumping every line at once. In Annual mode, clicking a line's
+// Utilized figure opens an inline panel with the real BC entries behind it (see
+// CommitmentDrilldownPanel above) — per-period drilldown isn't wired up (the annual
+// total already covers the same entries), so that's Annual-only.
+function CategoryTable({ categories, granularity, periods, budgetName, selMonths, team, intervention }) {
   const [expanded, setExpanded] = useState({})
-  const [openDrill, setOpenDrill] = useState(null) // `${catCode}|${lineCode}` or null
+  // { key: `${catCode}|${lineCode}`, periodId: 'annual' | a quarter/month id } or null —
+  // periodId tracks WHICH column was clicked so Quarterly/Monthly mode can drill into one
+  // specific period instead of only ever the whole year.
+  const [openDrill, setOpenDrill] = useState(null)
   const toggleCategory = code => setExpanded(prev => ({ ...prev, [code]: !prev[code] }))
-  const toggleDrill = key => setOpenDrill(prev => (prev === key ? null : key))
+  const toggleDrill = (key, periodId) => setOpenDrill(prev =>
+    (prev?.key === key && prev?.periodId === periodId) ? null : { key, periodId })
+
+  const grouped = granularity !== 'annually'
+  const periodKey = granularity === 'monthly' ? 'byMonth' : 'byQuarter'
 
   const total = categories.reduce((s, c) => ({
     budget: s.budget + c.budget, utilized: s.utilized + c.utilized, unutilized: s.unutilized + c.unutilized
   }), { budget: 0, utilized: 0, unutilized: 0 })
   const totalPctUnutil = total.budget ? (total.unutilized / total.budget * 100) : null
-  const colSpan = showQuarters ? 1 + quarters.length * 4 : 5
+  const colSpan = grouped ? 1 + periods.length * 4 : 5
 
   return (
     <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-xs" style={showQuarters ? { minWidth: 1100 } : undefined}>
+        <table className="w-full text-xs" style={grouped ? { minWidth: periods.length * 160 + 180 } : undefined}>
           <thead>
             <tr className="border-b border-border bg-bg">
               <th className="text-left px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider sticky left-0 bg-bg">Category Description</th>
-              {!showQuarters ? (
+              {!grouped ? (
                 <>
                   <th className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">Budget</th>
                   <th className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">Utilized</th>
@@ -208,16 +264,16 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
                   <th className="text-right px-4 py-2.5 font-extrabold text-muted uppercase tracking-wider">% Unutilized</th>
                 </>
               ) : (
-                quarters.map(q => (
-                  <th key={q.q} colSpan={4} className="text-center px-2 py-2.5 font-extrabold text-muted uppercase tracking-wider border-l border-border">{q.label}</th>
+                periods.map(p => (
+                  <th key={p.id} colSpan={4} className="text-center px-2 py-2.5 font-extrabold text-muted uppercase tracking-wider border-l border-border">{p.label}</th>
                 ))
               )}
             </tr>
-            {showQuarters && (
+            {grouped && (
               <tr className="border-b border-border bg-bg">
                 <th className="sticky left-0 bg-bg" />
-                {quarters.map(q => (
-                  <Fragment key={q.q}>
+                {periods.map(p => (
+                  <Fragment key={p.id}>
                     <th className="text-right px-2 py-1.5 font-bold text-muted border-l border-border">Budget</th>
                     <th className="text-right px-2 py-1.5 font-bold text-muted">Utilized</th>
                     <th className="text-right px-2 py-1.5 font-bold text-muted">Unutil.</th>
@@ -230,7 +286,7 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
           <tbody>
             {categories.map(cat => (
               <CategoryRows
-                key={cat.code} cat={cat} showQuarters={showQuarters} quarters={quarters}
+                key={cat.code} cat={cat} grouped={grouped} periods={periods} periodKey={periodKey}
                 expanded={!!expanded[cat.code]} onToggleCategory={() => toggleCategory(cat.code)}
                 openDrill={openDrill} onToggleDrill={toggleDrill} colSpan={colSpan}
                 budgetName={budgetName} selMonths={selMonths} team={team} intervention={intervention}
@@ -238,27 +294,27 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
             ))}
             <tr className="border-t-2 border-border font-extrabold bg-bg">
               <td className="px-4 py-2 text-navy sticky left-0 bg-bg">Total</td>
-              {!showQuarters ? (
+              {!grouped ? (
                 <>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized, 4, true)}</td>
                   <td className="px-4 py-2 text-right text-navy">{fmtPct(totalPctUnutil, 1)}</td>
                 </>
-              ) : quarters.map(q => {
+              ) : periods.map(p => {
                 const agg = categories.reduce((s, c) => {
                   const cq = c.lines.reduce((ss, l) => {
-                    const lq = l.byQuarter.find(x => x.q === q.q) || { budget: 0, utilized: 0, unutilized: 0 }
-                    return { budget: ss.budget + lq.budget, utilized: ss.utilized + lq.utilized, unutilized: ss.unutilized + lq.unutilized }
+                    const lp = l[periodKey].find(x => x.id === p.id) || { budget: 0, utilized: 0, unutilized: 0 }
+                    return { budget: ss.budget + lp.budget, utilized: ss.utilized + lp.utilized, unutilized: ss.unutilized + lp.unutilized }
                   }, { budget: 0, utilized: 0, unutilized: 0 })
                   return { budget: s.budget + cq.budget, utilized: s.utilized + cq.utilized, unutilized: s.unutilized + cq.unutilized }
                 }, { budget: 0, utilized: 0, unutilized: 0 })
                 const pct = agg.budget ? (agg.unutilized / agg.budget * 100) : null
                 return (
-                  <Fragment key={q.q}>
-                    <td className="px-2 py-2 text-right text-navy border-l border-border">{fmtETB(agg.budget)}</td>
-                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.utilized)}</td>
-                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.unutilized)}</td>
+                  <Fragment key={p.id}>
+                    <td className="px-2 py-2 text-right text-navy border-l border-border">{fmtETB(agg.budget, 4, true)}</td>
+                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.utilized, 4, true)}</td>
+                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.unutilized, 4, true)}</td>
                     <td className="px-2 py-2 text-right text-navy">{fmtPct(pct, 1)}</td>
                   </Fragment>
                 )
@@ -271,24 +327,24 @@ function CategoryTable({ categories, quarters, showQuarters, budgetName, selMont
   )
 }
 
-function CategoryRows({ cat, showQuarters, quarters, expanded, onToggleCategory, openDrill, onToggleDrill, colSpan, budgetName, selMonths, team, intervention }) {
+function CategoryRows({ cat, grouped, periods, periodKey, expanded, onToggleCategory, openDrill, onToggleDrill, colSpan, budgetName, selMonths, team, intervention }) {
   // Same section/zebra-stripe palette as HR Analysis's own tables (SEC_BG/ROW_BG,
   // HRPageReview.jsx) — an explicit dark-navy background (not a translucent tint) so
   // the sticky first column reads identically to the rest of the row at any scroll
   // position, and the table matches HR Analysis's look rather than its own one-off tint.
   const secBg = { background: expanded ? SEC_BG.open : SEC_BG.closed }
-  const canDrill = !showQuarters && budgetName
-  // vs Quarter's category summary row used to render a single blank cell here — every
-  // figure was only visible once a category was expanded down to its lines. Roll the
-  // lines' own per-quarter figures up to the category level so the collapsed row shows
-  // real numbers too, same as the non-quarter table already does.
-  const catByQuarter = showQuarters && quarters
-    ? quarters.map(q => {
+  const canDrill = !grouped && budgetName
+  // Grouped (Quarterly/Monthly) mode's category summary row used to render a single
+  // blank cell here — every figure was only visible once a category was expanded down
+  // to its lines. Roll the lines' own per-period figures up to the category level so
+  // the collapsed row shows real numbers too, same as the ungrouped (Annually) table.
+  const catByPeriod = grouped
+    ? periods.map(p => {
         const agg = cat.lines.reduce((s, l) => {
-          const lq = l.byQuarter.find(x => x.q === q.q) || { budget: 0, utilized: 0, unutilized: 0 }
-          return { budget: s.budget + lq.budget, utilized: s.utilized + lq.utilized, unutilized: s.unutilized + lq.unutilized }
+          const lp = l[periodKey].find(x => x.id === p.id) || { budget: 0, utilized: 0, unutilized: 0 }
+          return { budget: s.budget + lp.budget, utilized: s.utilized + lp.utilized, unutilized: s.unutilized + lp.unutilized }
         }, { budget: 0, utilized: 0, unutilized: 0 })
-        return { q: q.q, ...agg, pctUnutilized: agg.budget ? (agg.unutilized / agg.budget * 100) : null }
+        return { id: p.id, ...agg, pctUnutilized: agg.budget ? (agg.unutilized / agg.budget * 100) : null }
       })
     : []
   return (
@@ -299,58 +355,71 @@ function CategoryRows({ cat, showQuarters, quarters, expanded, onToggleCategory,
           {cat.name}
           <span className="ml-2 text-[10px] font-semibold text-muted">({cat.lines.length})</span>
         </td>
-        {!showQuarters ? (
+        {!grouped ? (
           <>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.budget)}</td>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.utilized)}</td>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.unutilized)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.budget, 4, true)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.utilized, 4, true)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.unutilized, 4, true)}</td>
             <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtPct(cat.pctUnutilized, 1)}</td>
           </>
-        ) : catByQuarter.map(q => (
-          <Fragment key={q.q}>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy border-l border-border">{fmtETB(q.budget)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(q.utilized)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(q.unutilized)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtPct(q.pctUnutilized, 1)}</td>
+        ) : catByPeriod.map(p => (
+          <Fragment key={p.id}>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy border-l border-border">{fmtETB(p.budget, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(p.utilized, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(p.unutilized, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtPct(p.pctUnutilized, 1)}</td>
           </Fragment>
         ))}
       </tr>
       {expanded && cat.lines.map((line, i) => {
-        const drillKey = `${cat.code}|${line.code}`
-        const drillOpen = openDrill === drillKey
+        // Drill key now carries which period (or 'annual') was clicked, so a Quarterly/
+        // Monthly column's Utilized figure opens its OWN drilldown — scoped to just that
+        // period's month(s), via the matching period's idxs — instead of only ever being
+        // able to drill into the whole year like before.
+        const openPeriodId = openDrill?.key === `${cat.code}|${line.code}` ? openDrill.periodId : null
         const rowBg = { background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd }
+        const drillSelMonths = openPeriodId && openPeriodId !== 'annual'
+          ? (periods.find(p => p.id === openPeriodId)?.idxs || [])
+          : selMonths
         return (
           <Fragment key={line.code}>
             <tr style={rowBg}>
               <td className="px-4 py-1.5 pl-8 text-navy sticky left-0" style={rowBg}>{line.code}: {line.name}</td>
-              {!showQuarters ? (
+              {!grouped ? (
                 <>
-                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.budget)}</td>
+                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.budget, 4, true)}</td>
                   <td
                     className={`px-4 py-1.5 text-right text-navy ${canDrill ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
-                    onClick={canDrill ? (e) => { e.stopPropagation(); onToggleDrill(drillKey) } : undefined}
+                    onClick={canDrill ? (e) => { e.stopPropagation(); onToggleDrill(`${cat.code}|${line.code}`, 'annual') } : undefined}
                     title={canDrill ? 'Click to see the Business Central entries behind this figure' : undefined}
                   >
-                    {fmtETB(line.utilized)}
+                    {fmtETB(line.utilized, 4, true)}
                   </td>
-                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.unutilized)}</td>
+                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.unutilized, 4, true)}</td>
                   <td className="px-4 py-1.5 text-right" style={{ color: (line.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(line.pctUnutilized, 1)}</td>
                 </>
-              ) : line.byQuarter.map(q => (
-                <Fragment key={q.q}>
-                  <td className="px-2 py-1.5 text-right text-navy border-l border-border">{fmtETB(q.budget)}</td>
-                  <td className="px-2 py-1.5 text-right text-navy">{fmtETB(q.utilized)}</td>
-                  <td className="px-2 py-1.5 text-right text-navy">{fmtETB(q.unutilized)}</td>
-                  <td className="px-2 py-1.5 text-right text-navy">{fmtPct(q.pctUnutilized, 1)}</td>
+              ) : line[periodKey].map(p => (
+                <Fragment key={p.id}>
+                  <td className="px-2 py-1.5 text-right text-navy border-l border-border">{fmtETB(p.budget, 4, true)}</td>
+                  <td
+                    className={`px-2 py-1.5 text-right text-navy ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                    onClick={budgetName ? (e) => { e.stopPropagation(); onToggleDrill(`${cat.code}|${line.code}`, p.id) } : undefined}
+                    title={budgetName ? `Click to see the Business Central entries behind ${p.label}'s figure` : undefined}
+                  >
+                    {fmtETB(p.utilized, 4, true)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-navy">{fmtETB(p.unutilized, 4, true)}</td>
+                  <td className="px-2 py-1.5 text-right text-navy">{fmtPct(p.pctUnutilized, 1)}</td>
                 </Fragment>
               ))}
             </tr>
-            {drillOpen && (
+            {openPeriodId && (
               <CommitmentDrilldownPanel
-                colSpan={colSpan} label={`${line.code}: ${line.name}`}
+                colSpan={colSpan}
+                label={openPeriodId === 'annual' ? `${line.code}: ${line.name}` : `${line.code}: ${line.name} — ${periods.find(p => p.id === openPeriodId)?.label || ''}`}
                 budgetName={budgetName} catCode={cat.code} lineCode={line.code}
-                selMonths={selMonths} team={team} intervention={intervention}
-                onClose={() => onToggleDrill(drillKey)}
+                selMonths={drillSelMonths} team={team} intervention={intervention}
+                onClose={() => onToggleDrill(`${cat.code}|${line.code}`, openPeriodId)}
               />
             )}
           </Fragment>
@@ -386,15 +455,15 @@ function InterventionTable({ interventions, budgetName, selMonths, team }) {
                   <td className="px-4 py-2 font-semibold text-navy">
                     <span className="text-muted mr-1">{i.code}</span>{i.name}
                   </td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.budget)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.budget, 4, true)}</td>
                   <td
                     className={`px-4 py-2 text-right text-navy ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                     onClick={budgetName ? () => setOpenIntervention(open ? null : i.code) : undefined}
                     title={budgetName ? 'Click to see the Business Central entries behind this figure' : undefined}
                   >
-                    {fmtETB(i.utilized)}
+                    {fmtETB(i.utilized, 4, true)}
                   </td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.unutilized)}</td>
+                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.unutilized, 4, true)}</td>
                   <td className="px-4 py-2 text-right" style={{ color: (i.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(i.pctUnutilized, 1)}</td>
                 </tr>
                 {open && (
@@ -410,9 +479,9 @@ function InterventionTable({ interventions, budgetName, selMonths, team }) {
           })}
           <tr className="border-t-2 border-border font-extrabold bg-bg">
             <td className="px-4 py-2 text-navy">Total</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget)}</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized)}</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized)}</td>
+            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget, 4, true)}</td>
+            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized, 4, true)}</td>
+            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized, 4, true)}</td>
             <td className="px-4 py-2 text-right text-navy">{fmtPct(total.budget ? total.unutilized / total.budget * 100 : null, 1)}</td>
           </tr>
         </tbody>
@@ -422,7 +491,10 @@ function InterventionTable({ interventions, budgetName, selMonths, team }) {
 }
 
 export default function SafeeBudget() {
-  const [budgetName, setBudgetName] = useState('10.3')
+  // Starts empty rather than a hardcoded year — picked once the dynamic years list
+  // arrives (see the overview effect below), so a change to which years exist never
+  // needs a matching change here.
+  const [budgetName, setBudgetName] = useState('')
   const [tab, setTab] = useState('overview')
   const [team, setTeam] = useState('')
   const [intervention, setIntervention] = useState('')
@@ -432,42 +504,37 @@ export default function SafeeBudget() {
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
 
-  // Filter by Period — same PeriodTree/usePeriodSelection Financial Performance uses.
-  // mData reflects the currently selected budget year's own real calendar months; its
-  // selMonths (plain 0-based indices) are re-applied relative to WHATEVER year(s) a
-  // given tab is summing — each SAFEE budget year runs its own ~12-month cycle
-  // starting on a different calendar month, so "the Nth month" is necessarily relative
-  // rather than a shared calendar date. Reset whenever the selected year changes, since
-  // last year's indices may not be meaningful for the new one.
-  const mData = (yearDetail?.months || []).map(m => ({ label: m.label }))
-  const sel = usePeriodSelection(mData)
-  const selMonthsKey = sel.selMonths.join(',')
-
-  useEffect(() => { sel.setSelMonths([]) }, [budgetName]) // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
+    if (!budgetName) return // waiting on the years list below to pick a default
     let cancelled = false
     setLoading(true); setError('')
-    safeeBudgetApi.year(budgetName, sel.selMonths, team, intervention)
+    safeeBudgetApi.year(budgetName, [], team, intervention)
       .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error || 'Failed to load.'))))
       .then(j => { if (!cancelled) setYearDetail(j) })
       .catch(e => { if (!cancelled) setError(e.message || 'Failed to load SAFEE budget data.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [budgetName, selMonthsKey, team, intervention]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [budgetName, team, intervention])
 
-  // All-5-years payload — fetched regardless of which tab is active (not just
-  // Overview) since the "Select Budget" picker shows every year's own date range too.
+  // All-years payload — fetched regardless of which tab is active (not just Overview)
+  // since the "Select Budget" picker's own option list comes from here too, and every
+  // year's own date range is shown next to it.
   useEffect(() => {
     let cancelled = false
-    safeeBudgetApi.overview(sel.selMonths)
+    safeeBudgetApi.overview([])
       .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load.')))
       .then(j => { if (!cancelled) setOverview(j) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [selMonthsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const years = overview?.years || []
+
+  // Default to the first available year once the dynamic list arrives — only while
+  // nothing's been picked yet, so this never overrides an explicit user selection.
+  useEffect(() => {
+    if (!budgetName && years.length) setBudgetName(years[0].budgetName)
+  }, [budgetName, years])
   const overviewChartData = years.map(y => ({
     label: y.label, Budget: y.budget, 'Total Budget': overview?.totalBudget || 0,
     Utilized: y.utilized, Unutilized: y.unutilized,
@@ -475,36 +542,52 @@ export default function SafeeBudget() {
 
   const categories = yearDetail?.categories || []
   const interventions = yearDetail?.interventions || []
-  const quarters = yearDetail?.quarters || []
   const totals = yearDetail?.totals
-  const monthlyChartData = (yearDetail?.monthly || []).map(m => ({ label: m.label, Budget: m.budget, Utilized: m.utilized }))
 
-  const yearLabel = BUDGET_YEARS.find(y => y.budgetName === budgetName)?.label || budgetName
+  const yearLabel = years.find(y => y.budgetName === budgetName)?.label || budgetName
+
+  // Budget Activity's own Monthly/Quarterly/Annually toggle (PeriodToggle, same control
+  // Corporate Budget Analysis uses for its chart) — merges what used to be three separate
+  // tabs (Budget Activity, Annual Summary, Monthly) into this one table, which just reads
+  // a different period breakdown off each line depending on which granularity is picked.
+  const [activityGranularity, setActivityGranularity] = useState('annually')
+  // `idxs` — which month index/indices this period covers — travels with every period so
+  // a clicked Utilized cell can scope its drilldown to exactly that month/quarter instead
+  // of only ever being able to drill into the full year.
+  const activityPeriods = activityGranularity === 'monthly'
+    ? (yearDetail?.months || []).map((m, i) => ({ id: m.key, label: m.label, idxs: [i] }))
+    : activityGranularity === 'quarterly'
+      ? (yearDetail?.quarters || [])
+      : []
+  const activityPeriodKey = activityGranularity === 'monthly' ? 'byMonth' : 'byQuarter'
 
   return (
     <div className="space-y-5">
-      {/* Header row: title + Select Budget (left/middle), Filter by Period (right) */}
+      {/* Header row: title + Select Budget */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-extrabold text-navy mb-0.5">SAFEE Budget Analysis</h2>
           <p className="text-xs text-muted font-medium">Programme budget vs. utilization · source: Business Central</p>
         </div>
-        {mData.length > 0 && (
-          <div className="ml-auto">
-            <PeriodTree mData={mData} selected={sel.selMonths} onChange={sel.setSelMonths} />
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BudgetYearPicker value={budgetName} onChange={setBudgetName} years={overview?.years} />
-        {sel.selMonths.length > 0 && (
-          <button
-            onClick={() => sel.setSelMonths([])}
-            className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
-          >
-            Clear filters
-          </button>
+        {/* Monthly/Quarterly/Annually + Export only make sense for the Budget Activity
+            table, but live on this same line (with Select Budget) rather than a separate
+            row above the table itself. */}
+        {tab === 'activity' && yearDetail && (
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <PeriodToggle value={activityGranularity} onChange={setActivityGranularity} />
+            <ExportButton
+              label="⬇ Export Excel"
+              onExport={() => exportRowsToExcel(
+                `SAFEE Budget Activity - ${yearLabel} - ${activityGranularity}.xlsx`,
+                'Budget Activity',
+                buildActivityExportRows(categories, activityGranularity, activityPeriods, activityPeriodKey)
+              )}
+            />
+          </div>
         )}
       </div>
 
@@ -602,7 +685,7 @@ export default function SafeeBudget() {
               </ResponsiveContainer>
             </div>
           </div>
-          <CategoryTable categories={categories} budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
+          <CategoryTable categories={categories} granularity="annually" periods={[]} budgetName={budgetName} selMonths={[]} team={team} intervention={intervention} />
         </>
       )}
 
@@ -653,7 +736,10 @@ export default function SafeeBudget() {
         </div>
       )}
 
-      {/* ── Budget Activity View ──────────────────────────────────────────────── */}
+      {/* ── Budget Activity — Annual Summary, vs Quarter and Monthly all merged into
+          one table via the Monthly/Quarterly/Annually toggle (PeriodToggle, same
+          control Corporate Budget Analysis's own chart uses) instead of three
+          separate tabs. ─────────────────────────────────────────────────────────── */}
       {tab === 'activity' && !loading && !error && yearDetail && (
         <div className="flex flex-col lg:flex-row gap-5 items-start">
           <div className="bg-white rounded-2xl border border-border shadow-card p-4 flex flex-col gap-4 w-full lg:w-56 flex-shrink-0">
@@ -689,41 +775,21 @@ export default function SafeeBudget() {
               </button>
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <CategoryTable categories={categories} budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
+          <div className="flex-1 min-w-0 space-y-3">
+            <p className="text-xs font-extrabold text-muted uppercase tracking-wider">
+              Budget vs Utilized — {activityGranularity === 'monthly' ? 'Monthly' : activityGranularity === 'quarterly' ? 'Quarterly' : 'Annual'}
+            </p>
+            <CategoryTable
+              categories={categories} granularity={activityGranularity} periods={activityPeriods}
+              budgetName={budgetName} selMonths={[]} team={team} intervention={intervention}
+            />
           </div>
-        </div>
-      )}
-
-      {/* ── Program Activity Annual Budget Summary (merged with vs Quarter — the
-          quarter table's own Total row already is the annual figure, so one table
-          covers both "the annual summary" and "broken down by quarter") ─────────── */}
-      {tab === 'annual' && !loading && !error && yearDetail && (
-        <CategoryTable categories={categories} quarters={quarters} showQuarters budgetName={budgetName} selMonths={sel.selMonths} team={team} intervention={intervention} />
-      )}
-
-      {/* ── Monthly — same "Budget vs Actual (Utilized)" monthly chart as Corporate
-          Budget Analysis's own Overview tab ──────────────────────────────────────── */}
-      {tab === 'monthly' && !loading && !error && yearDetail && (
-        <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-3">Budget vs Utilized — Monthly</h3>
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={monthlyChartData} margin={{ top: 24, right: 8, left: 20, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-35} textAnchor="end" interval={0} height={60} />
-              <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-              <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
-              <Bar dataKey="Budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="Utilized" name="Utilized" fill={ORANGE} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
         </div>
       )}
 
       {/* ── Program Activity vs Budget Intervention ──────────────────────────── */}
       {tab === 'int-budget' && !loading && !error && yearDetail && (
-        <InterventionTable interventions={interventions} budgetName={budgetName} selMonths={sel.selMonths} team={team} />
+        <InterventionTable interventions={interventions} budgetName={budgetName} selMonths={[]} team={team} />
       )}
     </div>
   )

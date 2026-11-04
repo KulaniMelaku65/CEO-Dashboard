@@ -1,7 +1,7 @@
 const router      = require('express').Router();
 const requireAuth = require('../middleware/auth');
 const { bc, isBcConfigured } = require('../services/bc-client');
-const { buildDirectCashflow } = require('../services/snapshot-builder');
+const { buildDirectCashflow, buildBankCollections } = require('../services/snapshot-builder');
 
 // GET /api/cashflow?year=2026&month=7  (month optional, 1-12)
 // Returns the Direct Method Cash Flow Statement (BC's own "DIRECT CF" account
@@ -32,14 +32,22 @@ router.get('/', requireAuth, async (req, res) => {
     // Never ask BC for postings past today — a future year/month has none anyway, and
     // capping here (rather than after the fetch) keeps the query itself cheap.
     if (periodEnd > today) periodEnd = today;
-    if (periodStart > today) return res.json({ rows: [], asOf: periodEnd, periodStart, check: null });
+    if (periodStart > today) {
+      return res.json({
+        rows: [], asOf: periodEnd, periodStart, check: null,
+        collections: { flows: { collections: 0 }, monthlyCollections: { labels: [], data: [] }, collectionsByBank: [] }
+      });
+    }
 
     // Every account (Income Statement + Balance Sheet) up to periodEnd — Beginning
     // Balance rows need everything before periodStart too, so this one fetch covers
     // both that and the period's own Net Change / Balance at Date rows.
-    const glEntriesAll = await bc('KFT_GL_Entries', `?$filter=postingDate le ${periodEnd}`);
+    const [glEntriesAll, collections] = await Promise.all([
+      bc('KFT_GL_Entries', `?$filter=postingDate le ${periodEnd}`),
+      buildBankCollections({ periodStart, periodEnd })
+    ]);
     const statement = await buildDirectCashflow({ glEntriesAll, periodStart, periodEnd });
-    res.json(statement);
+    res.json({ ...statement, collections });
   } catch (e) {
     console.error('[cashflow]', e.message);
     res.status(500).json({ error: e.message });

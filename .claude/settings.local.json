@@ -3,7 +3,8 @@
     "allow": [
       "Skill(run)",
       "Skill(run:*)",
-      "PowerShell([System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"User\"\\) -split \";\" | Select-String -Pattern \"node|npm\" -SimpleMatch)"
+      "PowerShell([System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"User\"\\) -split \";\" | Select-String -Pattern \"node|npm\" -SimpleMatch)",
+      "Bash(break)"
     ]
   }
 }

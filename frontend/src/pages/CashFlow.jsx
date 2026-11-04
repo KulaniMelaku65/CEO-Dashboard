@@ -37,7 +37,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June','July','A
 // control, since this page's period is a single fiscal statement (one year, optionally
 // one month within it) rather than a multi-month/quarter selection. Month only enables
 // once a year is picked; clearing either resets back to the live snapshot's YTD.
-function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }) {
+export function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }) {
   return (
     <div className="flex flex-wrap items-end gap-2.5 ml-auto">
       <div className="flex flex-col gap-1" style={{ minWidth: 130 }}>

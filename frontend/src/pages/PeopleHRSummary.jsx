@@ -63,9 +63,16 @@ export default function PeopleHRSummary({ data }) {
   // making CTC look like a tiny fraction of the real figure (e.g. the in-progress
   // current month before standard payroll has run for it yet).
   const stdPayrollMonths = rev.stdPayrollMonths || payrollMonths
+  // A Year selected on its own (no Month) used to be silently ignored here — CTC/CTC by
+  // BU/Budget Source kept showing whatever the latest payroll month overall was, regardless
+  // of which Year was picked. Falls back to that year's latest std payroll month instead.
   const effectiveMonth = filterMonth !== 'All'
     ? filterMonth
-    : stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
+    : filterYear !== 'All'
+      ? [...stdPayrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
+        || [...payrollMonths].reverse().find(m => m.endsWith(' ' + filterYear))
+        || stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
+      : stdPayrollMonths[stdPayrollMonths.length - 1] || payrollMonths[payrollMonths.length - 1] || ''
   const employeePayroll = rev.employeePayroll || []
 
   const filteredPayroll = employeePayroll.filter(r => {
@@ -136,26 +143,38 @@ export default function PeopleHRSummary({ data }) {
   // departed employees for whichever past month they were still around) — and reuse it
   // for both totalEmployees and the Male/Female split below, so all three agree with
   // HR Analysis's own totalHeadcount fallback.
-  const countableThisMonth = filterMonth !== 'All'
+  // True whenever a Month OR a Year is picked — a Year alone still needs the same
+  // point-in-time reconstruction as an explicit Month (via effectiveMonth above), not just
+  // an exact Month pick. Without this, Year=2025 + Employment Type=Individual Consultant
+  // (say) silently fell back to activeEmployees — TODAY's live roster — for headcount,
+  // gender, employment type and the BU chart below, ignoring the Year filter entirely
+  // whenever Type/VC/Source also narrowed things (monthEvoScope only covers BU alone).
+  const isPeriodScoped = filterMonth !== 'All' || filterYear !== 'All'
+  // Carries buCode/buName/employeeType alongside gender so it can also drive
+  // employmentTypeRows and buHeadcountData below, not just totalEmployees/gender.
+  const pointInTimeRoster = isPeriodScoped
     ? (() => {
         const map = new Map()
         filteredPayroll.forEach(r => {
           const vp = (r.monthTotals[effectiveMonth] || 0) + (r.pensionMonthTotals?.[effectiveMonth] || 0)
           if (vp === 0) return
-          if (!map.has(r.employeeNo)) map.set(r.employeeNo, r.gender || 'Unknown')
+          if (!map.has(r.employeeNo)) map.set(r.employeeNo, {
+            gender: r.gender || 'Unknown', buCode: r.buCode || 'Unknown',
+            buName: r.buName || r.buCode || 'Unknown', employeeType: r.employeeType || 'Unknown'
+          })
         })
         return map
       })()
     : null
+  const pointInTimeValues = pointInTimeRoster ? [...pointInTimeRoster.values()] : null
   const totalEmployees = monthEvoScope ? monthEvoScope.count
-    : countableThisMonth ? countableThisMonth.size
+    : pointInTimeRoster ? pointInTimeRoster.size
     : activeEmployees.length
-  const countableGenders = countableThisMonth ? [...countableThisMonth.values()] : null
   const maleCount   = monthEvoScope ? (monthEvoScope.male   || 0)
-    : countableGenders ? countableGenders.filter(g => g === 'Male').length
+    : pointInTimeValues ? pointInTimeValues.filter(v => v.gender === 'Male').length
     : activeEmployees.filter(e => e.gender === 'Male').length
   const femaleCount = monthEvoScope ? (monthEvoScope.female || 0)
-    : countableGenders ? countableGenders.filter(g => g === 'Female').length
+    : pointInTimeValues ? pointInTimeValues.filter(v => v.gender === 'Female').length
     : activeEmployees.filter(e => e.gender === 'Female').length
   const malePct   = totalEmployees ? Math.round((maleCount   / totalEmployees) * 100) : 0
   const femalePct = totalEmployees ? Math.round((femaleCount / totalEmployees) * 100) : 0
@@ -168,7 +187,8 @@ export default function PeopleHRSummary({ data }) {
         .sort((a, b) => b.count - a.count)
     : (() => {
         const typeCounts = {}
-        activeEmployees.forEach(e => {
+        const source = pointInTimeValues || activeEmployees
+        source.forEach(e => {
           const t = e.employeeType && e.employeeType !== 'Unknown' ? e.employeeType : null
           if (!t) return
           typeCounts[t] = (typeCounts[t] || 0) + 1
@@ -201,7 +221,7 @@ export default function PeopleHRSummary({ data }) {
         .sort((a, b) => b.count - a.count)
     : (() => {
         const byBU = {}
-        activeEmployees.forEach(e => {
+        ;(pointInTimeValues || activeEmployees).forEach(e => {
           if (!e.buCode || e.buCode === 'Unknown') return
           const name = e.buName || e.buCode
           byBU[name] = (byBU[name] || 0) + 1
@@ -259,10 +279,16 @@ export default function PeopleHRSummary({ data }) {
       })()
     : null
 
-  const turnoverRate        = turnoverSummary ? turnoverSummary.rate
+  // A specific month picks out that month's own bucket (already BU/Type/VC-narrowed in
+  // turnoverSeries above, server-side rate otherwise) instead of the whole-year aggregate —
+  // without this, selecting a Month had no visible effect on the headline rate at all, since
+  // turnoverSummary/selectedYearSummary only ever look at the full year regardless of Month.
+  const turnoverMonthBucket = filterMonth !== 'All' ? turnoverSeries.find(t => t.label === filterMonth) : null
+  const turnoverRate        = turnoverMonthBucket ? turnoverMonthBucket.rate
+    : turnoverSummary       ? turnoverSummary.rate
     : selectedYearSummary   ? selectedYearSummary.rate
     : (hr.turnoverRate12mo ?? null)
-  const turnoverPeriodLabel = effectiveTurnoverYear
+  const turnoverPeriodLabel = filterMonth !== 'All' ? filterMonth : effectiveTurnoverYear
 
   // ── Based In (region) + HQ/Field split — built from activeEmployees so these also
   // narrow with every active filter (BU/Type/VC/Source), not just the company-wide
@@ -270,10 +296,11 @@ export default function PeopleHRSummary({ data }) {
   // Male/Female above), location has NO historical source at all: BC's Employee_Location
   // field only exists on KFT_Employee_Headcount, which is current-only, and
   // KFT_Employment_History (the one true historical source) carries no location dimension
-  // whatsoever. So this stays a live/current-only figure — the HQ/Field KPI cells below
-  // show "—" for an explicit historical month instead of silently showing today's numbers
-  // under a misleading month label.
-  const byLocation = (() => {
+  // whatsoever. So this stays a live/current-only figure — gated on isPeriodScoped (Month
+  // OR Year picked), not just an exact Month, so a Year-only selection doesn't silently keep
+  // showing today's location breakdown mislabeled as that year's. The HQ/Field KPI cells and
+  // the City/Country chart below all show an explicit "no historical data" state instead.
+  const byLocation = isPeriodScoped ? [] : (() => {
     const counts = {}
     activeEmployees.forEach(e => {
       if (!e.region) return
@@ -283,7 +310,7 @@ export default function PeopleHRSummary({ data }) {
       .map(([region, count]) => ({ region, count }))
       .sort((a, b) => b.count - a.count)
   })()
-  const byCountry = (() => {
+  const byCountry = isPeriodScoped ? [] : (() => {
     const counts = {}
     activeEmployees.forEach(e => {
       if (!e.country) return
@@ -353,10 +380,10 @@ export default function PeopleHRSummary({ data }) {
               <div><p className="text-white font-extrabold text-xl leading-none">{femalePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Female</p></div>
             </div>
           </Cell1>
-          <Cell1 label="Employees In HQ" value={filterMonth !== 'All' ? '—' : fmtN(hqField.hq)}
-            sub={filterMonth !== 'All' ? 'No historical location data' : (hqField.unspecified > 0 ? `+${fmtN(hqField.unspecified)} no location on file` : null)} />
-          <Cell1 label="Employees in Field" value={filterMonth !== 'All' ? '—' : fmtN(hqField.field)}
-            sub={filterMonth !== 'All' ? 'No historical location data' : (hqField.unspecified > 0 ? `HQ + Field + unspecified = ${fmtN(totalEmployees)}` : null)} />
+          <Cell1 label="Employees In HQ" value={isPeriodScoped ? '—' : fmtN(hqField.hq)}
+            sub={isPeriodScoped ? 'No historical location data' : (hqField.unspecified > 0 ? `+${fmtN(hqField.unspecified)} no location on file` : null)} />
+          <Cell1 label="Employees in Field" value={isPeriodScoped ? '—' : fmtN(hqField.field)}
+            sub={isPeriodScoped ? 'No historical location data' : (hqField.unspecified > 0 ? `HQ + Field + unspecified = ${fmtN(totalEmployees)}` : null)} />
         </div>
 
         {/* ── Row 2: Employment Type table + Turnover + BU charts ── */}
@@ -463,7 +490,7 @@ export default function PeopleHRSummary({ data }) {
                   <Bar dataKey="count" fill="#D7E5E9" maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : <div className="h-[220px] flex items-center justify-center text-[11px]" style={{ color: AXIS }}>No location data</div>}
+            ) : <div className="h-[220px] flex items-center justify-center text-[11px]" style={{ color: AXIS }}>{isPeriodScoped ? 'No historical location data' : 'No location data'}</div>}
           </div>
 
           <div className="p-4 flex items-center" style={{ background: PANEL }}>

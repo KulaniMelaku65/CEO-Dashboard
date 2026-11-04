@@ -1,7 +1,7 @@
 const router      = require('express').Router();
 const requireAuth = require('../middleware/auth');
 const { isBcConfigured } = require('../services/bc-client');
-const { buildOverview, buildYearDetail, buildCommitmentDrilldown, BUDGET_YEARS } = require('../services/safee-budget');
+const { buildOverview, buildYearDetail, buildCommitmentDrilldown, getBudgetYears } = require('../services/safee-budget');
 
 // selMonths comes from the frontend's PeriodTree as a comma-separated list of 0-based
 // month indices (its own selMonths array, same shape Financial Performance uses) —
@@ -29,7 +29,7 @@ router.get('/year', requireAuth, async (req, res) => {
   try {
     if (!isBcConfigured()) return res.status(503).json({ error: 'Business Central is not configured.' });
     const budgetName = String(req.query.budgetName || '');
-    if (!BUDGET_YEARS.some(y => y.budgetName === budgetName)) {
+    if (!(await getBudgetYears()).some(y => y.budgetName === budgetName)) {
       return res.status(400).json({ error: 'Invalid or missing budgetName.' });
     }
     const data = await buildYearDetail({
@@ -53,7 +53,7 @@ router.get('/drilldown', requireAuth, async (req, res) => {
   try {
     if (!isBcConfigured()) return res.status(503).json({ error: 'Business Central is not configured.' });
     const budgetName = String(req.query.budgetName || '');
-    if (!BUDGET_YEARS.some(y => y.budgetName === budgetName)) {
+    if (!(await getBudgetYears()).some(y => y.budgetName === budgetName)) {
       return res.status(400).json({ error: 'Invalid or missing budgetName.' });
     }
     const data = await buildCommitmentDrilldown({

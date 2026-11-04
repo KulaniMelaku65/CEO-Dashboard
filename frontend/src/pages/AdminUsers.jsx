@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { adminUsers, pageFilterSettings } from '../lib/api.js'
+import { adminUsers, aiSettings } from '../lib/api.js'
 import { PAGE_REGISTRY } from '../lib/pages.js'
 import { KPI_DEPARTMENTS } from './kpi/departments.js'
 
@@ -432,56 +432,148 @@ function UserRow({ u, currentUserId, onChanged }) {
   )
 }
 
-// Global, per-page toggle for the shared period filter bar (YTD/Quarter/Month + Compare
-// To — same component as Financial Performance, see PeriodFilterBar.jsx). Separate from
-// the per-user page grants above: this decides whether a page SHOWS the filter at all,
-// not who can see the page itself. Turning it on for a page only does something once that
-// page's own backend/frontend actually reads the filtered period (Balance Sheet is the
-// first to do so) — flipping it on elsewhere is safe (defaults to hidden either way) but
-// won't do anything until that page is wired up to use it.
-function PageFilterSettings() {
-  const [enabledIds, setEnabledIds] = useState(null)
+const AI_PROVIDER_LABELS = { gemini: 'Gemini', openai: 'OpenAI', groq: 'Groq', claude: 'Claude' }
+
+// Lets an admin set the chatbot's provider + API key here instead of editing .env on the
+// server. GET /api/ai-settings only ever returns booleans/metadata, never the stored key —
+// routes/ai-settings.js never serializes api_key back out.
+function AiAssistantSettings() {
+  const [providers, setProviders] = useState([])
+  const [activeProvider, setActiveProvider] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [savingId, setSavingId] = useState(null)
+  const [drafts, setDrafts] = useState({})     // { [provider]: { apiKey, model } }
+  const [busy, setBusy] = useState(null)        // provider currently saving/removing, or 'active'
 
   const load = () => {
-    pageFilterSettings.list()
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load period filter settings.')))
-      .then(setEnabledIds)
+    setLoading(true)
+    aiSettings.list()
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load AI settings.')))
+      .then(j => { setProviders(j.providers); setActiveProvider(j.activeProvider) })
       .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
-  const toggle = (pageId, on) => {
-    setSavingId(pageId)
-    pageFilterSettings.set(pageId, on)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to save.')))
-      .then(() => setEnabledIds(ids => on ? [...ids, pageId] : ids.filter(id => id !== pageId)))
-      .catch(e => setError(e.message))
-      .finally(() => setSavingId(null))
+  const draftFor = (id) => drafts[id] || { apiKey: '', model: '' }
+  const setDraft = (id, patch) => setDrafts(d => ({ ...d, [id]: { ...draftFor(id), ...patch } }))
+
+  const saveKey = async (id) => {
+    const { apiKey, model } = draftFor(id)
+    if (!apiKey.trim()) { setError('Enter an API key first.'); return }
+    setBusy(id); setError('')
+    try {
+      const r = await aiSettings.setKey(id, apiKey.trim(), model.trim() || null)
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed to save key.')
+      setDrafts(d => ({ ...d, [id]: { apiKey: '', model: '' } }))
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const removeKey = async (id) => {
+    setBusy(id); setError('')
+    try {
+      const r = await aiSettings.removeKey(id)
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed to remove key.')
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const setActive = async (id) => {
+    setBusy('active'); setError('')
+    try {
+      const r = await aiSettings.setActive(id)
+      if (!r.ok) throw new Error((await r.json()).error || 'Failed to set active provider.')
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(null)
+    }
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
-      <div className="px-5 py-4 border-b border-border">
-        <h3 className="text-sm font-bold text-navy">Period Filter — Pages</h3>
-        <p className="text-[10px] text-muted mt-0.5">
-          Which pages show the shared YTD / Quarter / Month filter (with Compare To), same
-          control as Financial Performance's. Off by default for every page.
-        </p>
-      </div>
-      {enabledIds === null ? (
-        <p className="text-xs px-5 py-4 text-muted">Loading…</p>
-      ) : error ? (
-        <p className="text-xs px-5 py-4 font-bold" style={{ color: RED }}>{error}</p>
+    <div className="bg-white rounded-2xl border border-border shadow-card p-5">
+      <h3 className="text-sm font-bold text-navy mb-1">AI Assistant</h3>
+      <p className="text-xs text-muted font-medium mb-4">
+        Configure which provider powers the chatbot and its API key, instead of editing
+        the server's .env file. Keys are stored server-side and never shown again once saved.
+      </p>
+
+      {error && <p className="text-xs font-semibold mb-3" style={{ color: RED }}>{error}</p>}
+      {loading ? (
+        <p className="text-xs text-muted">Loading…</p>
       ) : (
-        <div className="px-5 py-3 flex flex-wrap gap-x-6 gap-y-2">
-          {TOGGLE_PAGES.map(p => (
-            <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer" style={p.parentId ? { paddingLeft: 16 } : undefined}>
-              <Toggle on={enabledIds.includes(p.id)} disabled={savingId === p.id} onClick={() => toggle(p.id, !enabledIds.includes(p.id))} />
-              <span className="text-xs font-semibold text-navy">{p.label}</span>
-            </label>
-          ))}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Active provider</span>
+            <select
+              value={activeProvider || 'auto'}
+              onChange={e => setActive(e.target.value)}
+              disabled={busy === 'active'}
+              className="text-xs border border-border rounded-xl px-2.5 py-1.5 text-navy outline-none focus:border-navy disabled:opacity-40"
+            >
+              <option value="auto">Auto (first configured provider)</option>
+              {providers.map(p => <option key={p.id} value={p.id}>{AI_PROVIDER_LABELS[p.id]}</option>)}
+            </select>
+          </div>
+
+          {providers.map(p => {
+            const draft = draftFor(p.id)
+            return (
+              <div key={p.id} className="rounded-xl border border-border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-navy">{AI_PROVIDER_LABELS[p.id]}</span>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={p.configured ? { background: `${TEAL}18`, color: TEAL } : { background: '#D7DEE655', color: '#6B7C93' }}
+                  >
+                    {p.configured ? 'Key configured' : 'Not configured (falls back to .env)'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <input
+                    value={draft.apiKey}
+                    onChange={e => setDraft(p.id, { apiKey: e.target.value })}
+                    placeholder={p.configured ? 'Enter a new key to replace it' : 'API key'}
+                    type="password"
+                    className="flex-1 min-w-[180px] text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy font-mono"
+                  />
+                  <input
+                    value={draft.model}
+                    onChange={e => setDraft(p.id, { model: e.target.value })}
+                    placeholder={p.model ? `Model (${p.model})` : 'Model override (optional)'}
+                    className="flex-1 min-w-[140px] text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy"
+                  />
+                  <button
+                    onClick={() => saveKey(p.id)}
+                    disabled={busy === p.id}
+                    className="text-[11px] font-bold px-3 py-2 rounded-xl text-white disabled:opacity-40"
+                    style={{ background: NAVY }}
+                  >
+                    Save
+                  </button>
+                  {p.configured && (
+                    <button
+                      onClick={() => removeKey(p.id)}
+                      disabled={busy === p.id}
+                      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:border-navy disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -525,7 +617,7 @@ export default function AdminUsers({ currentUserId }) {
 
       <AddUserForm onCreated={(j) => { setCreatedInfo(j); load() }} />
 
-      <PageFilterSettings />
+      <AiAssistantSettings />
 
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border">

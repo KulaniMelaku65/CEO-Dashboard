@@ -9,19 +9,35 @@
 // budget rows themselves — they're looked up from KFT_Dimension_Values, dimensionCode
 // 'BUDGET LINE' (categories) and 'PROG INTERVENTION' (interventions).
 const { bc } = require('./bc-client');
+const { isProgramFinance } = require('./budget-classes');
 
 const num = n => Number(n) || 0;
-const toM = v => Math.round(v / 1e6 * 100) / 100; // 2-decimal millions — matches the "23.21M" precision in the source report
+const toM = v => Math.round(v / 1e6 * 10000) / 10000; // 4-decimal millions (ETB 100 resolution) — small intervention-level lines round to 0.00M at 2 decimals
 
-// budgetName <-> Year label — confirmed against BC's own GetBudgetName/PROGRAMME
-// dimension list ("10"/"10.2".."10.5" = "Year 1".."Year 5").
-const BUDGET_YEARS = [
-  { budgetName: '10',   label: 'Year 1' },
-  { budgetName: '10.2', label: 'Year 2' },
-  { budgetName: '10.3', label: 'Year 3' },
-  { budgetName: '10.4', label: 'Year 4' },
-  { budgetName: '10.5', label: 'Year 5' },
-];
+// Which SAFEE (Program Finance) budget years exist, from BC's own GetBudgetName list —
+// not from whether KFT_SAFEE_Budget happens to have any rows for it yet. A Program
+// Finance budget BC knows about but that has no budget/commitment lines posted shows up
+// here too (with an all-zero total, same as any other data gap this app surfaces
+// honestly rather than silently hiding), and a newly added year shows up automatically
+// on the next sync either way. Sorted numerically by budgetName (BC's own convention:
+// "10" = Year 1, "10.2" = Year 2, etc.) and labeled "Year N" by that sort position, so
+// numbering always starts at 1 with no gaps even if an early year's budgetName were ever
+// retired. 10-minute cache — this rarely changes and is refetched on every tab/year
+// switch otherwise.
+let _namesCache = null, _namesCacheAt = 0;
+const NAMES_TTL = 10 * 60 * 1000;
+async function getBudgetYears() {
+  const now = Date.now();
+  if (!_namesCache || now - _namesCacheAt > NAMES_TTL) {
+    _namesCache = await bc('GetBudgetName');
+    _namesCacheAt = now;
+  }
+  const names = _namesCache
+    .filter(b => !b.Blocked && isProgramFinance(b.Name))
+    .map(b => b.Name)
+    .sort((a, b) => Number(a) - Number(b));
+  return names.map((budgetName, i) => ({ budgetName, label: `Year ${i + 1}` }));
+}
 
 let _cache = null, _cacheAt = 0;
 const TTL = 10 * 60 * 1000;
@@ -143,7 +159,8 @@ function sumBU(rows) {
 // not a shared calendar date) ────────────────────────────────────────────────────────
 async function buildOverview({ selMonths } = {}) {
   const { budgetRows } = await getSafeeStatic();
-  const years = BUDGET_YEARS.map(y => {
+  const budgetYears = await getBudgetYears();
+  const years = budgetYears.map(y => {
     const months = monthsForYear(budgetRows, y.budgetName);
     const rows = budgetRows.filter(r => r.budgetName === y.budgetName);
     const scoped = filterRowsByMonths(rows, months, selMonths);
@@ -189,11 +206,13 @@ async function buildYearDetail({ budgetName, selMonths, team, intervention } = {
   const quarterCount = Math.max(1, Math.ceil(months.length / 3));
   const quarters = Array.from({ length: quarterCount }, (_, q) => {
     const idxs = [q * 3, q * 3 + 1, q * 3 + 2].filter(i => i < months.length);
-    return { q, idxs, label: `Quarter ${q + 1}` };
+    return { id: q, idxs, label: `Quarter ${q + 1}` };
   }).filter(qt => qt.idxs.length > 0);
 
-  // Category group (budgetDim1) -> lines (budgetDim3), each line with its own
-  // per-quarter split (Program Activity vs Quarter Budgets Analysis).
+  // Category group (budgetDim1) -> lines (budgetDim3), each line with its own per-month
+  // AND per-quarter split — powers the Budget Activity table's Monthly/Quarterly/Annually
+  // toggle (same `id`/`label`/budget-utilized-unutilized-pctUnutilized shape either way, so
+  // the frontend table renders both the same way, just picking byMonth vs byQuarter).
   const byCat = {};
   rows.forEach(r => {
     const catCode = r.budgetDim1 || 'UNSPEC';
@@ -204,14 +223,18 @@ async function buildYearDetail({ budgetName, selMonths, team, intervention } = {
   });
   const categories = Object.entries(byCat).map(([code, g]) => {
     const lines = Object.entries(g.lines).map(([lineCode, lrows]) => {
+      const byMonth = months.map(m => {
+        const mrows = lrows.filter(r => r.budgetDate.slice(0, 7) === m.key);
+        return { id: m.key, label: m.label, ...sumBU(mrows) };
+      });
       const byQuarter = quarters.map(qt => {
         const qrows = lrows.filter(r => {
           const idx = months.findIndex(m => m.key === r.budgetDate.slice(0, 7));
           return qt.idxs.includes(idx);
         });
-        return { q: qt.q, label: qt.label, ...sumBU(qrows) };
+        return { id: qt.id, label: qt.label, ...sumBU(qrows) };
       });
-      return { code: lineCode, name: catNames[lineCode] || lineCode, ...sumBU(lrows), byQuarter };
+      return { code: lineCode, name: catNames[lineCode] || lineCode, ...sumBU(lrows), byMonth, byQuarter };
     }).sort((a, b) => b.budget - a.budget);
     return { code, name: catNames[code] || code, ...sumBU(g.rows), lines };
   }).filter(c => c.budget !== 0 || c.utilized !== 0)
@@ -260,7 +283,10 @@ async function buildYearDetail({ budgetName, selMonths, team, intervention } = {
   });
 
   return {
-    budgetName, months, quarters: quarters.map(q => ({ q: q.q, label: q.label })), monthly,
+    // idxs (which of `months`' indices make up this quarter) travels with each quarter so
+    // the frontend can scope a per-quarter drilldown to exactly those months, the same way
+    // a per-month drilldown scopes to its own single index.
+    budgetName, months, quarters: quarters.map(q => ({ id: q.id, label: q.label, idxs: q.idxs })), monthly,
     startLabel: months[0]?.label || null, endLabel: months[months.length - 1]?.label || null,
     totals: sumBU(rows), categories, interventions,
     filters: { teams: teamOptions, interventions: interventionOptions }
@@ -298,4 +324,4 @@ async function buildCommitmentDrilldown({ budgetName, catCode, lineCode, selMont
   return { count: entries.length, total, entries };
 }
 
-module.exports = { buildOverview, buildYearDetail, buildCommitmentDrilldown, BUDGET_YEARS, getSafeeStatic, monthsForYear };
+module.exports = { buildOverview, buildYearDetail, buildCommitmentDrilldown, getBudgetYears, getSafeeStatic, monthsForYear };

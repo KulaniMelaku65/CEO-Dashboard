@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { fmtETB, fmtDate } from '../lib/fmt.js'
-import { pageFilterSettings } from '../lib/api.js'
-import PeriodFilterBar, { usePeriodSelection } from '../components/PeriodFilterBar.jsx'
+import { usePeriodSelection, YearPeriodFilterBar, yearsFromMonthData } from '../components/PeriodFilterBar.jsx'
 import GLDrilldownPanel from '../components/GLDrilldownPanel.jsx'
 
 const NAVY   = '#02404F'
@@ -200,16 +199,21 @@ export default function BalanceSheet({ data }) {
   const mData = monthly.map(m => ({ label: m.label }))
   const sel = usePeriodSelection(mData)
 
-  // Admin-controlled: Admin → "Period Filter — Pages" decides which pages show this bar
-  // at all (off by default everywhere). Balance Sheet works fine without it (just shows
-  // today's live figures, as before this existed).
-  const [filterEnabled, setFilterEnabled] = useState(false)
-  useEffect(() => {
-    pageFilterSettings.list()
-      .then(r => r.ok ? r.json() : [])
-      .then(ids => setFilterEnabled(ids.includes('balance-sheet')))
-      .catch(() => {})
-  }, [])
+  // Year dropdown, Procurement-style — purely a display narrowing of the same rolling
+  // 24-month mData/index space (see PeriodTree's yearFilter), so Compare To's cross-year
+  // lookups (January vs the prior December) keep working unchanged. Picking a past year
+  // with nothing else selected resolves to that year's latest available month ("as of
+  // year-end") rather than literally today's live figures — see effectiveSelMonths below.
+  const liveYear = String(liveBs?.asOf ? new Date(liveBs.asOf).getFullYear() : new Date().getFullYear())
+  const [year, setYear] = useState(liveYear)
+  const years = (() => { const ys = yearsFromMonthData(mData); return ys.includes(liveYear) ? ys : [liveYear, ...ys] })()
+  const yearLatestIdx = (() => {
+    const idxs = mData.map((m, i) => i).filter(i => (mData[i].label || '').endsWith(' ' + year))
+    return idxs.length ? Math.max(...idxs) : null
+  })()
+  const effectiveSelMonths = sel.selMonths.length > 0
+    ? sel.selMonths
+    : (year !== liveYear && yearLatestIdx != null ? [yearLatestIdx] : [])
 
   // Drilldown expand state for the Total Assets / Total Liabilities KPI cards —
   // collapsed by default so the top row stays compact.
@@ -237,9 +241,12 @@ export default function BalanceSheet({ data }) {
   // today's precise live figures (not the monthly array's approximation, which also feeds
   // ratios/ a 12-month cap — the live figures have neither limitation).
   const latestOf = (idxs) => idxs && idxs.length ? monthly[Math.max(...idxs)] : null
-  const periodBs = sel.selMonths.length > 0 ? latestOf(sel.selMonths) : null
+  const periodBs = effectiveSelMonths.length > 0 ? latestOf(effectiveSelMonths) : null
   const bs = periodBs || liveBs
   const priorBs = latestOf(sel.priorMonths)
+  // Only differs from sel.periodLabel ("YTD") when periodBs resolved via the Year
+  // dropdown's own year-end default rather than an explicit month/quarter pick.
+  const displayPeriodLabel = sel.selMonths.length > 0 ? sel.periodLabel : (periodBs ? periodBs.label : null)
 
   const delta = (curr, prior) => (curr == null || prior == null) ? null : +(curr - prior).toFixed(1)
 
@@ -296,25 +303,21 @@ export default function BalanceSheet({ data }) {
           <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
           <p className="text-xs text-muted font-medium">
             {periodBs
-              ? `As of end of ${sel.periodLabel} · source: Business Central`
+              ? `As of end of ${displayPeriodLabel} · source: Business Central`
               : `As of ${fmtDate(liveBs.asOf)} · source: Business Central`}
           </p>
         </div>
-        {filterEnabled && monthly.length > 0 && (
+        {monthly.length > 0 && (
           // ml-auto: keeps this group pinned to the right once it wraps onto its own
           // line (e.g. once Clear filters appears and widens it) — matches Financial
           // Performance's header row, where a lone wrapped flex item would otherwise
           // default to the line's left edge under justify-between.
           <div className="flex flex-wrap items-end gap-2.5 ml-auto">
-            <PeriodFilterBar sel={sel} mData={mData} />
-            {sel.selMonths.length > 0 && (
-              <button
-                onClick={sel.clearPeriod}
-                className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
-              >
-                Clear filters
-              </button>
-            )}
+            <YearPeriodFilterBar
+              sel={sel} mData={mData} year={year} years={years}
+              onYearChange={y => { setYear(y); sel.setSelMonths([]) }}
+              onClear={(sel.selMonths.length > 0 || year !== liveYear) ? () => { sel.clearPeriod(); setYear(liveYear) } : null}
+            />
           </div>
         )}
       </div>
@@ -373,7 +376,7 @@ export default function BalanceSheet({ data }) {
           period's entries when one is active. */}
       {periodBs && (
         <p className="text-[11px] text-muted -mb-2">
-          Showing {sel.periodLabel}'s own figures below — click any figure to see its GL entries.
+          Showing {displayPeriodLabel}'s own figures below — click any figure to see its GL entries.
         </p>
       )}
       {hasSections ? (
@@ -381,7 +384,7 @@ export default function BalanceSheet({ data }) {
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-sm font-bold text-navy">Balance Sheet Statement</h3>
             <p className="text-[10px] text-muted mt-0.5">
-              {periodBs ? `As of end of ${sel.periodLabel}` : `As of ${fmtDate(liveBs.asOf)}`}
+              {periodBs ? `As of end of ${displayPeriodLabel}` : `As of ${fmtDate(liveBs.asOf)}`}
               {showCompare && ` vs ${sel.priorLabel}`} · click a section header to expand / collapse
               {' · click any figure to see its GL entries'}
             </p>
@@ -392,7 +395,7 @@ export default function BalanceSheet({ data }) {
                 <tr className="border-b border-border">
                   <td className="px-5 py-1.5" />
                   <td className="px-5 py-1.5 text-right text-[10px] font-extrabold text-muted uppercase tracking-wider">
-                    {periodBs ? sel.periodLabel : 'Live'}
+                    {periodBs ? displayPeriodLabel : 'Live'}
                   </td>
                   <td className="px-5 py-1.5 text-right text-[10px] font-extrabold text-muted uppercase tracking-wider">{sel.priorLabel}</td>
                 </tr>

@@ -52,15 +52,6 @@ export const safeeBudget = {
   },
 }
 
-export const pageFilterSettings = {
-  list: () => req('/api/page-filter-settings'),
-  set:  (pageId, enabled) => req(`/api/page-filter-settings/${pageId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled })
-  }),
-}
-
 export const snapshots = {
   latest: ()  => req('/api/snapshots/latest'),
   dates:  ()  => req('/api/snapshots/dates'),
@@ -157,6 +148,17 @@ export const kpi = {
   department: (id, period) => req(`/api/kpi/department/${id}${period ? `?period=${period}` : ''}`),
   reminders: (period) => req(`/api/kpi/reminders${period ? `?period=${period}` : ''}`),
   audit: (entity, id) => req(`/api/kpi/audit${entity ? `?entity=${entity}&id=${id}` : ''}`),
+}
+
+export const aiSettings = {
+  list: () => req('/api/ai-settings'),
+  setKey: (provider, apiKey, model) => req(`/api/ai-settings/${provider}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey, model })
+  }),
+  removeKey: (provider) => req(`/api/ai-settings/${provider}`, { method: 'DELETE' }),
+  setActive: (provider) => req(`/api/ai-settings/active/${provider}`, { method: 'PUT' }),
 }
 
 export const adminUsers = {

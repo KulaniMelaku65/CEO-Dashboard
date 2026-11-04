@@ -243,6 +243,62 @@ async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
   }
 }
 
+// Bank-ledger-based Collections for an arbitrary period — the historical counterpart to
+// the live snapshot's data.cashflow.flows.collections/monthlyCollections/collectionsByBank
+// (built in buildSnapshot below from the same KFT_Bank_Ledger table, but only ever for the
+// current fiscal year to date). Collections & Revenue's Year/Month filter calls this via
+// routes/cashflow.js so a past period shows its own real collections instead of silently
+// falling back to today's live figures. Deliberately a positive-amounts-only sum (money
+// actually received into a bank account that period), same definition the live figure uses.
+async function buildBankCollections({ periodStart, periodEnd }) {
+  const empty = { flows: { collections: null }, monthlyCollections: { labels: [], data: [] }, collectionsByBank: [] };
+  if (!isBcConfigured()) return empty;
+  try {
+    const [bank, glAccts] = await Promise.all([
+      bc('KFT_Bank_Ledger', `?$filter=postingDate ge ${periodStart} and postingDate le ${periodEnd}`),
+      bc('KFT_GL_Accounts').catch(() => [])
+    ]);
+    const glAccountNames = {};
+    glAccts.forEach(a => { if (a.no && a.name) glAccountNames[a.no] = a.name; });
+
+    // Calendar months actually spanned by the requested period (just one for a single-month
+    // request, up to 12 for a full year) — not a fixed Jan-Dec 12, so a one-month request
+    // returns a one-point series instead of 11 empty months padded around it.
+    const monthKeys = [];
+    for (let d = new Date(periodStart + 'T00:00:00'); d <= new Date(periodEnd + 'T00:00:00'); d.setMonth(d.getMonth() + 1)) {
+      monthKeys.push(d.toISOString().slice(0, 7));
+    }
+    const byMonth = Object.fromEntries(monthKeys.map(k => [k, 0]));
+
+    let collections = 0;
+    const bankMap = {};
+    bank.forEach(x => {
+      const amt = num(x.amount);
+      if (amt <= 0 || !x.postingDate) return;
+      collections += amt;
+      const mk = String(x.postingDate).slice(0, 7);
+      if (byMonth[mk] != null) byMonth[mk] += amt;
+      const b = x.bankAccountNo || 'Other';
+      bankMap[b] = (bankMap[b] || 0) + amt;
+    });
+
+    const MONTH_NAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return {
+      flows: { collections: toM(collections) },
+      monthlyCollections: {
+        labels: monthKeys.map(k => `${MONTH_NAMES_FULL[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}`),
+        data: monthKeys.map(k => toM(byMonth[k]))
+      },
+      collectionsByBank: Object.entries(bankMap)
+        .map(([code, a]) => ({ bank: glAccountNames[code] || code, amount: toM(a) }))
+        .sort((a, b) => b.amount - a.amount).slice(0, 6)
+    };
+  } catch (e) {
+    console.warn('  Bank Collections build failed:', e.message);
+    return empty;
+  }
+}
+
 /** Build dashboard JSON for a given date (YYYY-MM-DD). Pass { bypassCache: false } to reuse
  *  the last fetch's BC rows instead of re-querying — see cachedBc() above. */
 async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
@@ -4175,5 +4231,5 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   };
 }
 
-module.exports = { buildSnapshot, buildDirectCashflow };
+module.exports = { buildSnapshot, buildDirectCashflow, buildBankCollections };
 
