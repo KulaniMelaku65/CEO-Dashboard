@@ -591,18 +591,50 @@ export default function SafeeBudget() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-0.5 bg-bg rounded-xl p-1 border border-border flex-wrap w-fit">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
-            style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tabs — Budget Activity's own Program/Intervention filters sit on this same row,
+          pinned to the right (ml-auto), instead of a separate sidebar box next to the
+          table below. Only relevant (and only rendered) on that one tab. flex-nowrap +
+          overflow-x-auto (instead of flex-wrap) so this never drops to a second line at
+          any screen width — it scrolls horizontally in that same single row instead. */}
+      <div className="flex flex-nowrap items-center gap-3 overflow-x-auto pb-1">
+        <div className="flex gap-0.5 bg-bg rounded-xl p-1 border border-border flex-shrink-0">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap"
+              style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab === 'activity' && yearDetail && (
+          <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+            <select value={team} onChange={e => setTeam(e.target.value)} title="Program Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy flex-shrink-0">
+              <option value="">Program: All</option>
+              {Object.entries(
+                yearDetail.filters.teams.reduce((groups, t) => {
+                  (groups[t.group || 'Other'] || (groups[t.group || 'Other'] = [])).push(t)
+                  return groups
+                }, {})
+              ).map(([group, opts]) => (
+                <optgroup key={group} label={group}>
+                  {opts.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <select value={intervention} onChange={e => setIntervention(e.target.value)} title="Intervention Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy flex-shrink-0">
+              <option value="">Intervention: All</option>
+              {yearDetail.filters.interventions.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}
+            </select>
+            {(team || intervention) && (
+              <button onClick={() => { setTeam(''); setIntervention('') }} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors flex-shrink-0 whitespace-nowrap">
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && tab !== 'overview' && (
@@ -741,49 +773,14 @@ export default function SafeeBudget() {
           control Corporate Budget Analysis's own chart uses) instead of three
           separate tabs. ─────────────────────────────────────────────────────────── */}
       {tab === 'activity' && !loading && !error && yearDetail && (
-        <div className="flex flex-col lg:flex-row gap-5 items-start">
-          <div className="bg-white rounded-2xl border border-border shadow-card p-4 flex flex-col gap-4 w-full lg:w-56 flex-shrink-0">
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-2">Filters</p>
-              <label className="flex flex-col gap-1 mb-3">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Program Filter</span>
-                <select value={team} onChange={e => setTeam(e.target.value)} className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy">
-                  <option value="">All</option>
-                  {Object.entries(
-                    yearDetail.filters.teams.reduce((groups, t) => {
-                      (groups[t.group || 'Other'] || (groups[t.group || 'Other'] = [])).push(t)
-                      return groups
-                    }, {})
-                  ).map(([group, opts]) => (
-                    <optgroup key={group} label={group}>
-                      {opts.map(t => <option key={t.code} value={t.code}>{t.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Intervention Filter</span>
-                <select value={intervention} onChange={e => setIntervention(e.target.value)} className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy">
-                  <option value="">All</option>
-                  {yearDetail.filters.interventions.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}
-                </select>
-              </label>
-            </div>
-            {(team || intervention) && (
-              <button onClick={() => { setTeam(''); setIntervention('') }} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors">
-                Clear filters
-              </button>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 space-y-3">
-            <p className="text-xs font-extrabold text-muted uppercase tracking-wider">
-              Budget vs Utilized — {activityGranularity === 'monthly' ? 'Monthly' : activityGranularity === 'quarterly' ? 'Quarterly' : 'Annual'}
-            </p>
-            <CategoryTable
-              categories={categories} granularity={activityGranularity} periods={activityPeriods}
-              budgetName={budgetName} selMonths={[]} team={team} intervention={intervention}
-            />
-          </div>
+        <div className="space-y-3">
+          <p className="text-xs font-extrabold text-muted uppercase tracking-wider">
+            Budget vs Utilized — {activityGranularity === 'monthly' ? 'Monthly' : activityGranularity === 'quarterly' ? 'Quarterly' : 'Annual'}
+          </p>
+          <CategoryTable
+            categories={categories} granularity={activityGranularity} periods={activityPeriods}
+            budgetName={budgetName} selMonths={[]} team={team} intervention={intervention}
+          />
         </div>
       )}
 
