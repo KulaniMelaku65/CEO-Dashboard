@@ -333,12 +333,12 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
                     {getName(r.unit)}
                   </span>
                 </td>
-                <td className="py-2.5 px-3 text-right font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(r.budget || 0), 1)}</td>
+                <td className="py-2.5 px-3 text-right font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(r.budget || 0), 2)}</td>
                 <td className="py-2.5 px-3 text-right font-bold" style={{ color: neg ? '#E5544B' : '#FFFFFF' }}>
-                  {neg ? '-' : ''}{fmtETB(Math.abs(r.actual), 1)}
+                  {neg ? '-' : ''}{fmtETB(Math.abs(r.actual), 2)}
                 </td>
                 <td className="py-2.5 px-3 text-right font-semibold" style={{ color }}>
-                  {variance >= 0 ? '+' : ''}{fmtETB(variance, 1)}
+                  {variance >= 0 ? '+' : ''}{fmtETB(variance, 2)}
                 </td>
                 <td className="py-2.5 px-3 text-right">
                   <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full" style={{ background: `${color}30`, color }}>
@@ -363,12 +363,12 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
               return (
                 <tr key={c.unit} style={{ background: '#123C46' }}>
                   <td className="py-2 pl-8 pr-3 text-[11px] font-semibold text-white">{getName(c.unit)}</td>
-                  <td className="py-2 px-3 text-right text-[11px] font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(c.budget || 0), 1)}</td>
+                  <td className="py-2 px-3 text-right text-[11px] font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(c.budget || 0), 2)}</td>
                   <td className="py-2 px-3 text-right text-[11px] font-bold" style={{ color: cNeg ? '#E5544B' : '#FFFFFF' }}>
-                    {cNeg ? '-' : ''}{fmtETB(Math.abs(c.actual), 1)}
+                    {cNeg ? '-' : ''}{fmtETB(Math.abs(c.actual), 2)}
                   </td>
                   <td className="py-2 px-3 text-right text-[11px] font-semibold" style={{ color: cColor }}>
-                    {cVariance >= 0 ? '+' : ''}{fmtETB(cVariance, 1)}
+                    {cVariance >= 0 ? '+' : ''}{fmtETB(cVariance, 2)}
                   </td>
                   <td className="py-2 px-3 text-right">
                     <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full" style={{ background: `${cColor}30`, color: cColor }}>
@@ -423,7 +423,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
         </div>
 
         <p className="text-xl font-extrabold text-navy leading-none mb-3">
-          {line.isPercent ? `${line.actual}%` : <>ETB&nbsp;{fmtETB(line.actual)}</>}
+          {line.isPercent ? `${line.actual}%` : <>ETB&nbsp;{fmtETB(line.actual, 2)}</>}
         </p>
 
         <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#F4F6FA' }}>
@@ -434,7 +434,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
         </div>
 
         <p className="text-[10px] font-semibold" style={{ color }}>
-          {diff >= 0 ? '▲' : '▼'} {line.isPercent ? `${Math.abs(diff).toFixed(1)}pp` : `ETB ${fmtETB(Math.abs(diff))}`} vs budget
+          {diff >= 0 ? '▲' : '▼'} {line.isPercent ? `${Math.abs(diff).toFixed(1)}pp` : `ETB ${fmtETB(Math.abs(diff), 2)}`} vs budget
         </p>
         {priorGrowth != null && (
           <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2EBD85' : '#E5544B' }}>
@@ -929,11 +929,11 @@ export default function Financial2({ data }) {
         <div className="bg-navy rounded-2xl p-4 flex flex-wrap gap-6 items-center">
           <div>
             <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">{selM.label} — Revenue vs Budget</p>
-            <p className="text-2xl font-extrabold text-white">ETB {fmtETB(selM.Actual)}</p>
+            <p className="text-2xl font-extrabold text-white">ETB {fmtETB(selM.Actual, 2)}</p>
           </div>
           <div>
             <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">Monthly Budget</p>
-            <p className="text-lg font-bold text-white/80">ETB {fmtETB(selM.Budget)}</p>
+            <p className="text-lg font-bold text-white/80">ETB {fmtETB(selM.Budget, 2)}</p>
           </div>
           <div>
             <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">Attainment</p>
@@ -986,7 +986,7 @@ export default function Financial2({ data }) {
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
+              <YAxis tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
               <Tooltip
                 formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]}
                 contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2', boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}
@@ -1041,7 +1041,7 @@ export default function Financial2({ data }) {
                   </div>
                   {isActive && (
                     <p className="text-[10px] mt-1 font-medium" style={{ color }}>
-                      Actual: ETB {fmtETB(line.actual)} · Budget: ETB {fmtETB(line.budget)}
+                      Actual: ETB {fmtETB(line.actual, 2)} · Budget: ETB {fmtETB(line.budget, 2)}
                     </p>
                   )}
                 </button>
@@ -1080,8 +1080,8 @@ export default function Financial2({ data }) {
                       />
                     </div>
                     <div className="flex justify-between text-[10px] text-muted mt-1">
-                      <span>Actual YTD: ETB {fmtETB(u.actualYTD)}</span>
-                      <span>Budget: ETB {fmtETB(u.budgetYTD)}</span>
+                      <span>Actual YTD: ETB {fmtETB(u.actualYTD, 2)}</span>
+                      <span>Budget: ETB {fmtETB(u.budgetYTD, 2)}</span>
                     </div>
                   </div>
                 )
@@ -1128,10 +1128,10 @@ export default function Financial2({ data }) {
                       />
                       <span className={`${isSubtot ? 'font-extrabold text-navy' : 'font-semibold text-navy'}`}>{line.name}</span>
                     </td>
-                    <td className="px-5 py-3 text-right text-muted font-medium">{fmtETB(line.budget, 1)}</td>
-                    <td className="px-5 py-3 text-right font-bold text-navy">{fmtETB(line.actual, 1)}</td>
+                    <td className="px-5 py-3 text-right text-muted font-medium">{fmtETB(line.budget, 2)}</td>
+                    <td className="px-5 py-3 text-right font-bold text-navy">{fmtETB(line.actual, 2)}</td>
                     <td className="px-5 py-3 text-right font-semibold" style={{ color }}>
-                      {variance >= 0 ? '+' : ''}{fmtETB(variance, 1)}
+                      {variance >= 0 ? '+' : ''}{fmtETB(variance, 2)}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <span
@@ -1204,10 +1204,10 @@ export default function Financial2({ data }) {
                   const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
                   const fmtMth = (v) => row.isPercent
                     ? (v != null && v !== 0 ? `${v.toFixed(1)}%` : '—')
-                    : (v  != null && v !== 0 ? `ETB ${fmtETB(v)}` : '—')
+                    : (v  != null && v !== 0 ? `ETB ${fmtETB(v, 2)}` : '—')
                   const fmtYtd = (v) => row.isPercent
                     ? (v != null ? `${v.toFixed(1)}%` : '—')
-                    : (v  != null ? `ETB ${fmtETB(v)}` : '—')
+                    : (v  != null ? `ETB ${fmtETB(v, 2)}` : '—')
                   return (
                     <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
                       <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
@@ -1234,7 +1234,7 @@ export default function Financial2({ data }) {
           <ResponsiveContainer width="100%" height={Math.max(180, revenueByBank.length * 40)}>
             <BarChart data={revenueByBank} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={80} />
               <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
               <Bar dataKey="Revenue" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={20} name="Revenue" />

@@ -2,6 +2,7 @@ const router       = require('express').Router();
 const db           = require('../db');
 const requireAuth  = require('../middleware/auth');
 const requireAdmin = require('../middleware/requireAdmin');
+const { encrypt }  = require('../services/crypto');
 
 const PROVIDER_IDS = ['gemini', 'openai', 'groq', 'claude'];
 
@@ -42,7 +43,7 @@ router.put('/:provider', (req, res) => {
     ON CONFLICT(provider) DO UPDATE SET
       api_key = excluded.api_key, model = excluded.model,
       updated_at = excluded.updated_at, updated_by = excluded.updated_by
-  `).run(provider, apiKey.trim(), model?.trim() || null, req.user.username);
+  `).run(provider, encrypt(apiKey.trim()), model?.trim() || null, req.user.username);
 
   res.json({ ok: true });
 });

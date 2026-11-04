@@ -1,11 +1,23 @@
 const router      = require('express').Router();
 const requireAuth = require('../middleware/auth');
 const db          = require('../db');
+const { decrypt } = require('../services/crypto');
 
 // DB-stored key/model for a provider, if an admin has set one via Admin — Users & Access;
-// falls back to .env so a zero-config deployment keeps working untouched.
+// falls back to .env so a zero-config deployment keeps working untouched. api_key is
+// stored encrypted (see routes/ai-settings.js's PUT handler) — decrypted here, the one
+// place it's actually used to call a provider. A decrypt failure (encryption secret
+// rotated out from under an existing row, or a corrupted value) is treated as "not
+// configured" rather than crashing the chat endpoint.
 function dbRow(provider) {
-  return db.prepare('SELECT api_key, model FROM ai_provider_keys WHERE provider = ?').get(provider);
+  const row = db.prepare('SELECT api_key, model FROM ai_provider_keys WHERE provider = ?').get(provider);
+  if (!row) return row;
+  try {
+    return { ...row, api_key: decrypt(row.api_key) };
+  } catch (e) {
+    console.error(`[ai] Failed to decrypt stored key for ${provider}:`, e.message);
+    return null;
+  }
 }
 
 // Gemini only accepts 'user' / 'model' roles; system messages go in systemInstruction.

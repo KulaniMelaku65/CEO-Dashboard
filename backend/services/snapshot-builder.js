@@ -783,9 +783,16 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const mgtGpA      = mgtRevA - mgtCosA;
   const mgtSalA     =  sumAccts(actuals, MGT_SAL);
   const mgtOpexA    =  sumAccts(actuals, MGT_OPEX);  // non-salary OPEX, matching M-MGT-RPT
-  const mgtTotOpexA = mgtSalA + mgtOpexA;            // = M-MGT-RPT "Total OPEX"
+  const mgtTotOpexA = mgtSalA + mgtOpexA;            // = M-MGT-RPT "Total OPEX" (row 30000)
   const mgtFinA     = MGT_FIN.size > 0 ? sumAccts(actuals, MGT_FIN) : finA; // row 9598 "Total Other Financial Costs"
-  const mgtEbA = mgtGpA - mgtTotOpexA;
+  // Office Shared Services Fees (account 8341) — M-MGT-RPT's own schedule (KFT_MGT_RPT_Lines)
+  // excludes this from row 30000 "Total OPEX" but still subtracts it in both row 50000 "Net
+  // Profit" (20000-30000-9299-9598-8341) and row 40000 "EBITDA" (50000+9299+9598, which
+  // algebraically reduces to 20000-30000-8341 once Net Profit is substituted in) — so BC's
+  // own EBITDA is Gross Profit minus Total OPEX minus this one extra account, not just minus
+  // Total OPEX. Confirmed against BC's live KFT_MGT_RPT_Lines row definitions.
+  const mgtOffice8341A = sumAccts(actuals, new Set(['8341']));
+  const mgtEbA = mgtGpA - mgtTotOpexA - mgtOffice8341A;
   const mgtNetA     = mgtEbA - daA - mgtFinA;
   const ytdGPMgn    = mgtRevA ? parseFloat((mgtGpA / mgtRevA * 100).toFixed(1)) : null;
   const ytdEBMgn    = mgtRevA ? parseFloat((mgtEbA / mgtRevA * 100).toFixed(1)) : null;
@@ -810,7 +817,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const mgtOpexB    = sumAcctsBudget(ytdBudgets, MGT_OPEX);
   const mgtTotOpexB = mgtSalB + mgtOpexB;
   const mgtFinB     = MGT_FIN.size > 0 ? sumAcctsBudget(ytdBudgets, MGT_FIN) : finB;
-  const mgtEbB      = mgtGpB - mgtTotOpexB;
+  // Same Office Shared Services Fees (8341) subtraction as mgtEbA above, for the budget side.
+  const mgtOffice8341B = sumAcctsBudget(ytdBudgets, new Set(['8341']));
+  const mgtEbB      = mgtGpB - mgtTotOpexB - mgtOffice8341B;
   const mgtNetB     = mgtEbB - daB - mgtFinB;
 
   // Per-line department drilldowns for Financial Performance's KPI cards (click to
@@ -969,22 +978,23 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     inRange(a, CONFIG.ranges.cosProduct) || inRange(a, CONFIG.ranges.salaries) ||
     inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB);
   actuals.forEach(x => { if (isPL(String(x.accountNo)) && x.postingDate)
-    aMonth[new Date(x.postingDate).getMonth()] += num(x.amount); });
+    aMonth[new Date(x.postingDate).getUTCMonth()] += num(x.amount); });
   budgets.forEach(x => { if (isPL(String(x.accountNo)) && x.budgetDate)
-    bMonth[new Date(x.budgetDate).getMonth()] += num(x.amount); });
+    bMonth[new Date(x.budgetDate).getUTCMonth()] += num(x.amount); });
 
   const revBMonth = Array(12).fill(0);
   const cosBMonth = Array(12).fill(0);
   const salBMonth = Array(12).fill(0);
   const opBMonth  = Array(12).fill(0);
   const finBMonth = Array(12).fill(0);
+  const officeBMonth = Array(12).fill(0); // account 8341 budget — see mgtOffice8341A's comment above
   // Classified by the exact M-MGT-RPT schedule account sets (MGT_REV/MGT_COS/MGT_SAL/
   // MGT_OPEX/MGT_FIN), not CONFIG.ranges' broad CoA ranges — same mismatch reasoning as
   // mgtRevB/mgtCosB/etc. above, just at monthly granularity. This feeds the monthly
   // Budget vs Actual chart, the per-month line drilldowns, and (via revBYTD/cosBYTD/
   // etc. below) the YTD KPI cards actually sent to the frontend.
   budgets.forEach(x => {
-    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    const mi = x.budgetDate ? new Date(x.budgetDate).getUTCMonth() : -1;
     if (mi < 0) return;
     const amt = Math.abs(num(x.amount));
     const a = String(x.accountNo);
@@ -992,11 +1002,12 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     if (MGT_COS.has(a)) { cosBMonth[mi] += amt; return; }
     if (MGT_SAL.has(a)) { salBMonth[mi] += amt; return; }
     if (MGT_FIN.has(a)) { finBMonth[mi] += amt; return; }
+    if (a === '8341') { officeBMonth[mi] += amt; return; }
     if (MGT_OPEX.has(a)) opBMonth[mi] += amt;
   });
   const gpBMonth      = revBMonth.map((v, i) => v - cosBMonth[i]);
   const totOpexBMonth = salBMonth.map((v, i) => v + opBMonth[i]);
-  const ebBMonth      = gpBMonth.map((v, i) => v - totOpexBMonth[i]);
+  const ebBMonth      = gpBMonth.map((v, i) => v - totOpexBMonth[i] - officeBMonth[i]);
   const lm = new Date(targetDate + 'T12:00:00').getMonth();
   const labels = mN.slice(0, lm + 1);
 
@@ -1004,15 +1015,17 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const revM = Array(12).fill(0), cosM = Array(12).fill(0);
   const salM = Array(12).fill(0), opM  = Array(12).fill(0);
   const daM  = Array(12).fill(0), finM = Array(12).fill(0);
+  const officeM = Array(12).fill(0); // account 8341 — see mgtOffice8341A's comment above
   actuals.forEach(x => {
     const a = String(x.accountNo);
-    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
     if (mi < 0) return;
     if (MGT_REV.has(a)) { revM[mi] += num(x.amount); return; }
     if (MGT_COS.has(a)) { cosM[mi] += num(x.amount); return; }
     if (MGT_SAL.has(a)) { salM[mi] += num(x.amount); return; }
     if (inRange(a, CONFIG.ranges.depAmort)) { daM[mi] += num(x.amount); return; }
     if (MGT_FIN.size > 0 ? MGT_FIN.has(a) : inRange(a, CONFIG.ranges.finCosts)) { finM[mi] += num(x.amount); return; }
+    if (a === '8341') { officeM[mi] += num(x.amount); return; }
     if (MGT_OPEX.has(a)) opM[mi] += num(x.amount);
   });
 
@@ -1029,7 +1042,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const dimActualMap = {};
   actuals.forEach(x => {
     const a = String(x.accountNo);
-    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
     if (mi < 0) return;
     const vc = (x.globalDim1 || '').trim() || 'Unknown';
     const bu = (x.globalDim2 || '').trim() || 'Unassigned';
@@ -1046,7 +1059,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const dimBudgetMap = {};
   budgets.forEach(x => {
     const a = String(x.accountNo);
-    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    const mi = x.budgetDate ? new Date(x.budgetDate).getUTCMonth() : -1;
     if (mi < 0) return;
     const vc = (x.globalDim1 || '').trim() || 'Unknown';
     const bu = (x.globalDim2 || '').trim() || 'Unassigned';
@@ -1114,8 +1127,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const mCos  = i => hasData(i) ? toM(cosM[i]) : null;
   const mGP   = i => hasData(i) ? toM(-revM[i] - cosM[i]) : null;
   const mOpex = i => hasExpData(i) ? toM(salM[i] + opM[i]) : null;
-  const mEB   = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i]) : null;
-  const mNet  = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - daM[i] - finM[i]) : null;
+  const mEB   = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - officeM[i]) : null;
+  const mNet  = i => hasData(i) ? toM(-revM[i] - cosM[i] - salM[i] - opM[i] - officeM[i] - daM[i] - finM[i]) : null;
   const mSal  = i => hasExpData(i) ? toM(salM[i]) : null
   const mFin  = i => hasData(i) ? toM(finM[i]) : null
   const mGPMgn = i => mRev(i) ? parseFloat((mGP(i) / mRev(i) * 100).toFixed(1)) : null;
@@ -1128,8 +1141,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const revBYTD     = ytdSum(revBMonth);
   const cosBYTD     = ytdSum(cosBMonth);
   const totOpexBYTD = ytdSum(totOpexBMonth);
+  const officeBYTD  = ytdSum(officeBMonth);
   const gpBYTD      = revBYTD - cosBYTD;
-  const ebBYTD      = gpBYTD - totOpexBYTD;
+  const ebBYTD      = gpBYTD - totOpexBYTD - officeBYTD;
   budgetActual.lines = [
     { name: 'Revenue',         budget: toM(revBYTD),     actual: toM(mgtRevA),     higherIsBetter: true  },
     { name: 'Cost of Sales',   budget: toM(cosBYTD),     actual: toM(mgtCosA),     higherIsBetter: false },
@@ -1160,8 +1174,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   // drilldown panel can follow the Monthly/Quarterly month-or-quarter selection instead of
   // always showing the full-year breakdown regardless of what's selected up top.
   budgetActual.monthlyLineDrilldowns = Array(12).fill(null).map((_, mi) => {
-    const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getMonth() === mi);
-    const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getMonth() === mi);
+    const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getUTCMonth() === mi);
+    const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getUTCMonth() === mi);
     return {
       'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES, monthBudgets),
       'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES, false, monthBudgets),
@@ -1206,7 +1220,15 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const mgtOpexA18    =  sumAccts(actuals, MGT_OPEX_I18);
     const mgtTotOpexA18 = mgtSalA18 + mgtOpexA18;
     const mgtFinA18     = MGT_FIN_I18.size > 0 ? sumAccts(actuals, MGT_FIN_I18) : finA; // row 9598
-    const mgtEbA18      = mgtGpA18 - mgtTotOpexA18;
+    // FS-IFRS 18's own row 30000 "Total OPEX" (what mgtTotOpexA18 matches, via MGT_OPEX_I18)
+    // folds Depreciation (9299) into OPEX, unlike M-MGT-RPT. But BC's own row 40000 "EBITDA"
+    // formula is 50000+9299+9598, where 50000 "Net Profit" = (20000-30000)-9598 — substituting
+    // shows EBITDA = 20000-30000+9299, i.e. Gross Profit minus Total OPEX with Depreciation
+    // added straight back. Office Shared Services Fees (8341) stays subtracted either way
+    // (same as M-MGT-RPT's own EBITDA) — only Depreciation needs adding back here. Confirmed
+    // against BC's live KFT_MGT_RPT_Lines row definitions for the FS-IFRS 18 schedule.
+    const mgtDepreciation18 = sumAccts(actuals, new Set([...MGT_OPEX_I18].filter(a => inRange(a, CONFIG.ranges.depAmort))));
+    const mgtEbA18      = mgtGpA18 - mgtTotOpexA18 + mgtDepreciation18;
     const MGT_EXP_I18   = new Set([...MGT_SAL_I18, ...MGT_OPEX_I18]);
 
     const ytdGPMgn18 = mgtRevA18 ? parseFloat((mgtGpA18 / mgtRevA18 * 100).toFixed(1)) : null;
@@ -1240,7 +1262,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       { name: 'Financial Costs', label: 'Total Other Financial Costs',         budget: toM(finB),     actual: toM(mgtFinA18),     higherIsBetter: false },
       { name: 'EBITDA',          label: 'EBITDA',                              budget: toM(ebB),      actual: toM(mgtEbA18),      higherIsBetter: true  },
       { name: 'EBITDA Margin %', label: 'EBITDA Margin %',                     budget: revB ? +(ebB / revB * 100).toFixed(1) : null, actual: ytdEBMgn18, higherIsBetter: true, isPercent: true }
-    ]};
+    ], depreciation18: toM(mgtDepreciation18) }; // used below to re-derive Net Profit from the now-true EBITDA — not a displayed line
 
     // Actual-side monthly buckets for this schedule's account sets — the budget-side
     // monthly arrays (revBMonth/cosBMonth/gpBMonth/totOpexBMonth/ebBMonth/finBMonth) are
@@ -1249,7 +1271,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const salM18 = Array(12).fill(0), opM18  = Array(12).fill(0), finM18 = Array(12).fill(0);
     actuals.forEach(x => {
       const a = String(x.accountNo);
-      const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+      const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
       if (mi < 0) return;
       if (MGT_REV_I18.has(a)) { revM18[mi] += num(x.amount); return; }
       if (MGT_COS_I18.has(a)) { cosM18[mi] += num(x.amount); return; }
@@ -1272,7 +1294,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const lastDataM18 = Array.from({ length: 12 }, (_, i) => i).reverse().find(i => hasData18(i)) ?? lm;
     const ytdSum18 = arr => arr.slice(0, lastDataM18 + 1).reduce((s, v) => s + v, 0);
     const revBYTD18 = ytdSum18(revBMonth), cosBYTD18 = ytdSum18(cosBMonth), totOpexBYTD18 = ytdSum18(totOpexBMonth);
-    const gpBYTD18 = revBYTD18 - cosBYTD18, ebBYTD18 = gpBYTD18 - totOpexBYTD18;
+    const officeBYTD18 = ytdSum18(officeBMonth);
+    const gpBYTD18 = revBYTD18 - cosBYTD18, ebBYTD18 = gpBYTD18 - totOpexBYTD18 - officeBYTD18;
     budgetActualIfrs18.lines = [
       { name: 'Revenue',         label: 'Total Revenue',                     budget: toM(revBYTD18),     actual: toM(mgtRevA18),     higherIsBetter: true  },
       { name: 'Cost of Sales',   label: 'KFT-Total Cost of Sales',           budget: toM(cosBYTD18),     actual: toM(mgtCosA18),     higherIsBetter: false },
@@ -1298,8 +1321,8 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     ]);
 
     budgetActualIfrs18.monthlyLineDrilldowns = Array(12).fill(null).map((_, mi) => {
-      const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getMonth() === mi);
-      const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getMonth() === mi);
+      const monthActuals = actuals.filter(x => x.postingDate && new Date(x.postingDate).getUTCMonth() === mi);
+      const monthBudgets = budgets.filter(x => x.budgetDate && new Date(x.budgetDate).getUTCMonth() === mi);
       return {
         'Revenue':       byRevenueLine(monthActuals, MGT_REV_LINES_I18, monthBudgets),
         'Cost of Sales': byScheduleLine(monthActuals, MGT_COS_LINES_I18, false, monthBudgets),
@@ -1322,7 +1345,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
     const dimActualMap18 = {};
     actuals.forEach(x => {
       const a = String(x.accountNo);
-      const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+      const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
       if (mi < 0) return;
       const vc = (x.globalDim1 || '').trim() || 'Unknown';
       const bu = (x.globalDim2 || '').trim() || 'Unassigned';
@@ -1366,7 +1389,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
 
   budgets.forEach(x => {
     const u  = x.globalDim2 || 'Unassigned';
-    const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+    const mi = x.budgetDate ? new Date(x.budgetDate).getUTCMonth() : -1;
     if (mi < 0) return;
     const amt = Math.abs(num(x.amount));
     if (!cbBudU[u]) cbBudU[u] = Array(12).fill(0);
@@ -1386,7 +1409,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
       inRange(a, CONFIG.ranges.salaries) || inRange(a, CONFIG.ranges.opexA) || inRange(a, CONFIG.ranges.opexB);
     if (!isExp) return;
     const u  = x.globalDim2 || 'Unassigned';
-    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
     if (mi < 0) return;
     if (!cbActU[u]) cbActU[u] = Array(12).fill(0);
     cbActU[u][mi] += num(x.amount);
@@ -1499,7 +1522,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const collByMonth = Array(12).fill(0);
   bank.forEach(x => {
     if (num(x.amount) > 0 && x.postingDate)
-      collByMonth[new Date(x.postingDate).getMonth()] += num(x.amount);
+      collByMonth[new Date(x.postingDate).getUTCMonth()] += num(x.amount);
   });
 
   let run = 0;
@@ -1841,7 +1864,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   actuals.forEach(x => {
     const a = String(x.accountNo);
     if (!(a in taxMonthlyByAcct)) return;
-    const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+    const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
     if (mi < 0) return;
     taxMonthlyByAcct[a][mi] += num(x.amount);
     const vc = (x.globalDim1 || '').trim() || 'Unknown';
@@ -1912,17 +1935,16 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
 
   // FS-IFRS 18's own margin ratios — Financial Performance 2 must NOT reuse
   // reports.ratios above unchanged: those margins are computed from the M-MGT-RPT-
-  // scoped figures, and once FS-IFRS 18 folds Depreciation + Office Shared Services
-  // into OPEX (making EBITDA go negative here — see budgetActualIfrs18.lines), showing
-  // the old schedule's still-positive EBITDA Margin % next to it would read as a bug.
-  // Current/Quick/Debt-Equity are balance-sheet ratios, schedule-independent — reused
-  // as-is. Net Margin only subtracts financial costs (not depreciation again — IFRS
-  // 18's own Net Profit formula is Operating Profit − Financial Costs, and Depreciation
-  // is already inside Operating Profit's OPEX).
+  // scoped figures. Current/Quick/Debt-Equity are balance-sheet ratios, schedule-
+  // independent — reused as-is. Net Margin subtracts Depreciation again here because
+  // `eb18` (lineVal('EBITDA')) is now the true, Depreciation-excluded EBITDA (see
+  // budgetActualIfrs18.depreciation18's own comment) — BC's own Net Profit formula is
+  // EBITDA − Depreciation − Financial Costs (row 50000 = 40000−9299−9598), not just
+  // EBITDA − Financial Costs.
   if (budgetActualIfrs18) {
     const lineVal = n => budgetActualIfrs18.lines.find(l => l.name === n)?.actual || 0;
     const rev18 = lineVal('Revenue'), gp18 = lineVal('Gross Profit'), eb18 = lineVal('EBITDA');
-    const net18 = eb18 - lineVal('Financial Costs');
+    const net18 = eb18 - (budgetActualIfrs18.depreciation18 || 0) - lineVal('Financial Costs');
     budgetActualIfrs18.ratios = [
       { label: 'Gross Margin',  value: pct(gp18, rev18),  trend: 0 },
       { label: 'EBITDA Margin', value: pct(eb18, rev18),  trend: 0 },
@@ -4048,7 +4070,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           const arr = Array(12).fill(0);
           actuals.forEach(x => {
             if (String(x.accountNo) !== acct) return;
-            const mi = x.postingDate ? new Date(x.postingDate).getMonth() : -1;
+            const mi = x.postingDate ? new Date(x.postingDate).getUTCMonth() : -1;
             if (mi >= 0) arr[mi] += num(x.amount);
           });
           return arr;
@@ -4057,7 +4079,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
           const arr = Array(12).fill(0);
           budgets.forEach(x => {
             if (String(x.accountNo) !== acct) return;
-            const mi = x.budgetDate ? new Date(x.budgetDate).getMonth() : -1;
+            const mi = x.budgetDate ? new Date(x.budgetDate).getUTCMonth() : -1;
             if (mi >= 0) arr[mi] += Math.abs(num(x.amount));
           });
           return arr;
