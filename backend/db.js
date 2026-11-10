@@ -237,6 +237,21 @@ db.exec(`
     updated_at  TEXT DEFAULT (datetime('now')),
     updated_by  TEXT
   );
+
+  -- Every tool call the AI assistant's agent loop makes (see services/ai-tools.js),
+  -- params and a short result summary (never the full result payload — keeps rows small
+  -- and avoids duplicating potentially sensitive figures at rest). The audit trail for
+  -- "what did the agent look up and for whom" — see docs/agentic-ai-roadmap.md layer 4.
+  CREATE TABLE IF NOT EXISTS ai_agent_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER,
+    tool_name      TEXT NOT NULL,
+    params_json    TEXT,
+    result_summary TEXT,
+    ok             INTEGER NOT NULL DEFAULT 1,
+    error          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // users predates the email/is_admin/must_change_password columns (four accounts were
