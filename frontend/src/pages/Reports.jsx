@@ -1,7 +1,7 @@
 import { fmtETB, fmtPct } from '../lib/fmt.js'
 
 const trendArrow = t => t === 'up' ? '↑' : t === 'down' ? '↓' : '→'
-const trendColor = t => t === 'up' ? '#2EBD85' : t === 'down' ? '#E5544B' : '#6B7C93'
+const trendColor = t => t === 'up' ? '#2E7D32' : t === 'down' ? '#D32F2F' : '#6B7780'
 
 export default function Reports({ data }) {
   const r = data.reports || {}
@@ -14,7 +14,7 @@ export default function Reports({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Reports & Ratios</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Reports & Ratios</h2>
         <p className="text-xs text-muted font-medium">Key financial ratios, P&L statement, and management report</p>
       </div>
 
@@ -30,7 +30,7 @@ export default function Reports({ data }) {
           {ratios.map(ratio => (
             <div key={ratio.label} className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">{ratio.label}</p>
-              <p className="text-2xl font-extrabold text-navy">{ratio.value}</p>
+              <p className="text-2xl font-extrabold text-ink">{ratio.value}</p>
               {ratio.trend ? (
                 <p className="text-xs font-semibold mt-1" style={{ color: trendColor(ratio.trend) }}>
                   {trendArrow(ratio.trend)} {ratio.trend === 'up' ? 'Improving' : ratio.trend === 'down' ? 'Declining' : 'Stable'}
@@ -45,7 +45,7 @@ export default function Reports({ data }) {
       {pl.length > 0 && (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Profit & Loss Statement</h3>
+            <h3 className="text-sm font-bold text-ink">Profit & Loss Statement</h3>
           </div>
           <table className="w-full text-sm">
             <tbody>
@@ -57,10 +57,10 @@ export default function Reports({ data }) {
                     key={`${row.name}-${i}`}
                     className={isHeader ? 'bg-navy/5' : isTotal ? 'bg-navy/10' : i % 2 ? 'bg-bg/50' : ''}
                   >
-                    <td className={`px-5 py-3 ${isHeader ? 'text-[10px] uppercase tracking-wider text-muted font-bold' : isTotal ? 'font-extrabold text-navy' : 'text-navy pl-8 font-medium'}`}>
+                    <td className={`px-5 py-3 ${isHeader ? 'text-[10px] uppercase tracking-wider text-muted font-bold' : isTotal ? 'font-extrabold text-ink' : 'text-ink pl-8 font-medium'}`}>
                       {row.name}
                     </td>
-                    <td className={`px-5 py-3 text-right ${isTotal ? 'font-extrabold text-navy' : 'text-navy font-semibold'}`}>
+                    <td className={`px-5 py-3 text-right ${isTotal ? 'font-extrabold text-ink' : 'text-ink font-semibold'}`}>
                       {row.value != null ? `ETB ${fmtETB(row.value, 2)}` : ''}
                     </td>
                   </tr>
@@ -75,7 +75,7 @@ export default function Reports({ data }) {
       {management.length > 0 && (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Management Report</h3>
+            <h3 className="text-sm font-bold text-ink">Management Report</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[600px]">
@@ -91,7 +91,7 @@ export default function Reports({ data }) {
               <tbody>
                 {management.map((row, i) => {
                   const vs  = parseFloat(row.vsBudget)
-                  const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
+                  const col = isNaN(vs) ? '#6B7780' : vs >= 0 ? '#2E7D32' : '#D32F2F'
                   const fmtMth = (v) => row.isPercent
                     ? (v != null && v !== 0 ? `${v.toFixed(1)}%` : '—')
                     : (v  != null && v !== 0 ? `ETB ${fmtETB(v)}` : '—')
@@ -100,10 +100,10 @@ export default function Reports({ data }) {
                     : (v  != null ? `ETB ${fmtETB(v)}` : '—')
                   return (
                     <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
-                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtMth(row.month)}</td>
+                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-ink'}`}>{row.metric}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-ink">{fmtMth(row.month)}</td>
                       <td className="px-5 py-3 text-right text-muted font-medium">{fmtMth(row.last)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtYtd(row.ytd)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-ink">{fmtYtd(row.ytd)}</td>
                       <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>
                         {isNaN(vs) ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)}%`}
                       </td>

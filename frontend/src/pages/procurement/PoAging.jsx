@@ -103,7 +103,7 @@ function Body({ proc, data }) {
       <Panel
         title={`Oldest open POs${bucket ? ` — ${bucket}` : ''}`}
         subtitle={`${fmtInt(filtered.length)} POs · showing the 40 oldest`}
-        right={bucket && <button onClick={() => setBucket(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy">Clear filter</button>}
+        right={bucket && <button onClick={() => setBucket(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-ink">Clear filter</button>}
       >
         <DrillTable
           maxHeight={420}
@@ -113,7 +113,7 @@ function Body({ proc, data }) {
             { key: 'v', label: 'Vendor', align: 'left', format: (v, r) => truncateLabel(v || r.vn, 32) },
             { key: 'st', label: 'Status' },
             { key: 'od', label: 'Ordered', format: fmtDay },
-            { key: 'age', label: 'Age (days)', color: r => (r.age > 180 ? RED : r.age > 90 ? ORANGE : '#FFFFFF') },
+            { key: 'age', label: 'Age (days)', color: r => (r.age > 180 ? RED : r.age > 90 ? ORANGE : 'var(--tbl-fg)') },
             { key: 'dd', label: 'Payment due', format: fmtDay },
             { key: 'bu', label: 'Business unit', format: v => truncateLabel(buName(v), 20) },
             { key: 'amt', label: 'Amount (ETB)', format: v => Math.round(v).toLocaleString() },

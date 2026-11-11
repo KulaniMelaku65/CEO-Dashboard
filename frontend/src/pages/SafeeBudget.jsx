@@ -7,11 +7,11 @@ import { fmtETB, fmtPct } from '../lib/fmt.js'
 import { safeeBudget as safeeBudgetApi } from '../lib/api.js'
 import PeriodToggle from '../components/PeriodToggle.jsx'
 
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
-const GREEN  = '#2EBD85'
-const RED    = '#E5544B'
+const GREEN  = '#2E7D32'
+const RED    = '#D32F2F'
 // NAVY deliberately excluded — this page's cards render on a dark-navy background in
 // dark mode, so a navy pie slice (or bar) was blending straight into it, making
 // whichever category landed on that color (e.g. "Delivery Fee") invisible.
@@ -21,8 +21,8 @@ const PIE_COLORS = [ORANGE, TEAL, GREEN, RED, '#8E5FD9', '#4A90E2', '#C9A227', '
 // — explicit hex rather than relying on index.css's bg-white dark-mode remap, so this
 // table reads as one consistent "system" with HR Analysis instead of two different
 // dark-navy tones next to each other.
-const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
-const SEC_BG = { open: '#123C46', closed: '#0C3841' }
+const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
+const SEC_BG = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-even)' }
 
 const TABS = [
   { id: 'overview',     label: 'Overview' },
@@ -51,7 +51,7 @@ function ExportButton({ onExport, label }) {
     <button
       onClick={async () => { setExporting(true); try { await onExport() } finally { setExporting(false) } }}
       disabled={exporting}
-      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-ink hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
     >
       {exporting ? 'Exporting…' : (label || '⬇ Export Excel')}
     </button>
@@ -100,7 +100,7 @@ function StatCard({ label, value, sub, accent }) {
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent || NAVY }} />
       <div className="pl-2">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1">{label}</p>
-        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        <p className="text-xl font-extrabold text-ink leading-none mb-1">{value}</p>
         {sub && <p className="text-[10px] text-muted">{sub}</p>}
       </div>
     </div>
@@ -120,7 +120,7 @@ function BudgetYearPicker({ value, onChange, years }) {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="text-xs font-bold border border-border rounded-lg px-2.5 py-1 bg-bg text-navy outline-none focus:border-navy"
+        className="text-xs font-bold border border-border rounded-lg px-2.5 py-1 bg-bg text-ink outline-none focus:border-navy"
       >
         {years?.length
           ? years.map(y => (
@@ -173,10 +173,10 @@ function CommitmentDrilldownPanel({ colSpan, label, budgetName, catCode, lineCod
         <div className="mx-4 my-2 rounded-xl border border-border overflow-hidden" style={{ background: 'rgba(0,0,0,0.18)' }}>
           <div className="flex items-start justify-between px-4 py-2.5 border-b border-border/50 gap-3">
             <div>
-              <p className="text-xs font-extrabold text-navy">{label} — utilized entries (Business Central)</p>
+              <p className="text-xs font-extrabold text-ink">{label} — utilized entries (Business Central)</p>
               <p className="text-[10px] text-muted mt-0.5">{data ? `${data.count} entr${data.count === 1 ? 'y' : 'ies'}` : '…'}</p>
             </div>
-            <button onClick={onClose} className="text-muted hover:text-navy text-base leading-none px-1.5 flex-shrink-0">×</button>
+            <button onClick={onClose} className="text-muted hover:text-ink text-base leading-none px-1.5 flex-shrink-0">×</button>
           </div>
           <div className="max-h-[260px] overflow-y-auto">
             {loading ? (
@@ -187,7 +187,7 @@ function CommitmentDrilldownPanel({ colSpan, label, budgetName, catCode, lineCod
               <p className="text-xs text-muted px-4 py-5 text-center">No utilized entries found for this line.</p>
             ) : (
               <table className="w-full text-[11px]">
-                <thead className="sticky top-0" style={{ background: '#052C36' }}>
+                <thead className="sticky top-0" style={{ background: 'var(--tbl-head-bg)' }}>
                   <tr>
                     <th className="text-left px-4 py-1.5 font-extrabold text-muted uppercase tracking-wider">Date</th>
                     <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Account</th>
@@ -196,10 +196,10 @@ function CommitmentDrilldownPanel({ colSpan, label, budgetName, catCode, lineCod
                 </thead>
                 <tbody>
                   {entries.map((e, i) => (
-                    <tr key={i} className="border-t border-border/30 hover:bg-white/5">
-                      <td className="px-4 py-1.5 text-navy whitespace-nowrap">{fmtDate(e.date)}</td>
-                      <td className="px-3 py-1.5 text-navy">{e.accountNo}{e.accountName ? ` — ${e.accountName}` : ''}</td>
-                      <td className="px-4 py-1.5 text-right font-semibold text-navy whitespace-nowrap">ETB {fmtAmt(e.amount)}</td>
+                    <tr key={i} className="border-t border-border/30 hover:bg-[#F0F7F6]">
+                      <td className="px-4 py-1.5 text-ink whitespace-nowrap">{fmtDate(e.date)}</td>
+                      <td className="px-3 py-1.5 text-ink">{e.accountNo}{e.accountName ? ` — ${e.accountName}` : ''}</td>
+                      <td className="px-4 py-1.5 text-right font-semibold text-ink whitespace-nowrap">ETB {fmtAmt(e.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -208,7 +208,7 @@ function CommitmentDrilldownPanel({ colSpan, label, budgetName, catCode, lineCod
           </div>
           {!loading && !error && entries.length > 0 && (
             <div className="flex items-center justify-end px-4 py-2 border-t border-border/50" style={{ background: 'rgba(0,0,0,0.12)' }}>
-              <p className="text-xs font-extrabold text-navy">Total: ETB {fmtAmt(data.total)}</p>
+              <p className="text-xs font-extrabold text-ink">Total: ETB {fmtAmt(data.total)}</p>
             </div>
           )}
         </div>
@@ -293,13 +293,13 @@ function CategoryTable({ categories, granularity, periods, budgetName, selMonths
               />
             ))}
             <tr className="border-t-2 border-border font-extrabold bg-bg">
-              <td className="px-4 py-2 text-navy sticky left-0 bg-bg">Total</td>
+              <td className="px-4 py-2 text-ink sticky left-0 bg-bg">Total</td>
               {!grouped ? (
                 <>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget, 4, true)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized, 4, true)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized, 4, true)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtPct(totalPctUnutil, 1)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtETB(total.budget, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtETB(total.utilized, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtETB(total.unutilized, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtPct(totalPctUnutil, 1)}</td>
                 </>
               ) : periods.map(p => {
                 const agg = categories.reduce((s, c) => {
@@ -312,10 +312,10 @@ function CategoryTable({ categories, granularity, periods, budgetName, selMonths
                 const pct = agg.budget ? (agg.unutilized / agg.budget * 100) : null
                 return (
                   <Fragment key={p.id}>
-                    <td className="px-2 py-2 text-right text-navy border-l border-border">{fmtETB(agg.budget, 4, true)}</td>
-                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.utilized, 4, true)}</td>
-                    <td className="px-2 py-2 text-right text-navy">{fmtETB(agg.unutilized, 4, true)}</td>
-                    <td className="px-2 py-2 text-right text-navy">{fmtPct(pct, 1)}</td>
+                    <td className="px-2 py-2 text-right text-ink border-l border-border">{fmtETB(agg.budget, 4, true)}</td>
+                    <td className="px-2 py-2 text-right text-ink">{fmtETB(agg.utilized, 4, true)}</td>
+                    <td className="px-2 py-2 text-right text-ink">{fmtETB(agg.unutilized, 4, true)}</td>
+                    <td className="px-2 py-2 text-right text-ink">{fmtPct(pct, 1)}</td>
                   </Fragment>
                 )
               })}
@@ -350,24 +350,24 @@ function CategoryRows({ cat, grouped, periods, periodKey, expanded, onToggleCate
   return (
     <>
       <tr style={secBg} className="cursor-pointer select-none" onClick={onToggleCategory}>
-        <td className="px-4 py-1.5 font-extrabold text-navy sticky left-0" style={secBg}>
+        <td className="px-4 py-1.5 font-extrabold text-ink sticky left-0" style={secBg}>
           <span className="inline-block w-3 mr-1 text-muted transition-transform" style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}>▸</span>
           {cat.name}
           <span className="ml-2 text-[10px] font-semibold text-muted">({cat.lines.length})</span>
         </td>
         {!grouped ? (
           <>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.budget, 4, true)}</td>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.utilized, 4, true)}</td>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtETB(cat.unutilized, 4, true)}</td>
-            <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtPct(cat.pctUnutilized, 1)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtETB(cat.budget, 4, true)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtETB(cat.utilized, 4, true)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtETB(cat.unutilized, 4, true)}</td>
+            <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtPct(cat.pctUnutilized, 1)}</td>
           </>
         ) : catByPeriod.map(p => (
           <Fragment key={p.id}>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy border-l border-border">{fmtETB(p.budget, 4, true)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(p.utilized, 4, true)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtETB(p.unutilized, 4, true)}</td>
-            <td className="px-2 py-1.5 text-right font-extrabold text-navy">{fmtPct(p.pctUnutilized, 1)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-ink border-l border-border">{fmtETB(p.budget, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-ink">{fmtETB(p.utilized, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-ink">{fmtETB(p.unutilized, 4, true)}</td>
+            <td className="px-2 py-1.5 text-right font-extrabold text-ink">{fmtPct(p.pctUnutilized, 1)}</td>
           </Fragment>
         ))}
       </tr>
@@ -384,32 +384,32 @@ function CategoryRows({ cat, grouped, periods, periodKey, expanded, onToggleCate
         return (
           <Fragment key={line.code}>
             <tr style={rowBg}>
-              <td className="px-4 py-1.5 pl-8 text-navy sticky left-0" style={rowBg}>{line.code}: {line.name}</td>
+              <td className="px-4 py-1.5 pl-8 text-ink sticky left-0" style={rowBg}>{line.code}: {line.name}</td>
               {!grouped ? (
                 <>
-                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.budget, 4, true)}</td>
+                  <td className="px-4 py-1.5 text-right text-ink">{fmtETB(line.budget, 4, true)}</td>
                   <td
-                    className={`px-4 py-1.5 text-right text-navy ${canDrill ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                    className={`px-4 py-1.5 text-right text-ink ${canDrill ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                     onClick={canDrill ? (e) => { e.stopPropagation(); onToggleDrill(`${cat.code}|${line.code}`, 'annual') } : undefined}
                     title={canDrill ? 'Click to see the Business Central entries behind this figure' : undefined}
                   >
                     {fmtETB(line.utilized, 4, true)}
                   </td>
-                  <td className="px-4 py-1.5 text-right text-navy">{fmtETB(line.unutilized, 4, true)}</td>
+                  <td className="px-4 py-1.5 text-right text-ink">{fmtETB(line.unutilized, 4, true)}</td>
                   <td className="px-4 py-1.5 text-right" style={{ color: (line.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(line.pctUnutilized, 1)}</td>
                 </>
               ) : line[periodKey].map(p => (
                 <Fragment key={p.id}>
-                  <td className="px-2 py-1.5 text-right text-navy border-l border-border">{fmtETB(p.budget, 4, true)}</td>
+                  <td className="px-2 py-1.5 text-right text-ink border-l border-border">{fmtETB(p.budget, 4, true)}</td>
                   <td
-                    className={`px-2 py-1.5 text-right text-navy ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                    className={`px-2 py-1.5 text-right text-ink ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                     onClick={budgetName ? (e) => { e.stopPropagation(); onToggleDrill(`${cat.code}|${line.code}`, p.id) } : undefined}
                     title={budgetName ? `Click to see the Business Central entries behind ${p.label}'s figure` : undefined}
                   >
                     {fmtETB(p.utilized, 4, true)}
                   </td>
-                  <td className="px-2 py-1.5 text-right text-navy">{fmtETB(p.unutilized, 4, true)}</td>
-                  <td className="px-2 py-1.5 text-right text-navy">{fmtPct(p.pctUnutilized, 1)}</td>
+                  <td className="px-2 py-1.5 text-right text-ink">{fmtETB(p.unutilized, 4, true)}</td>
+                  <td className="px-2 py-1.5 text-right text-ink">{fmtPct(p.pctUnutilized, 1)}</td>
                 </Fragment>
               ))}
             </tr>
@@ -452,18 +452,18 @@ function InterventionTable({ interventions, budgetName, selMonths, team }) {
             return (
               <Fragment key={i.code}>
                 <tr style={{ background: idx % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
-                  <td className="px-4 py-2 font-semibold text-navy">
+                  <td className="px-4 py-2 font-semibold text-ink">
                     <span className="text-muted mr-1">{i.code}</span>{i.name}
                   </td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.budget, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtETB(i.budget, 4, true)}</td>
                   <td
-                    className={`px-4 py-2 text-right text-navy ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                    className={`px-4 py-2 text-right text-ink ${budgetName ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                     onClick={budgetName ? () => setOpenIntervention(open ? null : i.code) : undefined}
                     title={budgetName ? 'Click to see the Business Central entries behind this figure' : undefined}
                   >
                     {fmtETB(i.utilized, 4, true)}
                   </td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtETB(i.unutilized, 4, true)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtETB(i.unutilized, 4, true)}</td>
                   <td className="px-4 py-2 text-right" style={{ color: (i.pctUnutilized || 0) > 50 ? RED : GREEN }}>{fmtPct(i.pctUnutilized, 1)}</td>
                 </tr>
                 {open && (
@@ -478,11 +478,11 @@ function InterventionTable({ interventions, budgetName, selMonths, team }) {
             )
           })}
           <tr className="border-t-2 border-border font-extrabold bg-bg">
-            <td className="px-4 py-2 text-navy">Total</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.budget, 4, true)}</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.utilized, 4, true)}</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtETB(total.unutilized, 4, true)}</td>
-            <td className="px-4 py-2 text-right text-navy">{fmtPct(total.budget ? total.unutilized / total.budget * 100 : null, 1)}</td>
+            <td className="px-4 py-2 text-ink">Total</td>
+            <td className="px-4 py-2 text-right text-ink">{fmtETB(total.budget, 4, true)}</td>
+            <td className="px-4 py-2 text-right text-ink">{fmtETB(total.utilized, 4, true)}</td>
+            <td className="px-4 py-2 text-right text-ink">{fmtETB(total.unutilized, 4, true)}</td>
+            <td className="px-4 py-2 text-right text-ink">{fmtPct(total.budget ? total.unutilized / total.budget * 100 : null, 1)}</td>
           </tr>
         </tbody>
       </table>
@@ -566,7 +566,7 @@ export default function SafeeBudget() {
       {/* Header row: title + Select Budget */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">SAFEE Budget Analysis</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">SAFEE Budget Analysis</h2>
           <p className="text-xs text-muted font-medium">Programme budget vs. utilization · source: Business Central</p>
         </div>
       </div>
@@ -603,7 +603,7 @@ export default function SafeeBudget() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap"
-              style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
+              style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7780' }}
             >
               {t.label}
             </button>
@@ -611,7 +611,7 @@ export default function SafeeBudget() {
         </div>
         {tab === 'activity' && yearDetail && (
           <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-            <select value={team} onChange={e => setTeam(e.target.value)} title="Program Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy flex-shrink-0">
+            <select value={team} onChange={e => setTeam(e.target.value)} title="Program Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-ink outline-none focus:border-navy flex-shrink-0">
               <option value="">Program: All</option>
               {Object.entries(
                 yearDetail.filters.teams.reduce((groups, t) => {
@@ -624,12 +624,12 @@ export default function SafeeBudget() {
                 </optgroup>
               ))}
             </select>
-            <select value={intervention} onChange={e => setIntervention(e.target.value)} title="Intervention Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-navy outline-none focus:border-navy flex-shrink-0">
+            <select value={intervention} onChange={e => setIntervention(e.target.value)} title="Intervention Filter" className="text-xs font-bold border border-border rounded-lg px-2.5 py-1.5 bg-bg text-ink outline-none focus:border-navy flex-shrink-0">
               <option value="">Intervention: All</option>
               {yearDetail.filters.interventions.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}
             </select>
             {(team || intervention) && (
-              <button onClick={() => { setTeam(''); setIntervention('') }} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors flex-shrink-0 whitespace-nowrap">
+              <button onClick={() => { setTeam(''); setIntervention('') }} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors flex-shrink-0 whitespace-nowrap">
                 Clear filters
               </button>
             )}
@@ -661,14 +661,14 @@ export default function SafeeBudget() {
               { title: '5 Year Budget vs Yearly Unutilized', key: 'Unutilized', ref: 'Budget', color: RED },
             ].map(chart => (
               <div key={chart.title} className="bg-white rounded-2xl border border-border p-5 shadow-card">
-                <h3 className="text-sm font-bold text-navy mb-3">{chart.title}</h3>
+                <h3 className="text-sm font-bold text-ink mb-3">{chart.title}</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={overviewChartData} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-                    <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC' }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+                    <Legend wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
                     <Bar dataKey={chart.ref} fill={`${TEAL}30`} radius={[3, 3, 0, 0]} />
                     <Bar dataKey={chart.key} fill={chart.color} radius={[3, 3, 0, 0]} />
                   </BarChart>
@@ -691,26 +691,26 @@ export default function SafeeBudget() {
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-              <h3 className="text-sm font-bold text-navy mb-3">Budget Categories Allocation</h3>
+              <h3 className="text-sm font-bold text-ink mb-3">Budget Categories Allocation</h3>
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
                   <Pie data={categories} dataKey="budget" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={1}>
                     {categories.map((c, i) => <Cell key={c.code} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-                  <Legend wrapperStyle={{ fontSize: 10, color: "#6B7C93" }} layout="vertical" align="right" verticalAlign="middle" />
+                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+                  <Legend wrapperStyle={{ fontSize: 10, color: "#6B7780" }} layout="vertical" align="right" verticalAlign="middle" />
                 </PieChart>
               </ResponsiveContainer>
             </div>
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-              <h3 className="text-sm font-bold text-navy mb-3">Budget Amount vs Unutilized</h3>
+              <h3 className="text-sm font-bold text-ink mb-3">Budget Amount vs Unutilized</h3>
               <ResponsiveContainer width="100%" height={340}>
                 <BarChart data={categories} margin={{ top: 24, right: 8, left: 20, bottom: 90 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={90} />
-                  <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-                  <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={90} />
+                  <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 10 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+                  <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
                   <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                   <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
                 </BarChart>
@@ -725,41 +725,41 @@ export default function SafeeBudget() {
       {tab === 'intervention' && !loading && !error && totals && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Budget by Category Description</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Budget by Category Description</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={categories} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-                <XAxis type="number" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={150} />
-                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+                <XAxis type="number" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={150} />
+                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
                 <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Budget and % Unutilized by Intervention</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Budget and % Unutilized by Intervention</h3>
             <ResponsiveContainer width="100%" height={340}>
               <BarChart data={interventions} margin={{ top: 24, right: 8, left: 20, bottom: 80 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
-                <YAxis yAxisId="l" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="r" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
+                <YAxis yAxisId="l" tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="r" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
                 <Bar yAxisId="l" dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar yAxisId="r" dataKey="pctUnutilized" name="% Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card xl:col-span-2">
-            <h3 className="text-sm font-bold text-navy mb-3">Budget vs Unutilized by Intervention</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Budget vs Unutilized by Intervention</h3>
             <ResponsiveContainer width="100%" height={320}>
               <BarChart data={interventions} margin={{ top: 24, right: 8, left: 20, bottom: 80 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
-                <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+                <XAxis dataKey="code" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={80} />
+                <YAxis tickFormatter={fmtETB} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+                <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
                 <Bar dataKey="budget" name="Budget" fill={TEAL} radius={[3, 3, 0, 0]} />
                 <Bar dataKey="unutilized" name="Unutilized" fill={RED} radius={[3, 3, 0, 0]} />
               </BarChart>

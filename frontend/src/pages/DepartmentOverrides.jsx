@@ -6,17 +6,17 @@ import { departmentOverrides, budgetSourceOverrides as bsOverrideApi, payrollCur
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 import { compareByTitleRank } from '../lib/titleRank.js'
 
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
-const RED    = '#E5544B'
+const RED    = '#D32F2F'
 // Same dark-theme row backgrounds as HR Analysis — this page is a structural replica
 // of it (same hierarchy table, same KPI cards, same cost columns) with department
 // reassignment added at the employee row via the Action column.
-const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
-const SEC_BG = { open: '#123C46', closed: '#0C3841' }
-const JT_BG  = { open: '#123C46', closed: '#0A3540' }
-const EMP_ROW_BG = '#0F3D46'
+const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
+const SEC_BG = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-even)' }
+const JT_BG  = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-sub2)' }
+const EMP_ROW_BG = 'var(--tbl-row-sub2)'
 
 const fmtN   = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US')
 const fmtC   = (n) => (!n && n !== 0) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -30,9 +30,9 @@ function KpiBlock({ label, value, sub, accent, small, onClick }) {
       className={`flex flex-col justify-between p-4 rounded-xl text-left w-full ${onClick ? 'cursor-pointer hover:brightness-110 transition-[filter]' : ''}`}
       style={{ background: accent || NAVY }}
     >
-      <p className="text-[9px] uppercase tracking-widest font-bold text-white/60 leading-tight">{label}</p>
+      <p className="text-[9px] uppercase tracking-widest font-bold text-white/70 leading-tight">{label}</p>
       <p className={`font-extrabold text-white leading-none mt-2 tabular-nums ${small ? 'text-[18px]' : 'text-[22px]'}`}>{value}</p>
-      {sub && <p className="text-[10px] text-white/50 mt-1 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-white/60 mt-1 truncate">{sub}</p>}
     </Tag>
   )
 }
@@ -481,7 +481,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Organization Mapping</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">Organization Mapping</h2>
           <p className="text-xs text-muted font-medium">
             Review and manage employee organization mappings by business unit, section,
             job title, and employee. Department changes are dashboard-only and preserved
@@ -498,7 +498,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       </div>
 
       {busy && (
-        <div className="px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 text-navy" style={{ background: 'rgba(31,182,166,0.12)' }}>
+        <div className="px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 text-ink" style={{ background: 'rgba(31,182,166,0.12)' }}>
           <div className="w-3.5 h-3.5 rounded-full border-2 animate-spin flex-shrink-0" style={{ borderColor: `${TEAL}44`, borderTopColor: TEAL }} />
           Applying change and resyncing dashboard data — usually 10–20 seconds…
         </div>
@@ -537,7 +537,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3">
-          <h3 className="text-sm font-bold text-navy">Monthly Cost by Business Unit &amp; Virtual Company</h3>
+          <h3 className="text-sm font-bold text-ink">Monthly Cost by Business Unit &amp; Virtual Company</h3>
           <p className="text-[10px] text-muted mt-0.5">
             {effectiveMonth} · {tableRows.length} business units · click to drill into section → job title → employee
           </p>
@@ -545,15 +545,15 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 620 }}>
           <table className="text-[11px] border-collapse w-full" style={{ minWidth: 980 }}>
             <thead className="sticky top-0 z-10">
-              <tr style={{ background: NAVY }}>
-                <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[240px]" style={{ background: NAVY }}>Business Unit / Section / Job Title / Employee</th>
-                <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px]">Head Count</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Corporate</th>
+              <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
+                <th className="text-left px-4 py-3 font-bold text-ink sticky left-0 z-20 min-w-[240px]" style={{ background: 'var(--tbl-head-bg)' }}>Business Unit / Section / Job Title / Employee</th>
+                <th className="px-4 py-3 font-bold text-ink text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[80px]">Head Count</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#3D7FA6' }}>Corporate</th>
                 <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: ORANGE }}>Programme</th>
-                <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[220px]">Action</th>
+                <th className="px-4 py-3 font-bold text-ink text-left whitespace-nowrap min-w-[220px]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -567,8 +567,8 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                 return (
                   <Fragment key={buKey}>
                     {/* Level 1: Business Unit */}
-                    <tr className="border-t border-border cursor-pointer hover:bg-white/5 transition-colors" style={{ background: buBg }} onClick={() => toggleRow(buKey)}>
-                      <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: buBg }}>
+                    <tr className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors" style={{ background: buBg }} onClick={() => toggleRow(buKey)}>
+                      <td className="px-4 py-2.5 font-semibold text-ink sticky left-0 z-10" style={{ background: buBg }}>
                         <span className="inline-flex items-center gap-1.5">
                           <span className="text-[10px] text-muted w-3">{buOpen ? '▾' : '▸'}</span>
                           {row.buName || row.buCode}
@@ -576,8 +576,8 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                         </span>
                       </td>
                       <td className="px-4 py-2.5"><span className="text-[10px] font-semibold text-muted">{row.vcLabel}</span></td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{row.headcount || '—'}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{fmtC(row.monthly || null)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">{row.headcount || '—'}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">{fmtC(row.monthly || null)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-muted">{fmtPct(buPct)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: TEAL }}>{fmtC(row.kifiya || null)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: ORANGE }}>{fmtC(row.safee || null)}</td>
@@ -601,12 +601,12 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                           >
                             <td className="pl-8 pr-4 py-2 sticky left-0 z-10" style={{ background: secBg }}>
                               <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: TEAL }}>{secOpen ? '▾' : '▸'}</span>
-                              <span className="font-semibold text-navy">{sec.sectionName}</span>
+                              <span className="font-semibold text-ink">{sec.sectionName}</span>
                               <span className="ml-1.5 text-[9px] text-muted">({sec.jobTitles.length} title{sec.jobTitles.length !== 1 ? 's' : ''})</span>
                             </td>
                             <td className="px-4 py-2" />
-                            <td className="px-4 py-2 text-right tabular-nums text-navy">{sec.headcount || '—'}</td>
-                            <td className="px-4 py-2 text-right tabular-nums text-navy">{fmtC(sec.monthly || null)}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-ink">{sec.headcount || '—'}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-ink">{fmtC(sec.monthly || null)}</td>
                             <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtPct(secPct)}</td>
                             <td className="px-4 py-2 text-right tabular-nums" style={{ color: TEAL }}>{fmtC(sec.kifiya || null)}</td>
                             <td className="px-4 py-2 text-right tabular-nums" style={{ color: ORANGE }}>{fmtC(sec.safee || null)}</td>
@@ -624,12 +624,12 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                 <tr className="cursor-pointer border-t border-border/30 transition-colors" style={{ background: jtBg }} onClick={() => toggleJobTitle(jtKey)}>
                                   <td className="pl-14 pr-4 py-1.5 sticky left-0 z-10" style={{ background: jtBg }}>
                                     <span className="inline-block w-4 text-[8px] font-extrabold text-muted">{jtOpen ? '▾' : '▸'}</span>
-                                    <span className="font-medium text-navy text-[10.5px]">{jt.jobTitle}</span>
+                                    <span className="font-medium text-ink text-[10.5px]">{jt.jobTitle}</span>
                                     <span className="ml-1.5 text-[9px] text-muted">({jt.employees.length})</span>
                                   </td>
                                   <td className="px-4 py-1.5" />
-                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{jt.headcount || '—'}</td>
-                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{fmtC(jt.monthly || null)}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-ink">{jt.headcount || '—'}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-ink">{fmtC(jt.monthly || null)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-muted">{fmtPct(jtPct)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: TEAL }}>{fmtC(jt.kifiya || null)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: ORANGE }}>{fmtC(jt.safee || null)}</td>
@@ -647,7 +647,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                   const pctEmp = jt.monthly > 0 ? (total / jt.monthly) * 100 : 0
                                   return (
                                     <tr key={emp.employeeNo} className="border-t border-border/20" style={{ background: EMP_ROW_BG }}>
-                                      <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
+                                      <td className="pl-20 pr-4 py-1.5 font-medium text-ink sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
                                         {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
                                         {emp.employeeStatus && !emp.isCountable && (
                                           <span className="ml-1.5 text-[8px] font-bold px-1 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">{emp.employeeStatus}</span>
@@ -671,7 +671,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                           <button
                                             onClick={() => startEdit(emp)}
                                             disabled={busy}
-                                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-border text-navy hover:border-navy transition-colors disabled:opacity-40"
+                                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-border text-ink hover:border-navy transition-colors disabled:opacity-40"
                                           >
                                             Change Department
                                           </button>
@@ -680,7 +680,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                             <select
                                               value={targetSection}
                                               onChange={e => setTarget(e.target.value)}
-                                              className="text-[10px] rounded-lg px-2 py-1 bg-white text-navy border border-border"
+                                              className="text-[10px] rounded-lg px-2 py-1 bg-white text-ink border border-border"
                                               style={{ minWidth: 180 }}
                                             >
                                               {Object.entries(groupedSections).map(([buName, opts]) => (
@@ -697,7 +697,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                           <button
                                             onClick={() => startEditSource(emp)}
                                             disabled={busy}
-                                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-border text-navy hover:border-navy transition-colors disabled:opacity-40"
+                                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-border text-ink hover:border-navy transition-colors disabled:opacity-40"
                                           >
                                             Change Budget Source
                                           </button>
@@ -706,7 +706,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                                             <select
                                               value={targetBudgetSource}
                                               onChange={e => setTargetBudgetSource(e.target.value)}
-                                              className="text-[10px] rounded-lg px-2 py-1 bg-white text-navy border border-border"
+                                              className="text-[10px] rounded-lg px-2 py-1 bg-white text-ink border border-border"
                                               style={{ minWidth: 140 }}
                                             >
                                               <option value="" disabled>Choose…</option>
@@ -734,13 +734,13 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
             </tbody>
             {tableRows.length > 0 && (
               <tfoot className="sticky bottom-0 z-10">
-                <tr style={{ background: NAVY }}>
-                  <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: NAVY }}>Total</td>
-                  <td className="px-4 py-3 text-white/50 text-[10px]">{tableRows.length} rows</td>
-                  <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtN(grandHeadcount)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtC(grandMonthly || null)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-white">100%</td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#90D4CE' }}>{fmtC(grandKifiya || null)}</td>
+                <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
+                  <td className="px-4 py-3 font-extrabold text-ink sticky left-0 z-20" style={{ background: 'var(--tbl-head-bg)' }}>Total</td>
+                  <td className="px-4 py-3 text-muted text-[10px]">{tableRows.length} rows</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink tabular-nums">{fmtN(grandHeadcount)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink tabular-nums">{fmtC(grandMonthly || null)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink">100%</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#3D7FA6' }}>{fmtC(grandKifiya || null)}</td>
                   <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: ORANGE }}>{fmtC(grandSafee || null)}</td>
                   <td className="px-4 py-3" />
                 </tr>
@@ -753,7 +753,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       {/* ── Active overrides — audit trail + revert ── */}
       <div ref={overridesPanelRef} className="bg-white rounded-2xl border border-border shadow-card overflow-hidden scroll-mt-4">
         <div className="px-5 pt-5 pb-3 border-b border-border">
-          <h3 className="text-sm font-bold text-navy">Active Overrides {overrides.length > 0 && `(${overrides.length})`}</h3>
+          <h3 className="text-sm font-bold text-ink">Active Overrides {overrides.length > 0 && `(${overrides.length})`}</h3>
           <p className="text-[10px] text-muted mt-0.5">Reverting removes the override — the employee goes back to whatever Business Central reports on the next sync.</p>
         </div>
         {loadingOv ? (
@@ -769,7 +769,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                 <Fragment key={o.employee_no}>
                   <div className="px-5 py-3 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold truncate text-navy">{o.employee_name || o.employee_no}</p>
+                      <p className="text-xs font-bold truncate text-ink">{o.employee_name || o.employee_no}</p>
                       <p className="text-[10px] mt-0.5 text-muted">
                         {dimensionNames[o.from_section] || o.from_section || 'Unknown'} → <span style={{ color: TEAL, fontWeight: 700 }}>{dimensionNames[o.section_code] || o.section_code}</span>
                       </p>
@@ -777,7 +777,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                     </div>
                     <button
                       onClick={() => toggleHistory(o.employee_no)}
-                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy transition-colors"
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-ink transition-colors"
                     >
                       {isOpen ? 'Hide history' : 'History'}
                     </button>
@@ -799,7 +799,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                       ) : (
                         <ul className="space-y-1.5 py-2">
                           {history.map((h, i) => (
-                            <li key={i} className="text-[11px] text-navy flex flex-wrap items-center gap-1">
+                            <li key={i} className="text-[11px] text-ink flex flex-wrap items-center gap-1">
                               <span className="font-bold" style={{ color: h.action === 'revert' ? RED : TEAL }}>
                                 {h.action === 'revert' ? 'Reverted' : 'Set'}
                               </span>
@@ -823,7 +823,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       {/* ── Active budget source overrides — audit trail + revert ── */}
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3 border-b border-border">
-          <h3 className="text-sm font-bold text-navy">Active Budget Source Overrides {bsOverrides.length > 0 && `(${bsOverrides.length})`}</h3>
+          <h3 className="text-sm font-bold text-ink">Active Budget Source Overrides {bsOverrides.length > 0 && `(${bsOverrides.length})`}</h3>
           <p className="text-[10px] text-muted mt-0.5">
             Relabels which book (Corporate/KIFIYA or Programme/SAFEE) this employee's payroll and pension count under on the dashboard — doesn't change Business Central's own payroll records.
             Reverting removes the override — the employee goes back to whichever book BC's payroll rows actually belong to on the next sync.
@@ -842,7 +842,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                 <Fragment key={o.employee_no}>
                   <div className="px-5 py-3 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold truncate text-navy">{o.employee_name || o.employee_no}</p>
+                      <p className="text-xs font-bold truncate text-ink">{o.employee_name || o.employee_no}</p>
                       <p className="text-[10px] mt-0.5 text-muted">
                         {BUDGET_SOURCE_LABEL[o.from_source] || o.from_source || 'Unknown'} → <span style={{ color: ORANGE, fontWeight: 700 }}>{BUDGET_SOURCE_LABEL[o.budget_source] || o.budget_source}</span>
                       </p>
@@ -850,7 +850,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                     </div>
                     <button
                       onClick={() => toggleBsHistory(o.employee_no)}
-                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy transition-colors"
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-ink transition-colors"
                     >
                       {isOpen ? 'Hide history' : 'History'}
                     </button>
@@ -872,7 +872,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
                       ) : (
                         <ul className="space-y-1.5 py-2">
                           {history.map((h, i) => (
-                            <li key={i} className="text-[11px] text-navy flex flex-wrap items-center gap-1">
+                            <li key={i} className="text-[11px] text-ink flex flex-wrap items-center gap-1">
                               <span className="font-bold" style={{ color: h.action === 'revert' ? RED : ORANGE }}>
                                 {h.action === 'revert' ? 'Reverted' : 'Set'}
                               </span>
@@ -899,7 +899,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
       {canManageCurrency && (
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3 border-b border-border">
-          <h3 className="text-sm font-bold text-navy">Payroll Currency Corrections {ccCorrections.length > 0 && `(${ccCorrections.length})`}</h3>
+          <h3 className="text-sm font-bold text-ink">Payroll Currency Corrections {ccCorrections.length > 0 && `(${ccCorrections.length})`}</h3>
           <p className="text-[10px] text-muted mt-0.5">
             For when Business Central posts a payroll voucher with the wrong currency tag (e.g. an ETB payment mistakenly marked USD) and the
             amount then gets multiplied by an exchange rate it shouldn't. Corrects how the dashboard reads that one voucher — doesn't change
@@ -915,22 +915,22 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
           <div className="flex flex-col gap-1">
             <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Voucher No</label>
             <input value={ccForm.voucherNo} onChange={e => setCcForm(f => ({ ...f, voucherNo: e.target.value }))}
-              placeholder="PPV03541" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 120 }} />
+              placeholder="PPV03541" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-ink border border-border" style={{ width: 120 }} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Employee No</label>
             <input value={ccForm.employeeNo} onChange={e => setCcForm(f => ({ ...f, employeeNo: e.target.value }))}
-              placeholder="KFT1551" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 110 }} />
+              placeholder="KFT1551" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-ink border border-border" style={{ width: 110 }} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Employee Name</label>
             <input value={ccForm.employeeName} onChange={e => setCcForm(f => ({ ...f, employeeName: e.target.value }))}
-              placeholder="Optional" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 160 }} />
+              placeholder="Optional" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-ink border border-border" style={{ width: 160 }} />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Correct Currency</label>
             <select value={ccForm.correctCurrency} onChange={e => setCcForm(f => ({ ...f, correctCurrency: e.target.value }))}
-              className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border" style={{ width: 90 }}>
+              className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-ink border border-border" style={{ width: 90 }}>
               <option value="ETB">ETB</option>
               <option value="USD">USD</option>
             </select>
@@ -938,7 +938,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
           <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 180 }}>
             <label className="text-[9px] font-bold uppercase tracking-wide text-muted">Note (optional)</label>
             <input value={ccForm.note} onChange={e => setCcForm(f => ({ ...f, note: e.target.value }))}
-              placeholder="Why this voucher's tag is wrong" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-navy border border-border w-full" />
+              placeholder="Why this voucher's tag is wrong" className="text-[11px] rounded-lg px-2.5 py-1.5 bg-white text-ink border border-border w-full" />
           </div>
           <button type="submit" disabled={ccBusy} className="text-[11px] font-bold px-3.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: ORANGE }}>
             Add Correction
@@ -955,7 +955,7 @@ export default function DepartmentOverrides({ data, onDataRefresh, currentUser }
             {ccCorrections.map(c => (
               <div key={c.voucher_no} className="px-5 py-3 flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate text-navy">
+                  <p className="text-xs font-bold truncate text-ink">
                     {c.voucher_no} <span className="font-normal text-muted">· {c.employee_name || c.employee_no} ({c.employee_no})</span>
                   </p>
                   <p className="text-[10px] mt-0.5 text-muted">

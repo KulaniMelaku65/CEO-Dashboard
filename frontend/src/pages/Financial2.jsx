@@ -40,7 +40,7 @@ function MultiSelect({ label, options, selected, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">{label}</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <span className="truncate">{summary}</span>
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -49,13 +49,13 @@ function MultiSelect({ label, options, selected, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
           <button
             onClick={() => onChange([])}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             All {selected.length === 0 && <span>✓</span>}
           </button>
           <div className="border-t border-border my-1" />
           {options.map(o => (
-            <label key={o.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
+            <label key={o.value} className="flex items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-[#F0F7F6] cursor-pointer">
               <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="truncate">{o.label}</span>
             </label>
@@ -132,7 +132,7 @@ function PeriodTree({ mData, selected, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Filter by Period</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -141,7 +141,7 @@ function PeriodTree({ mData, selected, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-80 overflow-y-auto">
           <button
             onClick={() => onChange([])}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             YTD (all) {selected.length === 0 && <span>✓</span>}
           </button>
@@ -155,7 +155,7 @@ function PeriodTree({ mData, selected, onChange }) {
                 >
                   {expanded.has(qt.q) ? '−' : '+'}
                 </button>
-                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-navy cursor-pointer">
+                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-ink cursor-pointer">
                   <input
                     type="checkbox"
                     checked={qt.state === 'all'}
@@ -169,7 +169,7 @@ function PeriodTree({ mData, selected, onChange }) {
               {expanded.has(qt.q) && (
                 <div className="pl-9">
                   {qt.months.map(i => (
-                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
+                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-ink hover:bg-[#F0F7F6] cursor-pointer">
                       <input type="checkbox" checked={selected.includes(i)} onChange={() => toggleMonth(i)} className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate">{mData[i]?.label}</span>
                     </label>
@@ -218,7 +218,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Compare To</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -227,7 +227,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
           <button
             onClick={() => { onChange(null); setOpen(false) }}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             <span className="truncate">{autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'}</span>
             {value == null && <span>✓</span>}
@@ -237,7 +237,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
             <button
               key={o.value}
               onClick={() => { onChange(o.value); setOpen(false) }}
-              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6]"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-ink hover:bg-[#F0F7F6]"
             >
               <span className="truncate">{o.label}</span>
               {value === o.value && <span>✓</span>}
@@ -250,15 +250,15 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
 }
 
 const LINE_COLORS = {
-  Revenue:          '#02404F',
-  'Cost of Sales':  '#E5544B',
-  'Gross Profit':   '#1FB6A6',
-  'Gross Margin %': '#1FB6A6',
+  Revenue:          '#0F5565',
+  'Cost of Sales':  '#D32F2F',
+  'Gross Profit':   '#12707F',
+  'Gross Margin %': '#12707F',
   OPEX:             '#8E5FD9',
   Expenses:         '#EB7D23',
   'Financial Costs':'#C9556B',
-  EBITDA:           '#2EBD85',
-  'EBITDA Margin %':'#2EBD85',
+  EBITDA:           '#2E7D32',
+  'EBITDA Margin %':'#2E7D32',
 }
 
 // Hidden for now — not currently wanted on this page. Underlying data/logic is left
@@ -271,12 +271,12 @@ const SHOW_BU_UTILIZATION    = false // "Budget Utilization by Business Unit"
 const SHOW_REVENUE_BY_BANK   = false // "Revenue by Partner Bank — YTD (ETB)"
 const SHOW_MONTH_CALLOUT     = false // "{Month} — Revenue vs Budget / Monthly Budget / Attainment / vs Budget" bar
 
-const NAVY = '#02404F'
+const NAVY = '#0F5565'
 // Same dark zebra-stripe colors as the HR Analysis table — explicit backgrounds instead
-// of relying on the light bg-bg/#F4F6FA classes to get repainted for the dark theme,
+// of relying on the light bg-bg/#F7F9FA classes to get repainted for the dark theme,
 // which is exactly what left the drilldown table's header unreadable (white-ish text
 // over an inline light-gray background the theme repaint can't reach).
-const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
+const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
 
 // One Budget/Actual/Variance/% table, reused for every drilldown section — "OPEX"
 // shows three of these stacked (by Business Unit, HR salaries by department, OPEX by
@@ -290,7 +290,7 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
     const variance = (row.actual || 0) - (row.budget || 0)
     const good = higherIsBetterHere ? variance >= 0 : variance <= 0
     const pct = row.budget ? (row.actual / row.budget) * 100 : 0
-    return { variance, pct, color: good ? '#2EBD85' : '#E5544B' }
+    return { variance, pct, color: good ? '#2E7D32' : '#D32F2F' }
   }
   const priorMap = priorRows ? new Map(priorRows.map(p => [p.unit, p])) : null
   const priorStat = (row) => {
@@ -299,16 +299,16 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
     if (priorActual === 0) return null
     const growth = ((row.actual - priorActual) / Math.abs(priorActual)) * 100
     const good = higherIsBetterHere ? growth >= 0 : growth <= 0
-    return { growth, color: good ? '#2EBD85' : '#E5544B' }
+    return { growth, color: good ? '#2E7D32' : '#D32F2F' }
   }
   const headers = priorMap ? ['Description', 'Budget', 'Actual', 'Variance', '%', `vs ${priorLabel}`] : ['Description', 'Budget', 'Actual', 'Variance', '%']
   return (
     <div className="overflow-x-auto -mx-5 px-5 rounded-xl">
       <table className="w-full text-sm min-w-[460px]">
         <thead>
-          <tr style={{ background: NAVY }}>
+          <tr style={{ background: 'var(--tbl-head-bg)' }}>
             {headers.map((h, i) => (
-              <th key={h} className={`py-2.5 px-3 text-[10px] font-bold text-white/70 uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
+              <th key={h} className={`py-2.5 px-3 text-[10px] font-bold uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`} style={{ color: 'var(--tbl-head-fg)', borderBottom: '1px solid var(--tbl-line)' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -323,18 +323,18 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
             const parentRow = (
               <tr
                 key={r.unit}
-                style={{ background: rowBg }}
+                style={{ background: rowBg, borderBottom: '1px solid var(--tbl-line)' }}
                 className={hasChildren ? 'cursor-pointer' : undefined}
                 onClick={hasChildren ? () => setExpandedRow(o => o === r.unit ? null : r.unit) : undefined}
               >
                 <td className="py-2.5 px-3">
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    {hasChildren && <span className="text-white/50 w-2.5 inline-block">{isOpen ? '▾' : '▸'}</span>}
+                  <span className="text-xs font-bold text-ink flex items-center gap-1.5">
+                    {hasChildren && <span className="text-muted w-2.5 inline-block">{isOpen ? '▾' : '▸'}</span>}
                     {getName(r.unit)}
                   </span>
                 </td>
-                <td className="py-2.5 px-3 text-right font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(r.budget || 0), 2)}</td>
-                <td className="py-2.5 px-3 text-right font-bold" style={{ color: neg ? '#E5544B' : '#FFFFFF' }}>
+                <td className="py-2.5 px-3 text-right font-medium" style={{ color: 'var(--tbl-fg-muted)' }}>{fmtETB(Math.abs(r.budget || 0), 2)}</td>
+                <td className="py-2.5 px-3 text-right font-bold" style={{ color: neg ? '#D32F2F' : 'var(--tbl-fg)' }}>
                   {neg ? '-' : ''}{fmtETB(Math.abs(r.actual), 2)}
                 </td>
                 <td className="py-2.5 px-3 text-right font-semibold" style={{ color }}>
@@ -351,7 +351,7 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
                       <span className="text-[11px] font-extrabold" style={{ color: prior.color }}>
                         {prior.growth >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(prior.growth), 0)}
                       </span>
-                    ) : <span className="text-[11px] text-white/40">—</span>}
+                    ) : <span className="text-[11px] text-muted">—</span>}
                   </td>
                 )}
               </tr>
@@ -361,10 +361,10 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
               const cNeg = c.actual < 0
               const { variance: cVariance, pct: cPct, color: cColor } = rowStat(c)
               return (
-                <tr key={c.unit} style={{ background: '#123C46' }}>
-                  <td className="py-2 pl-8 pr-3 text-[11px] font-semibold text-white">{getName(c.unit)}</td>
-                  <td className="py-2 px-3 text-right text-[11px] font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>{fmtETB(Math.abs(c.budget || 0), 2)}</td>
-                  <td className="py-2 px-3 text-right text-[11px] font-bold" style={{ color: cNeg ? '#E5544B' : '#FFFFFF' }}>
+                <tr key={c.unit} style={{ background: 'var(--tbl-row-sub)' }}>
+                  <td className="py-2 pl-8 pr-3 text-[11px] font-semibold text-ink">{getName(c.unit)}</td>
+                  <td className="py-2 px-3 text-right text-[11px] font-medium" style={{ color: 'var(--tbl-fg-muted)' }}>{fmtETB(Math.abs(c.budget || 0), 2)}</td>
+                  <td className="py-2 px-3 text-right text-[11px] font-bold" style={{ color: cNeg ? '#D32F2F' : 'var(--tbl-fg)' }}>
                     {cNeg ? '-' : ''}{fmtETB(Math.abs(c.actual), 2)}
                   </td>
                   <td className="py-2 px-3 text-right text-[11px] font-semibold" style={{ color: cColor }}>
@@ -375,7 +375,7 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
                       {fmtPct(cPct, 0)}
                     </span>
                   </td>
-                  {priorMap && <td className="py-2 px-3 text-right text-[11px] text-white/40">—</td>}
+                  {priorMap && <td className="py-2 px-3 text-right text-[11px] text-muted">—</td>}
                 </tr>
               )
             })
@@ -390,7 +390,7 @@ function DrilldownTable({ rows, higherIsBetterHere, getName, expandedRow, setExp
 function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
   const pct   = line.budget ? (line.actual / line.budget) * 100 : 0
   const good  = line.higherIsBetter ? pct >= 100 : pct <= 100
-  const color = good ? '#2EBD85' : line.higherIsBetter ? '#E5544B' : '#EB7D23'
+  const color = good ? '#2E7D32' : line.higherIsBetter ? '#D32F2F' : '#EB7D23'
   const diff  = line.actual - line.budget
 
   // MoM/QoQ growth — only meaningful when a prior period is well-defined (a single
@@ -406,7 +406,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
       onClick={onClick}
       className="group bg-white rounded-2xl p-4 border text-left overflow-hidden relative transition-all hover:shadow-lg active:scale-[.98] w-full"
       style={{
-        borderColor: selected ? color : '#E3E9F2',
+        borderColor: selected ? color : '#E6E9EC',
         boxShadow: selected ? `0 0 0 2px ${color}30` : undefined,
       }}
     >
@@ -422,11 +422,11 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
           </span>
         </div>
 
-        <p className="text-xl font-extrabold text-navy leading-none mb-3">
+        <p className="text-xl font-extrabold text-ink leading-none mb-3">
           {line.isPercent ? `${line.actual}%` : <>ETB&nbsp;{fmtETB(line.actual, 2)}</>}
         </p>
 
-        <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#F4F6FA' }}>
+        <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#F7F9FA' }}>
           <div
             className="h-full rounded-full"
             style={{ width: `${Math.min(pct, 100)}%`, background: color, transition: 'width 1s ease' }}
@@ -437,7 +437,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
           {diff >= 0 ? '▲' : '▼'} {line.isPercent ? `${Math.abs(diff).toFixed(1)}pp` : `ETB ${fmtETB(Math.abs(diff), 2)}`} vs budget
         </p>
         {priorGrowth != null && (
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2EBD85' : '#E5544B' }}>
+          <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2E7D32' : '#D32F2F' }}>
             {priorGrowth >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(priorGrowth), 1)} vs {priorLabel}
           </p>
         )}
@@ -447,7 +447,7 @@ function FinKpi({ line, selected, onClick, priorActual, priorLabel }) {
 }
 
 const trendArrow = t => t === 'up' ? '↑' : t === 'down' ? '↓' : '→'
-const trendColor = t => t === 'up' ? '#2EBD85' : t === 'down' ? '#E5544B' : '#6B7C93'
+const trendColor = t => t === 'up' ? '#2E7D32' : t === 'down' ? '#D32F2F' : '#6B7780'
 
 export default function Financial2({ data }) {
   // FS-IFRS 18's resolved P&L — if the schedule hasn't been added in Business Central
@@ -456,9 +456,9 @@ export default function Financial2({ data }) {
   if (!data.budgetActualIfrs18) {
     return (
       <div className="space-y-2">
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Detailed Financial Performance</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Detailed Financial Performance</h2>
         <div className="bg-white rounded-2xl border border-border p-8 text-center">
-          <p className="text-navy font-bold text-sm mb-1">FS-IFRS 18 schedule not available</p>
+          <p className="text-ink font-bold text-sm mb-1">FS-IFRS 18 schedule not available</p>
           <p className="text-muted text-xs leading-relaxed max-w-md mx-auto">
             This page reads Business Central's <strong>FS-IFRS 18</strong> account schedule. It wasn't resolved in the
             latest snapshot — either the schedule doesn't exist yet in Business Central, or this snapshot predates it.
@@ -762,7 +762,7 @@ export default function Financial2({ data }) {
       {/* Header + filters */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Detailed Financial Performance</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">Detailed Financial Performance</h2>
           <p className="text-xs text-muted font-medium">
             {selMonths.length > 0 ? `Viewing ${periodLabel} — uncheck it (or use Clear filters) to return to YTD`
               : `Budget vs Actual — YTD through ${data.asOf || 'current period'} · FS-IFRS 18 account schedule`}
@@ -798,7 +798,7 @@ export default function Financial2({ data }) {
           {anyFilterActive && (
             <button
               onClick={clearAllFilters}
-              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
             >
               Clear filters
             </button>
@@ -826,7 +826,7 @@ export default function Financial2({ data }) {
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex items-center justify-between mb-4 gap-2">
             <div>
-              <h3 className="text-sm font-bold text-navy">
+              <h3 className="text-sm font-bold text-ink">
                 {selLineLabel} {selLine === 'Gross Profit' ? '— How It\'s Built' : selLine === 'Expenses' ? '— Full Breakdown' : isScheduleLineView ? 'by Line' : 'by Department'}
                 {' · '}{periodLabel}
               </h3>
@@ -840,11 +840,11 @@ export default function Financial2({ data }) {
                   : 'Click the card again to close'}
               </p>
             </div>
-            <button onClick={() => { setSelLine(null); setExpandedRow(null) }} className="text-xs font-bold text-muted hover:text-navy px-2 py-1">✕</button>
+            <button onClick={() => { setSelLine(null); setExpandedRow(null) }} className="text-xs font-bold text-muted hover:text-ink px-2 py-1">✕</button>
           </div>
           {/* Same table treatment as the HR Analysis page: a solid navy header and
               explicit dark zebra-striped rows (ROW_BG), rather than the light
-              bg-bg/#F4F6FA classes — those depend on the dark theme repainting them,
+              bg-bg/#F7F9FA classes — those depend on the dark theme repainting them,
               which an inline background on the row itself blocks, leaving light text
               on a light background. Explicit colors here are visible either way.
               "Expenses" gets three stacked tables (by Business Unit / HR salaries by
@@ -913,7 +913,7 @@ export default function Financial2({ data }) {
           {ratios.map(ratio => (
             <div key={ratio.label} className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">{ratio.label}</p>
-              <p className="text-2xl font-extrabold text-navy">{ratio.value}</p>
+              <p className="text-2xl font-extrabold text-ink">{ratio.value}</p>
               {ratio.trend ? (
                 <p className="text-xs font-semibold mt-1" style={{ color: trendColor(ratio.trend) }}>
                   {trendArrow(ratio.trend)} {ratio.trend === 'up' ? 'Improving' : ratio.trend === 'down' ? 'Declining' : 'Stable'}
@@ -926,29 +926,29 @@ export default function Financial2({ data }) {
 
       {/* Month callout (shown when a month pill is selected) */}
       {SHOW_MONTH_CALLOUT && selM && (
-        <div className="bg-navy rounded-2xl p-4 flex flex-wrap gap-6 items-center">
+        <div className="bg-white rounded-2xl border border-border shadow-card p-4 flex flex-wrap gap-6 items-center">
           <div>
-            <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">{selM.label} — Revenue vs Budget</p>
-            <p className="text-2xl font-extrabold text-white">ETB {fmtETB(selM.Actual, 2)}</p>
+            <p className="text-muted text-[10px] font-bold uppercase tracking-wider mb-0.5">{selM.label} — Revenue vs Budget</p>
+            <p className="text-2xl font-extrabold text-ink">ETB {fmtETB(selM.Actual, 2)}</p>
           </div>
           <div>
-            <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">Monthly Budget</p>
-            <p className="text-lg font-bold text-white/80">ETB {fmtETB(selM.Budget, 2)}</p>
+            <p className="text-muted text-[10px] font-bold uppercase tracking-wider mb-0.5">Monthly Budget</p>
+            <p className="text-lg font-bold text-muted">ETB {fmtETB(selM.Budget, 2)}</p>
           </div>
           <div>
-            <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-0.5">Attainment</p>
-            <p className="text-lg font-extrabold" style={{ color: selM.Budget && selM.Actual / selM.Budget >= 1 ? '#2EBD85' : '#F5A870' }}>
+            <p className="text-muted text-[10px] font-bold uppercase tracking-wider mb-0.5">Attainment</p>
+            <p className="text-lg font-extrabold" style={{ color: selM.Budget && selM.Actual / selM.Budget >= 1 ? '#2E7D32' : '#F39A4D' }}>
               {selM.Budget ? fmtPct((selM.Actual / selM.Budget) * 100, 0) : '—'}
             </p>
           </div>
           <div className="flex-1 min-w-[120px]">
-            <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-1.5">vs Budget</p>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.15)' }}>
+            <p className="text-muted text-[10px] font-bold uppercase tracking-wider mb-1.5">vs Budget</p>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--tone-muted-bg)' }}>
               <div
                 className="h-full rounded-full"
                 style={{
                   width: `${Math.min(selM.Budget ? (selM.Actual / selM.Budget) * 100 : 0, 100)}%`,
-                  background: selM.Budget && selM.Actual / selM.Budget >= 1 ? '#2EBD85' : '#EB7D23'
+                  background: selM.Budget && selM.Actual / selM.Budget >= 1 ? '#2E7D32' : '#EB7D23'
                 }}
               />
             </div>
@@ -963,7 +963,7 @@ export default function Financial2({ data }) {
         {/* Monthly bar chart */}
         <div className="xl:col-span-3 bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
-            <h3 className="text-sm font-bold text-navy">
+            <h3 className="text-sm font-bold text-ink">
               {period === 'monthly' ? 'Monthly' : period === 'quarterly' ? 'Quarterly' : 'Annual'} Revenue vs Budget (ETB)
             </h3>
             <PeriodToggle value={period} onChange={setPeriod} />
@@ -984,12 +984,12 @@ export default function Financial2({ data }) {
               }}
               style={{ cursor: period === 'annually' ? 'default' : 'pointer' }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={46} />
               <Tooltip
                 formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]}
-                contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2', boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}
+                contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC', boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}
               />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
               <Bar dataKey="Budget" radius={[3, 3, 0, 0]} maxBarSize={24} name="Budget">
@@ -997,7 +997,7 @@ export default function Financial2({ data }) {
                   const isSel = period === 'monthly' ? selMonths.includes(i)
                     : period === 'quarterly' ? [i * 3, i * 3 + 1, i * 3 + 2].some(m => selMonths.includes(m))
                     : false
-                  return <Cell key={i} fill={isSel ? '#02404F' : '#D1DCE5'} />
+                  return <Cell key={i} fill={isSel ? '#0F5565' : '#D1DCE5'} />
                 })}
               </Bar>
               <Bar dataKey="Actual" radius={[3, 3, 0, 0]} maxBarSize={24} name="Actual">
@@ -1005,7 +1005,7 @@ export default function Financial2({ data }) {
                   const isSel = period === 'monthly' ? selMonths.includes(i)
                     : period === 'quarterly' ? [i * 3, i * 3 + 1, i * 3 + 2].some(m => selMonths.includes(m))
                     : false
-                  return <Cell key={i} fill={isSel ? '#EB7D23' : '#F5A870'} />
+                  return <Cell key={i} fill={isSel ? '#EB7D23' : '#F39A4D'} />
                 })}
               </Bar>
             </BarChart>
@@ -1014,12 +1014,12 @@ export default function Financial2({ data }) {
 
         {/* Budget attainment mini gauges */}
         <div className="xl:col-span-2 bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">P&L Budget Attainment</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">P&L Budget Attainment</h3>
           <div className="space-y-4">
             {activeLines.map(line => {
               const pct   = line.budget ? (line.actual / line.budget) * 100 : 0
               const good  = line.higherIsBetter ? pct >= 100 : pct <= 100
-              const color = good ? '#2EBD85' : line.higherIsBetter ? '#E5544B' : '#EB7D23'
+              const color = good ? '#2E7D32' : line.higherIsBetter ? '#D32F2F' : '#EB7D23'
               const isActive = selLine === line.name
               return (
                 <button
@@ -1028,12 +1028,12 @@ export default function Financial2({ data }) {
                   className="w-full text-left group"
                 >
                   <div className="flex justify-between text-xs mb-1.5">
-                    <span className={`font-bold ${isActive ? 'text-navy' : 'text-muted group-hover:text-navy'} transition-colors`}>
+                    <span className={`font-bold ${isActive ? 'text-ink' : 'text-muted group-hover:text-ink'} transition-colors`}>
                       {line.name}
                     </span>
                     <span className="font-extrabold" style={{ color }}>{fmtPct(pct, 1)}</span>
                   </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: '#F7F9FA' }}>
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${Math.min(pct, 100)}%`, background: color }}
@@ -1055,25 +1055,25 @@ export default function Financial2({ data }) {
       {/* Budget by Business Unit */}
       {SHOW_BU_UTILIZATION && utilization.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Budget Utilization by Business Unit</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">Budget Utilization by Business Unit</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
             {utilization
               .filter(u => u.budgetYTD > 0)
               .sort((a, b) => (b.utilPct || 0) - (a.utilPct || 0))
               .map(u => {
                 const pct   = u.utilPct || 0
-                const color = pct > 100 ? '#E5544B' : pct > 85 ? '#EB7D23' : '#2EBD85'
+                const color = pct > 100 ? '#D32F2F' : pct > 85 ? '#EB7D23' : '#2E7D32'
                 const name  = getName(u.unit)
                 return (
                   <div key={u.unit}>
                     <div className="flex justify-between items-baseline mb-1.5 gap-2">
-                      <span className="text-xs font-bold text-navy truncate" title={name}>{name}</span>
+                      <span className="text-xs font-bold text-ink truncate" title={name}>{name}</span>
                       <span className="text-xs font-extrabold flex-shrink-0" style={{ color }}>
                         {fmtPct(pct, 0)}
                         {pct > 100 && ' ⚠'}
                       </span>
                     </div>
-                    <div className="relative h-3 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                    <div className="relative h-3 rounded-full overflow-hidden" style={{ background: '#F7F9FA' }}>
                       <div
                         className="h-full rounded-full transition-all"
                         style={{ width: `${Math.min(pct, 100)}%`, background: color }}
@@ -1094,7 +1094,7 @@ export default function Financial2({ data }) {
       {SHOW_INCOME_STATEMENT && (
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-navy">Income Statement</h3>
+          <h3 className="text-sm font-bold text-ink">Income Statement</h3>
           <span className="text-xs text-muted font-medium">
             {periodLabel} · amounts in ETB (M = millions, B = billions)
           </span>
@@ -1102,7 +1102,7 @@ export default function Financial2({ data }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[480px]">
             <thead>
-              <tr style={{ background: '#F4F6FA' }}>
+              <tr style={{ background: '#F7F9FA' }}>
                 {['Line Item', 'Budget', 'Actual', 'Variance', '%'].map((h, i) => (
                   <th key={h} className={`py-3 px-5 text-[10px] font-bold text-muted uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>
                 ))}
@@ -1113,23 +1113,23 @@ export default function Financial2({ data }) {
                 const variance = line.actual - line.budget
                 const pct      = line.budget ? (line.actual / line.budget) * 100 : 0
                 const good     = line.higherIsBetter ? variance >= 0 : variance <= 0
-                const color    = good ? '#2EBD85' : '#E5544B'
+                const color    = good ? '#2E7D32' : '#D32F2F'
                 const isSubtot = line.name === 'Gross Profit' || line.name === 'EBITDA'
                 return (
                   <tr
                     key={line.name}
                     className={i % 2 ? 'bg-bg/40' : ''}
-                    style={isSubtot ? { borderTop: '2px solid #E3E9F2' } : {}}
+                    style={isSubtot ? { borderTop: '2px solid #E6E9EC' } : {}}
                   >
                     <td className="px-5 py-3 flex items-center gap-2">
                       <span
                         className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                        style={{ background: LINE_COLORS[line.name] || '#6B7C93' }}
+                        style={{ background: LINE_COLORS[line.name] || '#6B7780' }}
                       />
-                      <span className={`${isSubtot ? 'font-extrabold text-navy' : 'font-semibold text-navy'}`}>{line.name}</span>
+                      <span className={`${isSubtot ? 'font-extrabold text-ink' : 'font-semibold text-ink'}`}>{line.name}</span>
                     </td>
                     <td className="px-5 py-3 text-right text-muted font-medium">{fmtETB(line.budget, 2)}</td>
-                    <td className="px-5 py-3 text-right font-bold text-navy">{fmtETB(line.actual, 2)}</td>
+                    <td className="px-5 py-3 text-right font-bold text-ink">{fmtETB(line.actual, 2)}</td>
                     <td className="px-5 py-3 text-right font-semibold" style={{ color }}>
                       {variance >= 0 ? '+' : ''}{fmtETB(variance, 2)}
                     </td>
@@ -1154,7 +1154,7 @@ export default function Financial2({ data }) {
       {SHOW_PL_STATEMENT && pl.length > 0 && (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Profit & Loss Statement</h3>
+            <h3 className="text-sm font-bold text-ink">Profit & Loss Statement</h3>
             <p className="text-[10px] text-muted mt-0.5 font-medium">Full waterfall including EBITDA, depreciation, financial costs and Net Profit</p>
           </div>
           <table className="w-full text-sm">
@@ -1167,10 +1167,10 @@ export default function Financial2({ data }) {
                     key={`${row.name}-${i}`}
                     className={isHeader ? 'bg-navy/5' : isTotal ? 'bg-navy/10' : i % 2 ? 'bg-bg/50' : ''}
                   >
-                    <td className={`px-5 py-3 ${isHeader ? 'text-[10px] uppercase tracking-wider text-muted font-bold' : isTotal ? 'font-extrabold text-navy' : 'text-navy pl-8 font-medium'}`}>
+                    <td className={`px-5 py-3 ${isHeader ? 'text-[10px] uppercase tracking-wider text-muted font-bold' : isTotal ? 'font-extrabold text-ink' : 'text-ink pl-8 font-medium'}`}>
                       {row.name}
                     </td>
-                    <td className={`px-5 py-3 text-right ${isTotal ? 'font-extrabold text-navy' : 'text-navy font-semibold'}`}>
+                    <td className={`px-5 py-3 text-right ${isTotal ? 'font-extrabold text-ink' : 'text-ink font-semibold'}`}>
                       {row.value != null ? `ETB ${fmtETB(row.value, 2)}` : ''}
                     </td>
                   </tr>
@@ -1185,7 +1185,7 @@ export default function Financial2({ data }) {
       {SHOW_MANAGEMENT_REPORT && management.length > 0 && (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Management Report</h3>
+            <h3 className="text-sm font-bold text-ink">Management Report</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[600px]">
@@ -1201,7 +1201,7 @@ export default function Financial2({ data }) {
               <tbody>
                 {management.map((row, i) => {
                   const vs  = parseFloat(row.vsBudget)
-                  const col = isNaN(vs) ? '#6B7C93' : vs >= 0 ? '#2EBD85' : '#E5544B'
+                  const col = isNaN(vs) ? '#6B7780' : vs >= 0 ? '#2E7D32' : '#D32F2F'
                   const fmtMth = (v) => row.isPercent
                     ? (v != null && v !== 0 ? `${v.toFixed(1)}%` : '—')
                     : (v  != null && v !== 0 ? `ETB ${fmtETB(v, 2)}` : '—')
@@ -1210,10 +1210,10 @@ export default function Financial2({ data }) {
                     : (v  != null ? `ETB ${fmtETB(v, 2)}` : '—')
                   return (
                     <tr key={row.metric} className={i % 2 ? 'bg-bg/50' : ''}>
-                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-navy'}`}>{row.metric}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtMth(row.month)}</td>
+                      <td className={`px-5 py-3 font-bold ${row.isPercent ? 'text-muted pl-9' : 'text-ink'}`}>{row.metric}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-ink">{fmtMth(row.month)}</td>
                       <td className="px-5 py-3 text-right text-muted font-medium">{fmtMth(row.last)}</td>
-                      <td className="px-5 py-3 text-right font-semibold text-navy">{fmtYtd(row.ytd)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-ink">{fmtYtd(row.ytd)}</td>
                       <td className="px-5 py-3 text-right font-bold" style={{ color: col }}>
                         {isNaN(vs) ? '—' : `${vs >= 0 ? '+' : ''}${vs.toFixed(1)}%`}
                       </td>
@@ -1229,16 +1229,16 @@ export default function Financial2({ data }) {
       {/* Revenue by Partner Bank — Superset */}
       {SHOW_REVENUE_BY_BANK && revenueByBank.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-1">Revenue by Partner Bank — YTD (ETB)</h3>
+          <h3 className="text-sm font-bold text-ink mb-1">Revenue by Partner Bank — YTD (ETB)</h3>
           <p className="text-[10px] text-muted font-medium mb-3">FY 2026 · operating income + provision per bank · from Superset</p>
           <ResponsiveContainer width="100%" height={Math.max(180, revenueByBank.length * 40)}>
             <BarChart data={revenueByBank} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-              <XAxis type="number" tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={80} />
-              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-              <Bar dataKey="Revenue" fill="#02404F" radius={[0, 4, 4, 0]} maxBarSize={20} name="Revenue" />
-              <Bar dataKey="Provision" fill="#E5544B" radius={[0, 4, 4, 0]} maxBarSize={20} name="Provision" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v, 2)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="bank" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={80} />
+              <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }} />
+              <Bar dataKey="Revenue" fill="#0F5565" radius={[0, 4, 4, 0]} maxBarSize={20} name="Revenue" />
+              <Bar dataKey="Provision" fill="#D32F2F" radius={[0, 4, 4, 0]} maxBarSize={20} name="Provision" />
             </BarChart>
           </ResponsiveContainer>
         </div>

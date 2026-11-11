@@ -3,22 +3,22 @@ import { PeriodTree, usePeriodSelection } from '../../components/PeriodFilterBar
 
 // Explicit hex everywhere for structural surfaces (see the note in Procurement.jsx) — same
 // palette as Aging / Financial Performance so the finance pages read as one family.
-export const NAVY   = '#02404F'
-export const TEAL   = '#1FB6A6'
+export const NAVY   = '#0F5565'
+export const TEAL   = '#12707F'
 export const ORANGE = '#EB7D23'
-export const RED    = '#E5544B'
-export const GREEN  = '#2EBD85'
+export const RED    = '#D32F2F'
+export const GREEN  = '#2E7D32'
 export const DTEAL  = '#1A7A72'
 export const BLUE   = '#3FA7E1'
 export const SERIES_COLORS = [ORANGE, TEAL, BLUE, RED, '#B0862E', '#7A2E8A', GREEN, DTEAL]
-export const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
-export const AXIS_TICK = { fontSize: 10, fill: '#9FB4BD' }
-export const GRID_STROKE = 'rgba(255,255,255,.08)'
-export const TOOLTIP_STYLE = {
-  contentStyle: { background: '#0A3A46', border: '1px solid rgba(255,255,255,.15)', borderRadius: 10, fontSize: 11 },
+export const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
+export const AXIS_TICK = { fontSize: 10, fill: 'var(--chart-axis)' }
+export const GRID_STROKE = 'var(--chart-grid)'
+export const TOOLTIP_STYLE = { // retheme-skip
+  contentStyle: { background: '#0A3A46', border: '1px solid rgba(255,255,255,.15)', borderRadius: 10, fontSize: 11 }, // retheme-skip
   labelStyle: { color: '#FFFFFF', fontWeight: 700 },
   itemStyle: { color: '#E6F0F3' },
-  cursor: { fill: 'rgba(255,255,255,.05)' },
+  cursor: { fill: 'var(--chart-cursor)' },
 }
 
 // Raw currency amounts (unlike lib/fmt.js's fmtETB, which expects ETB *millions*).
@@ -198,9 +198,9 @@ export function Kpi({ label, value, sub, accent, onClick, selected }) {
         transform: selected ? 'scale(1.02)' : 'none',
       }}
     >
-      <p className="text-[9px] uppercase tracking-widest font-bold text-white/60 leading-tight">{label}</p>
+      <p className="text-[9px] uppercase tracking-widest font-bold text-white/70 leading-tight">{label}</p>
       <p className="font-black text-white leading-none mt-2 tabular-nums text-xl">{value}</p>
-      {sub && <p className="text-[10px] text-white/55 mt-1.5 leading-snug">{sub}</p>}
+      {sub && <p className="text-[10px] text-white/60 mt-1.5 leading-snug">{sub}</p>}
     </button>
   )
 }
@@ -211,7 +211,7 @@ export function Panel({ title, subtitle, right, children }) {
       {(title || right) && (
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            {title && <h3 className="text-sm font-bold text-navy">{title}</h3>}
+            {title && <h3 className="text-sm font-bold text-ink">{title}</h3>}
             {subtitle && <p className="text-[11px] text-muted mt-0.5 leading-snug">{subtitle}</p>}
           </div>
           {right}
@@ -233,7 +233,7 @@ export function Notice({ tone = 'info', title, children }) {
     <div className="rounded-2xl border px-4 py-3 flex gap-3" style={{ borderColor: t.border, background: t.bg }}>
       <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: t.dot }} />
       <div className="min-w-0">
-        {title && <p className="text-xs font-bold text-navy mb-0.5">{title}</p>}
+        {title && <p className="text-xs font-bold text-ink mb-0.5">{title}</p>}
         <div className="text-[11px] text-muted leading-relaxed">{children}</div>
       </div>
     </div>
@@ -244,7 +244,7 @@ export function PageHeader({ category, title, subtitle, asOf }) {
   return (
     <div>
       <p className="text-[10px] font-extrabold uppercase tracking-wider text-muted mb-1">{category}</p>
-      <h2 className="text-lg font-extrabold text-navy mb-0.5">{title}</h2>
+      <h2 className="text-lg font-extrabold text-ink mb-0.5">{title}</h2>
       <p className="text-xs text-muted font-medium">{subtitle}{asOf ? ` · as of ${asOf}` : ''}</p>
     </div>
   )
@@ -257,9 +257,9 @@ export function DrillTable({ columns, rows, emptyLabel, maxHeight }) {
     <div className="overflow-auto -mx-5 px-5" style={maxHeight ? { maxHeight } : undefined}>
       <table className="w-full text-sm min-w-[520px]">
         <thead className="sticky top-0">
-          <tr style={{ background: NAVY }}>
+          <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
             {columns.map(c => (
-              <th key={c.key} className={`py-2.5 px-3 text-[10px] font-bold text-white/70 uppercase tracking-wider whitespace-nowrap ${c.align === 'left' ? 'text-left' : 'text-right'}`}>{c.label}</th>
+              <th key={c.key} className={`py-2.5 px-3 text-[10px] font-bold text-muted uppercase tracking-wider whitespace-nowrap ${c.align === 'left' ? 'text-left' : 'text-right'}`}>{c.label}</th>
             ))}
           </tr>
         </thead>
@@ -269,8 +269,8 @@ export function DrillTable({ columns, rows, emptyLabel, maxHeight }) {
               {columns.map(c => (
                 <td
                   key={c.key}
-                  className={`py-2 px-3 text-xs ${c.align === 'left' ? 'text-left font-bold text-white' : 'text-right font-semibold'} ${c.wrap ? '' : 'whitespace-nowrap'}`}
-                  style={c.align === 'left' ? undefined : { color: c.color ? c.color(r) : '#FFFFFF' }}
+                  className={`py-2 px-3 text-xs ${c.align === 'left' ? 'text-left font-bold text-ink' : 'text-right font-semibold'} ${c.wrap ? '' : 'whitespace-nowrap'}`}
+                  style={c.align === 'left' ? undefined : { color: c.color ? c.color(r) : 'var(--tbl-fg)' }}
                 >
                   {c.format ? c.format(r[c.key], r) : r[c.key]}
                 </td>
@@ -336,7 +336,7 @@ export function ProcData({ data, need, children, noPeriodFilter }) {
             <select
               value={year}
               onChange={e => { setYear(Number(e.target.value)); sel.setSelMonths([]) }}
-              className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none focus:border-navy"
+              className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink outline-none focus:border-navy"
             >
               {procYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -345,7 +345,7 @@ export function ProcData({ data, need, children, noPeriodFilter }) {
           {(sel.selMonths.length > 0 || year !== defaultYear) && (
             <button
               onClick={() => { sel.clearPeriod(); setYear(defaultYear) }}
-              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
             >
               Clear filters
             </button>
@@ -377,4 +377,4 @@ export function useSelection() {
   return [sel, (k) => setSel(cur => (cur === k ? null : k))]
 }
 
-export function legendFormatter(v) { return <span style={{ color: '#CFE0E6', fontSize: 11 }}>{v}</span> }
+export function legendFormatter(v) { return <span style={{ color: 'var(--tbl-fg-muted)', fontSize: 11 }}>{v}</span> }

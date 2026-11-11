@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fmtETB, fmtDate } from '../lib/fmt.js'
 import { cashflow as cashflowApi } from '../lib/api.js'
+import GLDrilldownPanel from '../components/GLDrilldownPanel.jsx'
 
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
-const GREEN  = '#2EBD85'
-const RED    = '#E5544B'
+const GREEN  = '#2E7D32'
+const RED    = '#D32F2F'
 
 // Signed ETB-millions value, red-in-parentheses for negative (same convention the
 // Balance Sheet statement uses) — `value` is already in millions (backend's toM()).
@@ -22,7 +23,7 @@ function StatCard({ label, value, sub, accent }) {
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent || NAVY }} />
       <div className="pl-2">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1">{label}</p>
-        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        <p className="text-xl font-extrabold text-ink leading-none mb-1">{value}</p>
         {sub && <p className="text-[10px] text-muted">{sub}</p>}
       </div>
     </div>
@@ -45,7 +46,7 @@ export function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }
         <select
           value={year ?? ''}
           onChange={e => onYear(e.target.value ? Number(e.target.value) : null)}
-          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none focus:border-navy"
+          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink outline-none focus:border-navy"
         >
           <option value="">Live (current)</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -57,7 +58,7 @@ export function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }
           value={month ?? ''}
           onChange={e => onMonth(e.target.value ? Number(e.target.value) : null)}
           disabled={!year}
-          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none focus:border-navy disabled:opacity-40 disabled:cursor-not-allowed"
+          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink outline-none focus:border-navy disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <option value="">Full year</option>
           {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
@@ -66,7 +67,7 @@ export function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }
       {(year || month) && (
         <button
           onClick={onClear}
-          className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+          className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
         >
           Clear filters
         </button>
@@ -75,23 +76,62 @@ export function YearMonthFilter({ year, month, onYear, onMonth, onClear, years }
   )
 }
 
-// One non-header row of the statement, matching BC's own "DIRECT CF" account schedule
-// layout exactly (same row order/indentation/bold as BC's own report).
-function StatementRow({ row }) {
+// The GL date window behind a row, by its BC Row Type: "Net Change" = postings within
+// the period; "Beginning Balance" = everything strictly before the period starts;
+// "Balance at Date" = everything up to the period end. Same windows the backend's
+// buildDirectCashflow sums, so the panel's ledger total matches the row.
+function drillWindow(row, periodStart, periodEnd) {
+  if (row.rowType === 'Beginning Balance') {
+    const d = new Date(periodStart + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1)
+    return { asOf: d.toISOString().slice(0, 10), from: undefined }
+  }
+  if (row.rowType === 'Balance at Date') return { asOf: periodEnd, from: undefined }
+  return { asOf: periodEnd, from: periodStart }
+}
+
+// One non-header row of the statement, matching BC's own "CFS-REPORT" account schedule
+// layout exactly (same row order/indentation/bold as BC's own report). Rows with
+// accounts behind them are clickable — same click-a-number-to-see-the-ledger drilldown
+// as the Balance Sheet, opening the GL entries directly beneath the row.
+function StatementRow({ row, drillOpen, onDrill, periodStart, periodEnd }) {
   if (!row.rowNo && !row.description) return <tr><td colSpan={2} className="py-1.5" /></tr>
 
   const { text, color } = fmtSigned(row.value)
   const pad = 20 + (row.indentation || 0) * 16
+  const clickable = row.accounts?.length > 0
+  const { asOf, from } = drillWindow(row, periodStart, periodEnd)
 
   return (
-    <tr className={row.bold ? '' : 'border-b border-border/30 hover:bg-bg/40'} style={row.bold ? { background: 'rgba(255,255,255,0.06)' } : undefined}>
-      <td className={`py-2 text-[13px] ${row.bold ? 'font-extrabold text-navy' : 'font-medium text-navy'}`} style={{ paddingLeft: pad }}>
-        {row.description}
-      </td>
-      <td className={`px-5 py-2 text-right text-[13px] ${row.bold ? 'font-extrabold text-navy' : 'font-semibold text-navy'}`} style={color ? { color } : undefined}>
-        {text}
-      </td>
-    </tr>
+    <>
+      <tr
+        className={`${row.bold ? '' : 'border-b border-border/30 hover:bg-bg/40'} ${clickable ? 'cursor-pointer' : ''}`}
+        style={row.bold ? { background: 'var(--row-tint-b)' } : undefined}
+        onClick={clickable ? () => onDrill(row.lineNo) : undefined}
+        title={clickable ? 'Click to see the general ledger entries behind this figure' : undefined}
+      >
+        <td className={`py-2 text-[13px] ${row.bold ? 'font-extrabold text-ink' : 'font-medium text-ink'}`} style={{ paddingLeft: pad }}>
+          {row.description}
+        </td>
+        <td
+          className={`px-5 py-2 text-right text-[13px] ${row.bold ? 'font-extrabold text-ink' : 'font-semibold text-ink'} ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}
+          style={color ? { color } : undefined}
+        >
+          {text}
+        </td>
+      </tr>
+      {drillOpen && (
+        <GLDrilldownPanel
+          colSpan={2}
+          label={row.description}
+          accounts={row.accounts}
+          asOf={asOf}
+          from={from}
+          scope="all"
+          note={row.showOppositeSign ? 'This line is shown with the opposite sign on the statement (Business Central "Show Opposite Sign"), so the ledger total below has the reverse sign of the figure above.' : undefined}
+          onClose={() => onDrill(row.lineNo)}
+        />
+      )}
+    </>
   )
 }
 
@@ -99,17 +139,23 @@ function StatementRow({ row }) {
 // same tinted-header + click-to-expand/collapse pattern as the Balance Sheet statement,
 // so the two statements read as one consistent "system" instead of Cashflow being a
 // single long flat table next to Balance Sheet's collapsible one.
-function StatementSection({ header, rows, defaultExpanded = true }) {
+function StatementSection({ header, rows, defaultExpanded = true, drillLine, onDrill, periodStart, periodEnd }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   return (
     <>
       <tr className="cursor-pointer select-none" style={{ background: NAVY + '10' }} onClick={() => setExpanded(e => !e)}>
-        <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
+        <td colSpan={2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase text-ink">
           <span className="mr-2 text-[10px]">{expanded ? '▼' : '▶'}</span>
           {header.description}
         </td>
       </tr>
-      {expanded && rows.map(row => <StatementRow key={row.lineNo} row={row} />)}
+      {expanded && rows.map(row => (
+        <StatementRow
+          key={row.lineNo} row={row}
+          drillOpen={drillLine === row.lineNo} onDrill={onDrill}
+          periodStart={periodStart} periodEnd={periodEnd}
+        />
+      ))}
     </>
   )
 }
@@ -126,6 +172,12 @@ export default function CashFlow({ data }) {
   const [filteredCf, setFilteredCf] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
+  // One GL drilldown open at a time (lineNo of the row); clicking it again closes it.
+  const [drillLine, setDrillLine] = useState(null)
+  const toggleDrill = (lineNo) => setDrillLine(cur => cur === lineNo ? null : lineNo)
+
+  // A different period's statement has different figures — close any open drilldown.
+  useEffect(() => { setDrillLine(null) }, [year, month])
 
   useEffect(() => {
     if (!year) { setFilteredCf(null); setError(''); return }
@@ -167,7 +219,7 @@ export default function CashFlow({ data }) {
           the period filter inline at the top-right, one line, no separate card. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Cashflow</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">Cashflow</h2>
           <p className="text-xs text-muted font-medium">
             {cf
               ? <>Direct Method Statement · {fmtDate(cf.periodStart)} – {fmtDate(cf.asOf)} · source: Business Central</>
@@ -234,27 +286,31 @@ export default function CashFlow({ data }) {
             {!checkOk && (
               <div className="bg-white rounded-2xl border p-4 flex items-start gap-2.5" style={{ borderColor: RED + '40', background: RED + '08' }}>
                 <span className="text-sm" style={{ color: RED }}>ⓘ</span>
-                <p className="text-[11px] font-medium text-navy leading-relaxed">
-                  <strong>Calculated Closing Cash doesn't match the Actual Ending Cash balance in BC</strong> (ETB {fmtETB(Math.abs(cf.check))} gap) —
-                  this is Business Central's own schedule and reconciliation (the DIRECT CF account schedule's own "CHECK" row),
-                  not something computed differently here. It points to the Direct Cash Flow schedule's own account-range
-                  mapping in BC needing review, since the same gap shows up running the schedule directly in BC.
+                <p className="text-[11px] font-medium text-ink leading-relaxed">
+                  <strong>Calculated Closing Cash doesn't match the Actual Ending Cash balance</strong> (ETB {fmtETB(Math.abs(cf.check))} gap) —
+                  this is the CFS-REPORT schedule's own "CHECK" row, and Business Central's report shows the same gap for this period.
+                  Some cash movements in this period are posted against accounts that none of the schedule's lines cover,
+                  so the row definitions' Totaling ranges in Business Central need review.
                 </p>
               </div>
             )}
 
-            {/* Full statement, same row order BC's own "DIRECT CF" schedule defines */}
+            {/* Full statement, same row order BC's own "CFS-REPORT" schedule defines */}
             <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
-                <h3 className="text-sm font-bold text-navy">Cashflow Statement</h3>
+                <h3 className="text-sm font-bold text-ink">Cashflow Statement</h3>
                 <p className="text-[10px] text-muted mt-0.5">
-                  {fmtDate(cf.periodStart)} – {fmtDate(cf.asOf)} · amounts in ETB · click a section header to expand / collapse
+                  {fmtDate(cf.periodStart)} – {fmtDate(cf.asOf)} · amounts in ETB · click a section header to expand / collapse · click an underlined figure to see its GL entries
                 </p>
               </div>
               <table className="w-full text-sm">
                 <tbody>
                   {sections.map((s, i) => (
-                    <StatementSection key={s.header.lineNo ?? i} header={s.header} rows={s.rows} />
+                    <StatementSection
+                      key={s.header.lineNo ?? i} header={s.header} rows={s.rows}
+                      drillLine={drillLine} onDrill={toggleDrill}
+                      periodStart={cf.periodStart} periodEnd={cf.asOf}
+                    />
                   ))}
                 </tbody>
               </table>

@@ -14,14 +14,31 @@ const _jobTitleUpsertMany = db.transaction((rows) => {
 
 const SUPERSET_BASE = process.env.SUPERSET_BASE || 'http://213.55.97.58:8088';
 
-// Module-level cache for static BC data (schedule + CoA structure never change per session)
+// Module-level cache for BC structural data (account schedules + CoA). These change rarely,
+// but they DO change (e.g. Finance edits SOFP-KFT rows in BC), so a genuine resync
+// (buildSnapshot with bypassCache=true — the "Latest" button, cron) calls refreshBcStatic()
+// to re-fetch them. Fast override-triggered rebuilds and ad-hoc page routes reuse the cache.
 let _bcStaticCache = null;
 async function getBcStatic() {
   if (_bcStaticCache) return _bcStaticCache;
+  return refreshBcStatic();
+}
+// Re-fetch the structural data. If BC can't be reached and an earlier copy exists, keep
+// that copy (stale schedule beats no schedule — same fallback spirit as the rest of the sync).
+async function refreshBcStatic() {
+  try {
+    _bcStaticCache = await fetchBcStatic();
+  } catch (e) {
+    if (!_bcStaticCache) throw e;
+    console.warn('  BC schedule/CoA refresh failed — reusing previously loaded copy:', e.message);
+  }
+  return _bcStaticCache;
+}
+async function fetchBcStatic() {
   const [mgtLines, bsLines, cfLines, coaEndTotals, coaPostingRows, taxAccounts] = await Promise.all([
     bc('KFT_MGT_RPT_Lines'),
     bc('KFT_Balance_Sheet_Lines').catch(() => []),
-    // Direct-method Cash Flow Statement schedule ("DIRECT CF") — Cashflow page.
+    // Direct-method Cash Flow Statement schedule (CF_SCHEDULE, now "CFS-REPORT") — Cashflow page.
     bc('KFT_Direct_CF_Lines').catch(() => []),
     bc('Chart_of_Accounts', "?$filter=Account_Type eq 'End-Total'").catch(() => []),
     // 1000-9999 covers both the P&L ranges (5000-9999) and the Balance Sheet ranges (1000-4999)
@@ -30,8 +47,7 @@ async function getBcStatic() {
     // future tax type added under this subcategory — for the Tax page.
     bc('KFT_Chart_Of_Accounts', "?$filter=accountSubCategory eq '326 - Tax payables' and accountType eq 'Posting'").catch(() => [])
   ]);
-  _bcStaticCache = { mgtLines, bsLines, cfLines, coaEndTotals, coaPostingRows, taxAccounts };
-  return _bcStaticCache;
+  return { mgtLines, bsLines, cfLines, coaEndTotals, coaPostingRows, taxAccounts };
 }
 
 // Cache of per-query BC fetch results, distinct from the one-time static cache above.
@@ -116,7 +132,7 @@ function sumRange(rows, k, af = 'accountNo', amf = 'amount') {
     .reduce((s, x) => s + num(x[amf]), 0);
 }
 
-// Direct Method Cash Flow Statement, from BC's own "DIRECT CF" account schedule
+// Direct Method Cash Flow Statement, from BC's own cash flow account schedule (CF_SCHEDULE)
 // (KFT_Direct_CF_Lines) — standalone (not just inlined in buildSnapshot) so the
 // Cashflow page's own Year/Month filter can call it on demand via /api/cashflow for
 // any period, not just the current snapshot's YTD. Same resolveRow-style formula
@@ -131,11 +147,23 @@ function sumRange(rows, k, af = 'accountNo', amf = 'amount') {
 // it, since the main snapshot build and the on-demand route source it differently
 // (the snapshot already has it in hand; the route fetches fresh, scoped to the
 // requested period).
+// BC schedule name + the RowNos of its summary rows. Finance renamed "DIRECT CF" to
+// "CFS-REPORT" (Nov 2026) and re-coded the totals; if they rename again, update here.
+const CF_SCHEDULE = 'CFS-REPORT';
+const CF_ROWS = {
+  operating: 'R100', investing: 'R200', financing: 'R300', fxEffect: 'R400',
+  totalChange: 'R500', openingCash: 'R600', calculatedClosing: 'R700',
+  actualEnding: 'R800', check: 'R900'
+};
 async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
   const empty = { rows: [], asOf: periodEnd, periodStart, check: null };
   try {
     const { cfLines, coaEndTotals, coaPostingRows } = await getBcStatic();
-    const cfLinesSched = (cfLines || []).filter(r => r.ScheduleName === 'DIRECT CF');
+    const cfLinesSched = (cfLines || []).filter(r => r.ScheduleName === CF_SCHEDULE);
+    if (!cfLinesSched.length) {
+      const seen = [...new Set((cfLines || []).map(r => r.ScheduleName))].join(', ') || 'none';
+      console.warn(`  Cash Flow schedule "${CF_SCHEDULE}" not found in KFT_Direct_CF_Lines (schedules returned: ${seen}) — was it renamed in BC?`);
+    }
     const cfRowMap = {};
     cfLinesSched.forEach(r => { if (r.RowNo) cfRowMap[r.RowNo] = r; });
 
@@ -152,34 +180,46 @@ async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
     const periodStartDt = new Date(periodStart + 'T00:00:00');
     const periodEndDt   = new Date(periodEnd + 'T23:59:59');
 
-    const parseRange = (totaling) => {
-      const m = (totaling || '').trim().match(/^(\d+)(?:\.\.(\d+))?$/);
-      return m ? [Number(m[1]), Number(m[2] || m[1])] : null;
-    };
-    // A "Total Accounts" row's Totaling is a CoA End-Total marker account (e.g.
-    // "2550") whose OWN Totaling gives the real posting-account range — same
-    // convention findSubAccounts uses for M-MGT-RPT further down this file.
-    const resolveAcctRange = (row) => {
-      if (row.TotalingType === 'Total Accounts') {
-        const r = cfCoaRange[row.Totaling.trim()];
-        return r ? [r[0], r[1] - 1] : parseRange(row.Totaling);
+    // A leaf row's Totaling is a BC account filter: one or more "N" / "N..M" terms
+    // joined by "|" (e.g. "5000..5099|2010..2013|9029"). A term that isn't valid BC
+    // filter syntax is skipped with a warning rather than guessed at, so the
+    // dashboard never silently invents a figure BC itself wouldn't produce.
+    const warnedTerms = new Set();
+    const parseRanges = (totaling, row) => {
+      const ranges = [];
+      for (const term of String(totaling || '').split('|')) {
+        const t = term.trim();
+        if (!t) continue;
+        const m = t.match(/^(\d+)(?:\.\.(\d+))?$/);
+        if (m) ranges.push([Number(m[1]), Number(m[2] || m[1])]);
+        else if (!warnedTerms.has(t) && warnedTerms.add(t)) console.warn(`  ${CF_SCHEDULE} row ${row?.RowNo || row?.LineNo} "${row?.Description || ''}": ignoring unparseable account filter term "${t}" — fix the Totaling in BC`);
       }
-      return parseRange(row.Totaling);
+      return ranges;
     };
-    const acctsInRange = (lo, hi) => [...cfCoaPostingAccts].filter(a => { const n = Number(a); return n >= lo && n <= hi; }).sort();
+    // A "Total Accounts" term is a CoA End-Total marker account (e.g. "2550") whose OWN
+    // Totaling gives the real posting-account range — same convention findSubAccounts
+    // uses for M-MGT-RPT further down this file.
+    const resolveAcctRanges = (row) => {
+      const ranges = parseRanges(row.Totaling, row);
+      if (row.TotalingType !== 'Total Accounts') return ranges;
+      return ranges.map(([lo, hi]) => {
+        const r = lo === hi ? cfCoaRange[String(lo)] : null;
+        return r ? [r[0], r[1] - 1] : [lo, hi];
+      });
+    };
+    const inRanges = (n, ranges) => ranges.some(([lo, hi]) => n >= lo && n <= hi);
+    const acctsInRanges = (ranges) => [...cfCoaPostingAccts].filter(a => inRanges(Number(a), ranges)).sort();
 
-    const sumEntries = (lo, hi, pred) => sortedAll.reduce((s, e) => {
-      const a = Number(e.accountNo);
-      return (a >= lo && a <= hi && pred(e)) ? s + num(e.amount) : s;
+    const sumEntries = (ranges, pred) => sortedAll.reduce((s, e) => {
+      return (inRanges(Number(e.accountNo), ranges) && pred(e)) ? s + num(e.amount) : s;
     }, 0);
 
     const leafValue = (row) => {
-      const range = resolveAcctRange(row);
-      if (!range) return 0;
-      const [lo, hi] = range;
-      if (row.RowType === 'Beginning Balance') return sumEntries(lo, hi, e => new Date(e.postingDate) < periodStartDt);
-      if (row.RowType === 'Balance at Date')   return sumEntries(lo, hi, e => new Date(e.postingDate) <= periodEndDt);
-      return sumEntries(lo, hi, e => { const d = new Date(e.postingDate); return d >= periodStartDt && d <= periodEndDt; }); // 'Net Change'
+      const ranges = resolveAcctRanges(row);
+      if (!ranges.length) return 0;
+      if (row.RowType === 'Beginning Balance') return sumEntries(ranges, e => new Date(e.postingDate) < periodStartDt);
+      if (row.RowType === 'Balance at Date')   return sumEntries(ranges, e => new Date(e.postingDate) <= periodEndDt);
+      return sumEntries(ranges, e => { const d = new Date(e.postingDate); return d >= periodStartDt && d <= periodEndDt; }); // 'Net Change'
     };
 
     const evalCache = new Map();
@@ -203,13 +243,43 @@ async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
       return val;
     };
 
+    // Accounts behind a Formula row, for the GL drilldown — only when the formula is a
+    // plain sum (+ only) of Net Change rows (R100/R200/R300/R500), so its GL entries over
+    // the period genuinely add up to the row. Rows mixing period types or subtracting
+    // (R700 = Opening − Change, R900 CHECK) return null → not drillable.
+    const formulaAccounts = (rowNo, visited = new Set()) => {
+      const row = cfRowMap[rowNo];
+      if (!row || visited.has(rowNo)) return null;
+      if (row.TotalingType !== 'Formula') {
+        if (row.RowType !== 'Net Change') return null;
+        return new Set(acctsInRanges(resolveAcctRanges(row)));
+      }
+      const visit = new Set(visited); visit.add(rowNo);
+      const tokens = row.Totaling.match(/[+-]?[A-Za-z0-9]+/g) || [];
+      const out = new Set();
+      for (const t of tokens) {
+        if (t.startsWith('-')) return null;
+        const sub = formulaAccounts(t.replace(/^\+/, ''), visit);
+        if (!sub) return null;
+        sub.forEach(a => out.add(a));
+      }
+      return out;
+    };
+
     const rows = cfLinesSched
       .slice()
       .sort((a, b) => a.LineNo - b.LineNo)
       .map(r => {
         const isLeaf = r.TotalingType === 'Posting Accounts' || r.TotalingType === 'Total Accounts';
-        const range = (isLeaf && r.Totaling) ? resolveAcctRange(r) : null;
-        const value = r.RowNo ? evalRow(r.RowNo) : null;
+        const ranges = (isLeaf && r.Totaling) ? resolveAcctRanges(r) : null;
+        const accounts = ranges ? acctsInRanges(ranges)
+          : (r.TotalingType === 'Formula' && r.RowNo) ? [...(formulaAccounts(r.RowNo) || [])].sort() : [];
+        // BC's "Show Opposite Sign" only flips how a row is DISPLAYED — formula rows are
+        // evaluated on the raw (unflipped) values of the rows they reference (evalRow above),
+        // exactly as BC's own account-schedule engine does. E.g. CF001 customer receipts
+        // are raw credits (negative) and show as positive inflows in BC's report.
+        const raw = r.RowNo ? evalRow(r.RowNo) : null;
+        const value = raw != null && r.ShowOppositeSign ? -raw : raw;
         return {
           lineNo: r.LineNo,
           rowNo: r.RowNo || null,
@@ -217,8 +287,9 @@ async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
           indentation: r.Indentation || 0,
           bold: !!r.Bold,
           rowType: r.RowType,
+          showOppositeSign: !!r.ShowOppositeSign,
           value: value != null ? toM(value) : null,
-          accounts: range ? acctsInRange(range[0], range[1]) : []
+          accounts
         };
       });
 
@@ -227,15 +298,16 @@ async function buildDirectCashflow({ glEntriesAll, periodStart, periodEnd }) {
       rows,
       asOf: periodEnd,
       periodStart,
-      netCashOperating: byRowNo.CFO?.value ?? null,
-      netCashInvesting: byRowNo.CFI?.value ?? null,
-      netCashFinancing: byRowNo.CFF?.value ?? null,
-      totalChange: byRowNo.C000?.value ?? null,
-      openingCash: byRowNo.CA010?.value ?? null,
-      calculatedClosingCash: byRowNo.T001?.value ?? null,
-      actualEndingCash: byRowNo.T002?.value ?? null,
-      // Should be ~0 — BC's own reconciliation of calculated vs. actual ending cash.
-      check: toM(evalRow('T001') - evalRow('T002'))
+      netCashOperating: byRowNo[CF_ROWS.operating]?.value ?? null,
+      netCashInvesting: byRowNo[CF_ROWS.investing]?.value ?? null,
+      netCashFinancing: byRowNo[CF_ROWS.financing]?.value ?? null,
+      fxEffect: byRowNo[CF_ROWS.fxEffect]?.value ?? null,
+      totalChange: byRowNo[CF_ROWS.totalChange]?.value ?? null,
+      openingCash: byRowNo[CF_ROWS.openingCash]?.value ?? null,
+      calculatedClosingCash: byRowNo[CF_ROWS.calculatedClosing]?.value ?? null,
+      actualEndingCash: byRowNo[CF_ROWS.actualEnding]?.value ?? null,
+      // Should be ~0 — BC's own CHECK row (calculated closing − actual ending cash), as displayed.
+      check: byRowNo[CF_ROWS.check]?.value ?? null
     };
   } catch (e) {
     console.warn('  Direct Cash Flow schedule build failed:', e.message);
@@ -316,6 +388,9 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   const budF = `?$filter=budgetName eq '${encodeURIComponent(CONFIG.BUDGET_NAME)}'`;
 
   const bcAvail = isBcConfigured();
+  // A genuine resync must also pick up account-schedule edits made in BC (SOFP-KFT etc.),
+  // not just new postings — otherwise schedule changes only appear after a server restart.
+  if (bcAvail && bypassCache) await refreshBcStatic();
 
   let actuals = [], budgets = [], arAgingRows = [], apAgingRows = [];
   if (bcAvail) {
@@ -1599,7 +1674,7 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   // /api/cashflow route for the page's own Year/Month filter) replaces the old ad hoc
   // bank-ledger-derived cashflow view (kept below as `cashflow.flows`/
   // `monthlyCollections`/etc. — Collections and Executive Overview still read those)
-  // with the real statement BC itself defines via the "DIRECT CF" account schedule.
+  // with the real statement BC itself defines via its cash flow account schedule (CF_SCHEDULE).
   // Exposed as its own key on the already-built `cashflow` object (declared above,
   // before glEntriesAll was available) — the Cashflow page reads `data.cashflow.directStatement`.
   cashflow.directStatement = bcAvail
@@ -4253,5 +4328,5 @@ async function buildSnapshot(targetDate, { bypassCache = true } = {}) {
   };
 }
 
-module.exports = { buildSnapshot, buildDirectCashflow, buildBankCollections };
+module.exports = { buildSnapshot, buildDirectCashflow, buildBankCollections, refreshBcStatic };
 

@@ -12,10 +12,10 @@ const KPI_ROLE_OPTIONS = [
   { value: 'auditor',       label: 'Read-only / Audit' },
 ]
 
-const NAVY  = '#02404F'
-const TEAL  = '#1FB6A6'
+const NAVY  = '#0F5565'
+const TEAL  = '#12707F'
 const ORANGE = '#EB7D23'
-const RED   = '#E5544B'
+const RED   = '#D32F2F'
 
 function Toggle({ on, onClick, disabled }) {
   return (
@@ -70,7 +70,7 @@ function CredentialsBanner({ info, onDismiss }) {
     <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: `${ORANGE}55`, background: `${ORANGE}12` }}>
       <span className="text-lg" style={{ color: ORANGE }}>ⓘ</span>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-navy mb-1">
+        <p className="text-xs font-bold text-ink mb-1">
           Send these to {info.name} yourself (email, Slack, in person) — email sending isn't configured yet, so this is shown once and not stored anywhere retrievable.
         </p>
         <div className="text-xs font-mono bg-white/60 rounded-lg px-3 py-2 inline-block">
@@ -80,10 +80,10 @@ function CredentialsBanner({ info, onDismiss }) {
         <p className="text-[10px] text-muted mt-1.5">They'll be required to set their own password the first time they log in.</p>
       </div>
       <div className="flex flex-col gap-1.5 flex-shrink-0">
-        <button onClick={copy} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-navy hover:border-navy">
+        <button onClick={copy} className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-border text-ink hover:border-navy">
           {copied ? 'Copied!' : 'Copy'}
         </button>
-        <button onClick={onDismiss} className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-muted hover:text-navy">
+        <button onClick={onDismiss} className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-muted hover:text-ink">
           Dismiss
         </button>
       </div>
@@ -100,7 +100,7 @@ function KpiRoleFields({ kpiRole, kpiDepartmentId, onRoleChange, onDeptChange, d
         value={kpiRole}
         onChange={e => onRoleChange(e.target.value)}
         disabled={disabled}
-        className="text-xs border border-border rounded-xl px-2.5 py-2 text-navy outline-none focus:border-navy disabled:opacity-40"
+        className="text-xs border border-border rounded-xl px-2.5 py-2 text-ink outline-none focus:border-navy disabled:opacity-40"
       >
         {KPI_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -109,7 +109,7 @@ function KpiRoleFields({ kpiRole, kpiDepartmentId, onRoleChange, onDeptChange, d
           value={kpiDepartmentId || ''}
           onChange={e => onDeptChange(e.target.value)}
           disabled={disabled}
-          className="text-xs border border-border rounded-xl px-2.5 py-2 text-navy outline-none focus:border-navy disabled:opacity-40"
+          className="text-xs border border-border rounded-xl px-2.5 py-2 text-ink outline-none focus:border-navy disabled:opacity-40"
         >
           <option value="">Which department?</option>
           {KPI_DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -170,43 +170,43 @@ function AddUserForm({ onCreated }) {
 
   return (
     <div className="bg-white rounded-2xl border border-border shadow-card p-5">
-      <h3 className="text-sm font-bold text-navy mb-4">Add a viewer</h3>
+      <h3 className="text-sm font-bold text-ink mb-4">Add a viewer</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name"
-          className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
+          className="text-xs border border-border rounded-xl px-3 py-2.5 text-ink outline-none focus:border-navy" />
         <input value={email} onChange={e => handleEmailChange(e.target.value)} placeholder="Email address" type="email"
-          className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
+          className="text-xs border border-border rounded-xl px-3 py-2.5 text-ink outline-none focus:border-navy" />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <input
           value={username}
           onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameTouched(true) }}
           placeholder="Login username"
-          className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy"
+          className="text-xs border border-border rounded-xl px-3 py-2.5 text-ink outline-none focus:border-navy"
         />
         <div className="flex gap-1.5">
           <input
             value={password}
             onChange={e => setPassword(e.target.value)}
             placeholder="Temporary password"
-            className="flex-1 min-w-0 text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy font-mono"
+            className="flex-1 min-w-0 text-xs border border-border rounded-xl px-3 py-2.5 text-ink outline-none focus:border-navy font-mono"
           />
           <button
             type="button"
             onClick={() => setPassword(suggestPassword())}
             title="Suggest a strong password"
-            className="text-[11px] font-bold px-2.5 rounded-xl border border-border text-navy hover:border-navy flex-shrink-0"
+            className="text-[11px] font-bold px-2.5 rounded-xl border border-border text-ink hover:border-navy flex-shrink-0"
           >
             Generate
           </button>
         </div>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Job title"
-          className="text-xs border border-border rounded-xl px-3 py-2.5 text-navy outline-none focus:border-navy" />
+          className="text-xs border border-border rounded-xl px-3 py-2.5 text-ink outline-none focus:border-navy" />
       </div>
 
       <label className="flex items-center gap-2 mb-4 cursor-pointer w-fit">
         <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="w-3.5 h-3.5" />
-        <span className="text-xs font-semibold text-navy">Grant admin access (can manage users and permissions)</span>
+        <span className="text-xs font-semibold text-ink">Grant admin access (can manage users and permissions)</span>
       </label>
 
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Group KPI Dashboard role</p>
@@ -228,7 +228,7 @@ function AddUserForm({ onCreated }) {
               key={p.id}
               onClick={() => togglePage(p.id)}
               className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all"
-              style={on ? { background: NAVY, color: '#fff', borderColor: NAVY } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+              style={on ? { background: NAVY, color: '#fff', borderColor: NAVY } : { borderColor: '#D7DEE6', color: '#6B7780' }}
             >
               {p.parentId && <span className="opacity-60">↳ </span>}{p.label}
             </button>
@@ -245,7 +245,7 @@ function AddUserForm({ onCreated }) {
               key={f.id}
               onClick={() => togglePage(f.id)}
               className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all"
-              style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+              style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7780' }}
             >
               {f.label}
             </button>
@@ -347,7 +347,7 @@ function UserRow({ u, currentUserId, onChanged }) {
     <div className="border-b border-border last:border-b-0">
       <div className="px-5 py-3.5 flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-navy truncate">
+          <p className="text-xs font-bold text-ink truncate">
             {u.name} {isSelf && <span className="text-[9px] font-extrabold text-muted">(you)</span>}
             {u.mustChangePassword && (
               <span className="ml-1.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full" style={{ background: `${ORANGE}22`, color: ORANGE }}>
@@ -373,11 +373,11 @@ function UserRow({ u, currentUserId, onChanged }) {
 
         <button
           onClick={() => setExpanded(e => !e)}
-          className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-navy hover:border-navy flex-shrink-0"
+          className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-ink hover:border-navy flex-shrink-0"
         >
           Pages ({countPages(u.pageIds)}) {expanded ? '▾' : '▸'}
         </button>
-        <button onClick={resetPassword} disabled={busy} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-navy hover:border-navy flex-shrink-0 disabled:opacity-40">
+        <button onClick={resetPassword} disabled={busy} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border text-ink hover:border-navy flex-shrink-0 disabled:opacity-40">
           Reset Password
         </button>
         <button onClick={remove} disabled={busy || isSelf} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border flex-shrink-0 disabled:opacity-40" style={{ color: RED }}>
@@ -402,7 +402,7 @@ function UserRow({ u, currentUserId, onChanged }) {
                   onClick={() => togglePage(p.id)}
                   disabled={busy}
                   className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40"
-                  style={on ? { background: TEAL, color: '#fff', borderColor: TEAL } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+                  style={on ? { background: TEAL, color: '#fff', borderColor: TEAL } : { borderColor: '#D7DEE6', color: '#6B7780' }}
                 >
                   {p.parentId && <span className="opacity-60">↳ </span>}{p.label}
                 </button>
@@ -419,7 +419,7 @@ function UserRow({ u, currentUserId, onChanged }) {
                   onClick={() => togglePage(f.id)}
                   disabled={busy}
                   className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40"
-                  style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7C93' }}
+                  style={on ? { background: ORANGE, color: '#fff', borderColor: ORANGE } : { borderColor: '#D7DEE6', color: '#6B7780' }}
                 >
                   {f.label}
                 </button>
@@ -502,7 +502,7 @@ function AiAssistantSettings() {
 
   return (
     <div className="bg-white rounded-2xl border border-border shadow-card p-5">
-      <h3 className="text-sm font-bold text-navy mb-1">AI Assistant</h3>
+      <h3 className="text-sm font-bold text-ink mb-1">AI Assistant</h3>
       <p className="text-xs text-muted font-medium mb-4">
         Configure which provider powers the chatbot and its API key, instead of editing
         the server's .env file. Keys are stored server-side and never shown again once saved.
@@ -519,7 +519,7 @@ function AiAssistantSettings() {
               value={activeProvider || 'auto'}
               onChange={e => setActive(e.target.value)}
               disabled={busy === 'active'}
-              className="text-xs border border-border rounded-xl px-2.5 py-1.5 text-navy outline-none focus:border-navy disabled:opacity-40"
+              className="text-xs border border-border rounded-xl px-2.5 py-1.5 text-ink outline-none focus:border-navy disabled:opacity-40"
             >
               <option value="auto">Auto (first configured provider)</option>
               {providers.map(p => <option key={p.id} value={p.id}>{AI_PROVIDER_LABELS[p.id]}</option>)}
@@ -531,10 +531,10 @@ function AiAssistantSettings() {
             return (
               <div key={p.id} className="rounded-xl border border-border p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-navy">{AI_PROVIDER_LABELS[p.id]}</span>
+                  <span className="text-xs font-bold text-ink">{AI_PROVIDER_LABELS[p.id]}</span>
                   <span
                     className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={p.configured ? { background: `${TEAL}18`, color: TEAL } : { background: '#D7DEE655', color: '#6B7C93' }}
+                    style={p.configured ? { background: `${TEAL}18`, color: TEAL } : { background: '#D7DEE655', color: '#6B7780' }}
                   >
                     {p.configured ? 'Key configured' : 'Not configured (falls back to .env)'}
                   </span>
@@ -545,13 +545,13 @@ function AiAssistantSettings() {
                     onChange={e => setDraft(p.id, { apiKey: e.target.value })}
                     placeholder={p.configured ? 'Enter a new key to replace it' : 'API key'}
                     type="password"
-                    className="flex-1 min-w-[180px] text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy font-mono"
+                    className="flex-1 min-w-[180px] text-xs border border-border rounded-xl px-3 py-2 text-ink outline-none focus:border-navy font-mono"
                   />
                   <input
                     value={draft.model}
                     onChange={e => setDraft(p.id, { model: e.target.value })}
                     placeholder={p.model ? `Model (${p.model})` : 'Model override (optional)'}
-                    className="flex-1 min-w-[140px] text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy"
+                    className="flex-1 min-w-[140px] text-xs border border-border rounded-xl px-3 py-2 text-ink outline-none focus:border-navy"
                   />
                   <button
                     onClick={() => saveKey(p.id)}
@@ -565,7 +565,7 @@ function AiAssistantSettings() {
                     <button
                       onClick={() => removeKey(p.id)}
                       disabled={busy === p.id}
-                      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:border-navy disabled:opacity-40"
+                      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-ink hover:border-navy disabled:opacity-40"
                     >
                       Remove
                     </button>
@@ -604,7 +604,7 @@ export default function AdminUsers({ currentUserId }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Admin — Users &amp; Access</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Admin — Users &amp; Access</h2>
         <p className="text-xs text-muted font-medium">
           Create viewer accounts and control which dashboard pages each person can see.
           Choose their username and a temporary password here, then send both to them
@@ -621,7 +621,7 @@ export default function AdminUsers({ currentUserId }) {
 
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
-          <h3 className="text-sm font-bold text-navy">All Users {users.length > 0 && `(${users.length})`}</h3>
+          <h3 className="text-sm font-bold text-ink">All Users {users.length > 0 && `(${users.length})`}</h3>
         </div>
         {loading ? (
           <p className="text-xs px-5 py-4 text-muted">Loading…</p>

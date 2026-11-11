@@ -105,10 +105,10 @@ function Body({ proc }) {
             { key: 'n', label: 'POs' },
             { key: 'total', label: 'Total value', format: v => Math.round(v).toLocaleString() },
             { key: 'max', label: 'Largest PO', format: v => Math.round(v).toLocaleString() },
-            { key: 'lim', label: 'Approval limit', format: (v, r) => (r.unl ? 'Unlimited' : v ? Math.round(v).toLocaleString() : 'Not set'), color: r => (!r.unl && !r.lim ? ORANGE : '#FFFFFF') },
+            { key: 'lim', label: 'Approval limit', format: (v, r) => (r.unl ? 'Unlimited' : v ? Math.round(v).toLocaleString() : 'Not set'), color: r => (!r.unl && !r.lim ? ORANGE : 'var(--tbl-fg)') },
             { key: 'adm', label: 'Administrator', format: v => (v ? 'Yes' : '—') },
             { key: 'pending', label: 'Pending' },
-            { key: 'breaches', label: 'Above limit', color: r => (r.breaches ? RED : '#FFFFFF') },
+            { key: 'breaches', label: 'Above limit', color: r => (r.breaches ? RED : 'var(--tbl-fg)') },
           ]}
         />
       </Panel>
@@ -116,7 +116,7 @@ function Body({ proc }) {
       <Panel
         title={pendingOnly ? 'POs pending approval' : 'Largest purchase orders'}
         subtitle={`${fmtInt(pendingOnly ? pending.length : withFlag.length)} POs · showing the 40 largest`}
-        right={pendingOnly && <button onClick={() => setPendingOnly(false)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy">Show all</button>}
+        right={pendingOnly && <button onClick={() => setPendingOnly(false)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-ink">Show all</button>}
       >
         <DrillTable
           maxHeight={420}
@@ -125,11 +125,11 @@ function Body({ proc }) {
             { key: 'no', label: 'PO', align: 'left' },
             { key: 'v', label: 'Vendor', align: 'left', format: (v, r) => truncateLabel(v || r.vn, 30) },
             { key: 'ap', label: 'Approver' },
-            { key: 'st', label: 'Status', color: r => (r.st === 'Pending Approval' ? ORANGE : '#FFFFFF') },
+            { key: 'st', label: 'Status', color: r => (r.st === 'Pending Approval' ? ORANGE : 'var(--tbl-fg)') },
             { key: 'od', label: 'Ordered', format: fmtDay },
             { key: 'age', label: 'Days open', format: (_v, r) => (r.od ? daysBetween(r.od, asOf) : '—') },
             { key: 'amt', label: 'Amount (ETB)', format: v => Math.round(v).toLocaleString() },
-            { key: 'breach', label: 'Vs limit', format: (v, r) => (r.adm ? 'Admin' : v ? 'Above' : 'Within'), color: r => (r.breach ? RED : '#FFFFFF') },
+            { key: 'breach', label: 'Vs limit', format: (v, r) => (r.adm ? 'Admin' : v ? 'Above' : 'Within'), color: r => (r.breach ? RED : 'var(--tbl-fg)') },
           ]}
         />
       </Panel>

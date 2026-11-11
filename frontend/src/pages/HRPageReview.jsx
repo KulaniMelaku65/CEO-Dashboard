@@ -5,18 +5,18 @@ import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 import { compareByTitleRank } from '../lib/titleRank.js'
 
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
 // Local-only toggle — keep false in anything committed/pushed.
 const SHOW_PAYROLL_TYPE_FILTER = false
 // Zebra-stripe / hover-state row backgrounds for the dark theme — swapped in place of
 // the near-white pastels this table used to use (those relied on white being the page
 // background; on the dark shell they'd leave white text on a near-white row = invisible).
-const ROW_BG        = { even: '#0A3A46', odd: '#0E434D' }
-const SEC_BG         = { open: '#123C46', closed: '#0C3841' }
-const JT_BG           = { open: '#123C46', closed: '#0A3540' }
-const EMP_ROW_BG    = '#0F3D46'
+const ROW_BG        = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
+const SEC_BG         = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-even)' }
+const JT_BG           = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-sub2)' }
+const EMP_ROW_BG    = 'var(--tbl-row-sub2)'
 
 const fmtN = (n) => {
   if (n == null || isNaN(n)) return '—'
@@ -32,9 +32,9 @@ const fmtPct = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toFixed(1) + '
 function KpiBlock({ label, value, sub, accent, small }) {
   return (
     <div className="flex flex-col justify-between p-4 rounded-xl" style={{ background: accent || NAVY }}>
-      <p className="text-[9px] uppercase tracking-widest font-bold text-white/60 leading-tight">{label}</p>
+      <p className="text-[9px] uppercase tracking-widest font-bold text-white/70 leading-tight">{label}</p>
       <p className={`font-extrabold text-white leading-none mt-2 tabular-nums ${small ? 'text-[18px]' : 'text-[22px]'}`}>{value}</p>
-      {sub && <p className="text-[10px] text-white/50 mt-1 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-white/60 mt-1 truncate">{sub}</p>}
     </div>
   )
 }
@@ -482,7 +482,7 @@ export default function HRPageReview({ data }) {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">HR Analysis</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">HR Analysis</h2>
           <p className="text-xs text-muted font-medium">
             Active employees · headcount and payroll cost · all filters update instantly
           </p>
@@ -537,7 +537,7 @@ export default function HRPageReview({ data }) {
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
         <div className="px-5 pt-5 pb-3">
-          <h3 className="text-sm font-bold text-navy">Monthly Cost by Business Unit &amp; Virtual Company</h3>
+          <h3 className="text-sm font-bold text-ink">Monthly Cost by Business Unit &amp; Virtual Company</h3>
           <p className="text-[10px] text-muted mt-0.5">
             {effectiveMonth} · {tableRows.length} business units · click to drill into section → job title → employee
           </p>
@@ -545,13 +545,13 @@ export default function HRPageReview({ data }) {
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 620 }}>
           <table className="text-[11px] border-collapse w-full" style={{ minWidth: 820 }}>
             <thead className="sticky top-0 z-10">
-              <tr style={{ background: NAVY }}>
-                <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[240px]" style={{ background: NAVY }}>Business Unit / Section / Job Title / Employee</th>
-                <th className="px-4 py-3 font-bold text-white text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px]">Head Count</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
-                <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
-                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#90D4CE' }}>Corporate</th>
+              <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
+                <th className="text-left px-4 py-3 font-bold text-ink sticky left-0 z-20 min-w-[240px]" style={{ background: 'var(--tbl-head-bg)' }}>Business Unit / Section / Job Title / Employee</th>
+                <th className="px-4 py-3 font-bold text-ink text-left whitespace-nowrap min-w-[80px]">Virtual Company</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[80px]">Head Count</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[140px]">Monthly Cost (ETB)</th>
+                <th className="px-4 py-3 font-bold text-ink text-right whitespace-nowrap min-w-[70px]">% of Cost</th>
+                <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#3D7FA6' }}>Corporate</th>
                 <th className="px-4 py-3 font-bold text-right whitespace-nowrap min-w-[120px]" style={{ color: '#EB7D23' }}>Programme</th>
               </tr>
             </thead>
@@ -569,11 +569,11 @@ export default function HRPageReview({ data }) {
                   <Fragment key={buKey}>
                     {/* Level 1: Business Unit */}
                     <tr
-                      className="border-t border-border cursor-pointer hover:bg-white/5 transition-colors"
+                      className="border-t border-border cursor-pointer hover:bg-[#F0F7F6] transition-colors"
                       style={{ background: buBg }}
                       onClick={() => toggleRow(buKey)}
                     >
-                      <td className="px-4 py-2.5 font-semibold text-navy sticky left-0 z-10" style={{ background: buBg }}>
+                      <td className="px-4 py-2.5 font-semibold text-ink sticky left-0 z-10" style={{ background: buBg }}>
                         <span className="inline-flex items-center gap-1.5">
                           <span className="text-[10px] text-muted w-3">{buOpen ? '▾' : '▸'}</span>
                           {row.buName || row.buCode}
@@ -581,8 +581,8 @@ export default function HRPageReview({ data }) {
                         </span>
                       </td>
                       <td className="px-4 py-2.5"><span className="text-[10px] font-semibold text-muted">{row.vcLabel}</span></td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{row.headcount || '—'}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-navy">{fmtC(row.monthly || null)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">{row.headcount || '—'}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">{fmtC(row.monthly || null)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-muted">{fmtPct(buPct)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: TEAL }}>{fmtC(row.kifiya || null)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: ORANGE }}>{fmtC(row.safee || null)}</td>
@@ -604,13 +604,13 @@ export default function HRPageReview({ data }) {
                             onMouseLeave={e => { e.currentTarget.style.background = secBg }}
                           >
                             <td className="pl-8 pr-4 py-2 sticky left-0 z-10" style={{ background: secBg }}>
-                              <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: '#1FB6A6' }}>{secOpen ? '▾' : '▸'}</span>
-                              <span className="font-semibold text-navy">{sec.sectionName}</span>
+                              <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: '#12707F' }}>{secOpen ? '▾' : '▸'}</span>
+                              <span className="font-semibold text-ink">{sec.sectionName}</span>
                               <span className="ml-1.5 text-[9px] text-muted">({sec.jobTitles.length} title{sec.jobTitles.length !== 1 ? 's' : ''})</span>
                             </td>
                             <td className="px-4 py-2" />
-                            <td className="px-4 py-2 text-right tabular-nums text-navy">{sec.headcount || '—'}</td>
-                            <td className="px-4 py-2 text-right tabular-nums text-navy">{fmtC(sec.monthly || null)}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-ink">{sec.headcount || '—'}</td>
+                            <td className="px-4 py-2 text-right tabular-nums text-ink">{fmtC(sec.monthly || null)}</td>
                             <td className="px-4 py-2 text-right tabular-nums text-muted">{fmtPct(secPct)}</td>
                             <td className="px-4 py-2 text-right tabular-nums" style={{ color: TEAL }}>{fmtC(sec.kifiya || null)}</td>
                             <td className="px-4 py-2 text-right tabular-nums" style={{ color: ORANGE }}>{fmtC(sec.safee || null)}</td>
@@ -631,12 +631,12 @@ export default function HRPageReview({ data }) {
                                 >
                                   <td className="pl-14 pr-4 py-1.5 sticky left-0 z-10" style={{ background: jtBg }}>
                                     <span className="inline-block w-4 text-[8px] font-extrabold text-muted">{jtOpen ? '▾' : '▸'}</span>
-                                    <span className="font-medium text-navy text-[10.5px]">{jt.jobTitle}</span>
+                                    <span className="font-medium text-ink text-[10.5px]">{jt.jobTitle}</span>
                                     <span className="ml-1.5 text-[9px] text-muted">({jt.employees.length})</span>
                                   </td>
                                   <td className="px-4 py-1.5" />
-                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{jt.headcount || '—'}</td>
-                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-navy">{fmtC(jt.monthly || null)}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-ink">{jt.headcount || '—'}</td>
+                                  <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-ink">{fmtC(jt.monthly || null)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px] text-muted">{fmtPct(jtPct)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: TEAL }}>{fmtC(jt.kifiya || null)}</td>
                                   <td className="px-4 py-1.5 text-right tabular-nums text-[10.5px]" style={{ color: ORANGE }}>{fmtC(jt.safee || null)}</td>
@@ -649,7 +649,7 @@ export default function HRPageReview({ data }) {
                                   const pctEmp = jt.monthly > 0 ? (total / jt.monthly) * 100 : 0
                                   return (
                                     <tr key={`${jtKey}-${emp.employeeNo}`} className="border-t border-border/20" style={{ background: EMP_ROW_BG }}>
-                                      <td className="pl-20 pr-4 py-1.5 font-medium text-navy sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
+                                      <td className="pl-20 pr-4 py-1.5 font-medium text-ink sticky left-0 z-10 text-[11px]" style={{ background: EMP_ROW_BG }}>
                                         {[emp.employeeNo, emp.name].filter(Boolean).join(' · ')}
                                         {emp.employeeStatus && !emp.isCountable && (
                                           <span className="ml-1.5 text-[8px] font-bold px-1 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
@@ -682,13 +682,13 @@ export default function HRPageReview({ data }) {
             </tbody>
             {tableRows.length > 0 && (
               <tfoot className="sticky bottom-0 z-10">
-                <tr style={{ background: NAVY }}>
-                  <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: NAVY }}>Total</td>
-                  <td className="px-4 py-3 text-white/50 text-[10px]">{tableRows.length} rows</td>
-                  <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtN(grandHeadcount)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtC(grandMonthly || null)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-white">100%</td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#90D4CE' }}>{fmtC(grandKifiya || null)}</td>
+                <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
+                  <td className="px-4 py-3 font-extrabold text-ink sticky left-0 z-20" style={{ background: 'var(--tbl-head-bg)' }}>Total</td>
+                  <td className="px-4 py-3 text-muted text-[10px]">{tableRows.length} rows</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink tabular-nums">{fmtN(grandHeadcount)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink tabular-nums">{fmtC(grandMonthly || null)}</td>
+                  <td className="px-4 py-3 text-right font-bold text-ink">100%</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#3D7FA6' }}>{fmtC(grandKifiya || null)}</td>
                   <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: ORANGE }}>{fmtC(grandSafee || null)}</td>
                 </tr>
               </tfoot>

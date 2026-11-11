@@ -134,22 +134,22 @@ function Body({ proc }) {
             <select
               value={chosen.vn}
               onChange={e => setPicked(e.target.value)}
-              className="text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy bg-transparent max-w-[260px]"
+              className="text-xs border border-border rounded-xl px-3 py-2 text-ink outline-none focus:border-navy bg-transparent max-w-[260px]"
             >
-              {scored.map(v => <option key={v.vn} value={v.vn} style={{ color: '#02404F' }}>{truncateLabel(v.v, 34)}</option>)}
+              {scored.map(v => <option key={v.vn} value={v.vn} style={{ color: '#0F5565' }}>{truncateLabel(v.v, 34)}</option>)}
             </select>
           }
         >
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <div className="lg:col-span-2">
               <p className="text-[11px] text-muted mb-1">
-                <strong className="text-navy">{chosen.v}</strong> vs the median scored vendor — pick another vendor above.
+                <strong className="text-ink">{chosen.v}</strong> vs the median scored vendor — pick another vendor above.
               </p>
               <ResponsiveContainer width="100%" height={280}>
                 <RadarChart data={radarData} outerRadius="70%">
-                  <PolarGrid stroke="rgba(255,255,255,.15)" />
+                  <PolarGrid stroke="var(--chart-grid)" />
                   <PolarAngleAxis dataKey="axis" tick={{ ...AXIS_TICK, fontSize: 10 }} />
-                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} />
+                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} />
                   <Radar name={truncateLabel(chosen.v, 22)} dataKey="vendor" stroke={ORANGE} fill={ORANGE} fillOpacity={0.35} />
                   <Radar name="Median vendor" dataKey="typical" stroke={TEAL} fill={TEAL} fillOpacity={0.2} />
                   <Tooltip {...TOOLTIP_STYLE} formatter={x => `${Number(x).toFixed(0)}`} />
@@ -165,7 +165,7 @@ function Body({ proc }) {
                   { key: 'v', label: 'Vendor', align: 'left', format: x => truncateLabel(x, 26) },
                   { key: 'receipts', label: 'Receipts' },
                   { key: 'onTimePct', label: 'On time', format: x => `${x.toFixed(0)}%`, color: r => (r.onTimePct < 85 ? RED : r.onTimePct < 95 ? ORANGE : GREEN) },
-                  { key: 'late', label: 'Late', color: r => (r.late ? RED : '#FFFFFF') },
+                  { key: 'late', label: 'Late', color: r => (r.late ? RED : 'var(--tbl-fg)') },
                   { key: 'avgLate', label: 'Avg days late', format: (x, r) => (r.late ? x.toFixed(1) : '—') },
                   { key: 'spend', label: 'Spend (ETB)', format: x => (x ? Math.round(x).toLocaleString() : '—') },
                 ]}

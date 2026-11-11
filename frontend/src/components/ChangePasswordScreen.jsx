@@ -31,17 +31,17 @@ export default function ChangePasswordScreen({ onDone, onLogout }) {
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] font-sans"
-      style={{ background: 'linear-gradient(135deg, #02404F 0%, #013B47 55%, #02404F 100%)' }}
+      style={{ background: 'linear-gradient(135deg, #0F5565 0%, #0A3B46 55%, #0F5565 100%)' }}
     >
       <div className="bg-white rounded-2xl p-10 w-full max-w-sm shadow-2xl text-center">
         <img src="/logo.jfif" alt="Kifiya" className="w-16 h-16 rounded-xl mx-auto mb-4 object-contain" />
-        <h2 className="text-xl font-extrabold text-navy mb-1">Set Your Password</h2>
+        <h2 className="text-xl font-extrabold text-ink mb-1">Set Your Password</h2>
         <p className="text-xs text-muted mb-7">
           You're signed in with a temporary password — set your own before continuing.
         </p>
 
         <input
-          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-navy outline-none mb-3 focus:border-navy transition-colors"
+          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-ink outline-none mb-3 focus:border-navy transition-colors"
           type="password"
           placeholder="Current (temporary) password"
           value={current}
@@ -49,7 +49,7 @@ export default function ChangePasswordScreen({ onDone, onLogout }) {
           autoComplete="current-password"
         />
         <input
-          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-navy outline-none mb-3 focus:border-navy transition-colors"
+          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-ink outline-none mb-3 focus:border-navy transition-colors"
           type="password"
           placeholder="New password (min. 8 characters)"
           value={next}
@@ -57,7 +57,7 @@ export default function ChangePasswordScreen({ onDone, onLogout }) {
           autoComplete="new-password"
         />
         <input
-          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-navy outline-none mb-4 focus:border-navy transition-colors"
+          className="w-full border border-border rounded-xl px-4 py-3 text-sm font-medium text-ink outline-none mb-4 focus:border-navy transition-colors"
           type="password"
           placeholder="Confirm new password"
           value={confirm}
@@ -76,7 +76,7 @@ export default function ChangePasswordScreen({ onDone, onLogout }) {
 
         {err && <p className="text-danger text-xs font-semibold mt-3">{err}</p>}
 
-        <button onClick={onLogout} className="text-[11px] text-muted hover:text-navy font-semibold mt-5">
+        <button onClick={onLogout} className="text-[11px] text-muted hover:text-ink font-semibold mt-5">
           Sign out instead
         </button>
       </div>

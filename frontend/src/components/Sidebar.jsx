@@ -70,7 +70,7 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
           'fixed top-0 left-0 z-50 lg:relative lg:z-auto lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         ].join(' ')}
-        style={{ background: '#02404F', width: 224 }}
+        style={{ background: '#0F5565', width: 224 }}
       >
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/10 flex-shrink-0">
@@ -161,7 +161,7 @@ export default function Sidebar({ slides, current, onNav, user, onLogout, mobile
                                 childActive ? 'text-white' : 'text-white/50 hover:text-white hover:bg-white/5'
                               }`}
                               style={childActive
-                                ? { background: 'rgba(31,182,166,.15)', borderLeft: '3px solid #1FB6A6' }
+                                ? { background: 'rgba(31,182,166,.15)', borderLeft: '3px solid #12707F' }
                                 : { borderLeft: '3px solid transparent' }}
                             >
                               <svg

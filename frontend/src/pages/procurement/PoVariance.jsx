@@ -53,7 +53,7 @@ function Body({ proc, data }) {
               <Tooltip {...TOOLTIP_STYLE} formatter={x => [fmtMoney(x), 'Value']} />
               <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                 {chain.map(c => <Cell key={c.stage} fill={c.fill} />)}
-                <LabelList dataKey="value" position="top" formatter={x => fmtMoney(x)} style={{ fill: '#E6F0F3', fontSize: 11, fontWeight: 700 }} />
+                <LabelList dataKey="value" position="top" formatter={x => fmtMoney(x)} style={{ fill: 'var(--tbl-fg)', fontSize: 11, fontWeight: 700 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

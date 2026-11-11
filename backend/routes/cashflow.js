@@ -1,10 +1,10 @@
 const router      = require('express').Router();
 const requireAuth = require('../middleware/auth');
 const { bc, isBcConfigured } = require('../services/bc-client');
-const { buildDirectCashflow, buildBankCollections } = require('../services/snapshot-builder');
+const { buildDirectCashflow, buildBankCollections, refreshBcStatic } = require('../services/snapshot-builder');
 
 // GET /api/cashflow?year=2026&month=7  (month optional, 1-12)
-// Returns the Direct Method Cash Flow Statement (BC's own "DIRECT CF" account
+// Returns the Direct Method Cash Flow Statement (BC's own "CFS-REPORT" account
 // schedule) for the requested period — year alone means that full calendar year
 // (Jan 1 - Dec 31, capped at today), year+month means just that one month. Powers
 // the Cashflow page's own Year/Month filter, computed fresh on demand rather than
@@ -42,9 +42,14 @@ router.get('/', requireAuth, async (req, res) => {
     // Every account (Income Statement + Balance Sheet) up to periodEnd — Beginning
     // Balance rows need everything before periodStart too, so this one fetch covers
     // both that and the period's own Net Change / Balance at Date rows.
+    // Also re-pull the cash flow schedule + CoA so edits Finance makes to the schedule in
+    // BC show up on the next page load, not only after a server restart. Runs alongside
+    // the (much larger) GL fetch, so it adds no wall-clock time; on failure it keeps the
+    // last loaded copy (see refreshBcStatic).
     const [glEntriesAll, collections] = await Promise.all([
       bc('KFT_GL_Entries', `?$filter=postingDate le ${periodEnd}`),
-      buildBankCollections({ periodStart, periodEnd })
+      buildBankCollections({ periodStart, periodEnd }),
+      refreshBcStatic()
     ]);
     const statement = await buildDirectCashflow({ glEntriesAll, periodStart, periodEnd });
     res.json({ ...statement, collections });

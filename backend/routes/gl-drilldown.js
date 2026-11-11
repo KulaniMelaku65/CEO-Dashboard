@@ -30,11 +30,12 @@ async function getAccountNames() {
   return map;
 }
 
+// incomeBalance null = no Income Statement/Balance Sheet restriction (scope=all).
 async function getBulkEntries(incomeBalance, dateFilter) {
-  const key = `${incomeBalance}|${dateFilter}`;
+  const key = `${incomeBalance || 'all'}|${dateFilter}`;
   const cached = _bulkEntriesCache.get(key);
   if (cached && (Date.now() - cached.at) < BULK_TTL_MS) return cached.entries;
-  const entries = await bc('KFT_GL_Entries', `?$filter=incomeBalance eq '${incomeBalance}' and ${dateFilter}`);
+  const entries = await bc('KFT_GL_Entries', `?$filter=${incomeBalance ? `incomeBalance eq '${incomeBalance}' and ` : ''}${dateFilter}`);
   _bulkEntriesCache.set(key, { at: Date.now(), entries });
   return entries;
 }
@@ -52,6 +53,11 @@ async function getBulkEntries(incomeBalance, dateFilter) {
 // Statement, DATE-RANGE query instead — for P&L/OPEX figures (Corporate Budget's "By
 // Business Unit" actuals, e.g.), which are a period's activity, not a cumulative
 // balance, and live under incomeBalance 'Income Statement' rather than 'Balance Sheet'.
+//
+// `scope=all` drops the Income Statement/Balance Sheet restriction entirely — for the
+// Cashflow statement, whose rows deliberately mix both (e.g. CF001 "Cash collected from
+// Customers" = revenue accounts 5000.. plus receivable accounts 2010..). The date
+// window is still `from`..`asOf` when `from` is given, else everything up to `asOf`.
 router.get('/', requireAuth, async (req, res) => {
   try {
     if (!isBcConfigured()) return res.status(503).json({ error: 'Business Central is not configured.' });
@@ -63,13 +69,15 @@ router.get('/', requireAuth, async (req, res) => {
 
     const asOf = /^\d{4}-\d{2}-\d{2}$/.test(req.query.asOf || '') ? req.query.asOf : new Date().toISOString().slice(0, 10);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
-    const incomeBalance = from ? 'Income Statement' : 'Balance Sheet';
+    const scopeAll = req.query.scope === 'all';
+    const incomeBalance = scopeAll ? null : from ? 'Income Statement' : 'Balance Sheet';
     const dateFilter = from ? `postingDate ge ${from} and postingDate le ${asOf}` : `postingDate le ${asOf}`;
+    const ibFilter = incomeBalance ? `incomeBalance eq '${incomeBalance}' and ` : '';
     const acctSet = new Set(accounts);
 
     const [rawEntries, nameByAcct] = await Promise.all([
       accounts.length <= ACCOUNT_FILTER_THRESHOLD
-        ? bc('KFT_GL_Entries', `?$filter=incomeBalance eq '${incomeBalance}' and ${dateFilter} and (${accounts.map(a => `accountNo eq '${a}'`).join(' or ')})`)
+        ? bc('KFT_GL_Entries', `?$filter=${ibFilter}${dateFilter} and (${accounts.map(a => `accountNo eq '${a}'`).join(' or ')})`)
         : getBulkEntries(incomeBalance, dateFilter).then(all => all.filter(e => acctSet.has(String(e.accountNo)))),
       getAccountNames()
     ]);

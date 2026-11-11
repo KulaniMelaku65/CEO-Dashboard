@@ -6,8 +6,8 @@ export default function SlideProgress({ slides, current, duration, paused, onDot
   useEffect(() => { setAnimKey(k => k + 1) }, [current, paused])
 
   return (
-    <div className="flex-shrink-0 border-t bg-white px-6 py-2.5 flex items-center gap-4" style={{ borderColor: '#E3E9F2' }}>
-      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
+    <div className="flex-shrink-0 border-t bg-white px-6 py-2.5 flex items-center gap-4" style={{ borderColor: '#E6E9EC' }}>
+      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#E6E9EC' }}>
         {!paused && (
           <div
             key={animKey}
@@ -26,7 +26,7 @@ export default function SlideProgress({ slides, current, duration, paused, onDot
             style={{
               width: i === current ? 20 : 8,
               height: 8,
-              background: i === current ? '#EB7D23' : '#E3E9F2',
+              background: i === current ? '#EB7D23' : '#E6E9EC',
             }}
           />
         ))}

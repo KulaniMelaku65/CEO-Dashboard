@@ -3,9 +3,9 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Toolti
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
-const MALE_COLOR   = '#02404F'
-const FEMALE_COLOR = '#1FB6A6'
-const KIF_COLOR    = '#02404F'
+const MALE_COLOR   = '#0F5565'
+const FEMALE_COLOR = '#12707F'
+const KIF_COLOR    = '#0F5565'
 const SAF_COLOR    = '#EB7D23'
 
 const fmt = (n) => {
@@ -27,11 +27,11 @@ function GenderTooltip({ active, payload, label }) {
   const male   = payload.find(p => p.dataKey === 'male')?.value   || 0
   const female = payload.find(p => p.dataKey === 'female')?.value || 0
   return (
-    <div style={{ background: '#fff', border: '1px solid #E3E9F2', borderRadius: 8, padding: '8px 12px', fontSize: 11, minWidth: 160 }}>
-      <p style={{ fontWeight: 700, color: '#02404F', marginBottom: 6 }}>{label}</p>
+    <div style={{ background: '#fff', border: '1px solid #E6E9EC', borderRadius: 8, padding: '8px 12px', fontSize: 11, minWidth: 160 }}>
+      <p style={{ fontWeight: 700, color: '#0F5565', marginBottom: 6 }}>{label}</p>
       <p style={{ color: MALE_COLOR,   marginBottom: 2 }}>Male: <strong>{male}</strong></p>
       <p style={{ color: FEMALE_COLOR, marginBottom: 2 }}>Female: <strong>{female}</strong></p>
-      <p style={{ color: '#6B7C93', borderTop: '1px solid #E3E9F2', marginTop: 6, paddingTop: 6 }}>
+      <p style={{ color: '#6B7780', borderTop: '1px solid #E6E9EC', marginTop: 6, paddingTop: 6 }}>
         Total: <strong>{male + female}</strong>
       </p>
     </div>
@@ -258,7 +258,7 @@ export default function EmployeeCostDetail({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Employee Cost by Business Unit</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Employee Cost by Business Unit</h2>
         <p className="text-xs text-muted font-medium">
           {selectedBU
             ? `Showing: ${selectedBUHR?.name || selectedBU} — click the bar again or "Clear" to see all`
@@ -271,24 +271,24 @@ export default function EmployeeCostDetail({ data }) {
       {/* ── Company Cost per Business Unit column chart ── */}
       {buCostData.length > 0 && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-1">Company Cost per Business Unit</h3>
+          <h3 className="text-sm font-bold text-ink mb-1">Company Cost per Business Unit</h3>
           <p className="text-[10px] text-muted mb-4">Total payroll cost (Kifiya + MSP / Programme) per parent BU — % of grand total</p>
           <ResponsiveContainer width="100%" height={Math.max(200, buCostData.length * 42)}>
             <BarChart data={buCostData} layout="vertical" margin={{ top: 0, right: 80, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-              <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="displayName" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={172} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+              <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="displayName" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} width={172} />
               <Tooltip
                 formatter={(v, _, { payload }) => [
                   `${fmt(v)} ETB (${buCostGrand > 0 ? ((v / buCostGrand) * 100).toFixed(1) : 0}%)`, 'Cost'
                 ]}
                 labelFormatter={(_, payload) => payload?.[0]?.payload?.name || ''}
-                contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }}
+                contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }}
               />
               <Bar dataKey="total" maxBarSize={18} radius={[0, 4, 4, 0]}
-                label={{ position: 'right', fontSize: 9, fill: '#6B7C93', formatter: v => buCostGrand > 0 ? ((v / buCostGrand) * 100).toFixed(0) + '%' : '' }}>
+                label={{ position: 'right', fontSize: 9, fill: '#6B7780', formatter: v => buCostGrand > 0 ? ((v / buCostGrand) * 100).toFixed(0) + '%' : '' }}>
                 {buCostData.map((d, i) => (
-                  <Cell key={d.code} fill={selectedBU === d.code ? '#EB7D23' : i < 3 ? '#02404F' : `rgba(2,64,79,${0.75 - i * 0.04})`} />
+                  <Cell key={d.code} fill={selectedBU === d.code ? '#EB7D23' : i < 3 ? '#0F5565' : `rgba(2,64,79,${0.75 - i * 0.04})`} />
                 ))}
               </Bar>
             </BarChart>
@@ -302,14 +302,14 @@ export default function EmployeeCostDetail({ data }) {
           <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
             <div className="px-5 pt-5 pb-3 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-navy">Company Cost per Employee</h3>
+                <h3 className="text-sm font-bold text-ink">Company Cost per Employee</h3>
                 <p className="text-[10px] text-muted mt-0.5">{allEmployees.length} employees · click a row to see monthly cost trend</p>
               </div>
             </div>
             <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 480 }}>
               <table className="text-[11px] border-collapse w-full" style={{ minWidth: 700 }}>
                 <thead className="sticky top-0 z-10">
-                  <tr style={{ background: '#02404F' }}>
+                  <tr style={{ background: '#0F5565' }}>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[180px]">Employee</th>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Business Unit</th>
                     <th className="px-3 py-3 font-bold text-white text-left min-w-[120px]">Section</th>
@@ -332,21 +332,21 @@ export default function EmployeeCostDetail({ data }) {
                         style={{ background: rowBg }}
                         onClick={() => setSelectedEmp(prev => prev === emp.employeeNo ? null : emp.employeeNo)}
                       >
-                        <td className="px-3 py-2 font-semibold text-navy">
+                        <td className="px-3 py-2 font-semibold text-ink">
                           {[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}
                         </td>
                         <td className="px-3 py-2 text-muted">{emp.buName}</td>
                         <td className="px-3 py-2 text-muted">{emp.sectionName}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: KIF_COLOR }}>{fmtFull(empKifiyaDisplay(emp) || null)}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>{fmtFull(empSafeeDisplay(emp)  || null)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-bold text-navy">{fmtFull(empGrand)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-bold text-ink">{fmtFull(empGrand)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-muted">{pctOfGrand.toFixed(1)}%</td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot className="sticky bottom-0 z-10">
-                  <tr style={{ background: '#02404F' }}>
+                  <tr style={{ background: '#0F5565' }}>
                     <td className="px-3 py-3 font-extrabold text-white" colSpan={3}>Total</td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#90D4CE' }}>
                       {fmtFull(allEmployees.reduce((s, e) => s + empKifiyaDisplay(e), 0))}
@@ -367,29 +367,29 @@ export default function EmployeeCostDetail({ data }) {
           {selectedEmpData && (
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
               <div className="mb-4">
-                <h3 className="text-sm font-bold text-navy">{[selectedEmpData.employeeNo, selectedEmpData.name].filter(Boolean).join(' ')}</h3>
+                <h3 className="text-sm font-bold text-ink">{[selectedEmpData.employeeNo, selectedEmpData.name].filter(Boolean).join(' ')}</h3>
                 <p className="text-[10px] text-muted">{selectedEmpData.sectionName} · {selectedEmpData.buName}</p>
                 <div className="flex gap-4 mt-2">
-                  <span className="text-[10px] font-semibold" style={{ color: '#02404F' }}>
+                  <span className="text-[10px] font-semibold" style={{ color: '#0F5565' }}>
                     Kifiya: <strong>{fmt(selectedEmpData.kifiya || 0)}</strong>
                   </span>
                   <span className="text-[10px] font-semibold" style={{ color: '#EB7D23' }}>
                     MSP / Programme: <strong>{fmt(selectedEmpData.safee || 0)}</strong>
                   </span>
                   <span className="text-[10px] font-semibold text-muted">
-                    Total: <strong className="text-navy">{fmt(empFullTotal(selectedEmpData))}</strong>
+                    Total: <strong className="text-ink">{fmt(empFullTotal(selectedEmpData))}</strong>
                   </span>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={empTrendData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" />
-                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" />
+                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} />
                   <Tooltip formatter={v => [fmt(v) + ' ETB', 'Cost']}
-                    contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
-                  <Line type="monotone" dataKey="cost" stroke="#02404F" strokeWidth={2.5}
-                    dot={{ r: 4, fill: '#02404F', strokeWidth: 0 }}
+                    contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }} />
+                  <Line type="monotone" dataKey="cost" stroke="#0F5565" strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#0F5565', strokeWidth: 0 }}
                     activeDot={{ r: 6, fill: '#EB7D23', strokeWidth: 0 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -405,11 +405,11 @@ export default function EmployeeCostDetail({ data }) {
         <div className="xl:col-span-1 space-y-4">
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-bold text-navy">Employees Per BU</h3>
+              <h3 className="text-sm font-bold text-ink">Employees Per BU</h3>
               {selectedBU && (
                 <button onClick={() => { setSelectedBU(null); setExpandedSec({}) }}
                   className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: '#EBF8F6', color: '#02404F' }}>
+                  style={{ background: '#EBF8F6', color: '#0F5565' }}>
                   Clear ✕
                 </button>
               )}
@@ -432,9 +432,9 @@ export default function EmployeeCostDetail({ data }) {
                   margin={{ top: 0, right: 28, left: 0, bottom: 0 }}
                   onClick={e => { if (e?.activePayload?.[0]) selectBU(e.activePayload[0].payload.dept) }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis type="category" dataKey="displayName" tick={{ fontSize: 8, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={148} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="displayName" tick={{ fontSize: 8, fill: '#6B7780' }} axisLine={false} tickLine={false} width={148} />
                   <Tooltip content={<GenderTooltip />} cursor={{ fill: 'rgba(2,64,79,0.06)', cursor: 'pointer' }} />
                   <Bar dataKey="male" name="Male" stackId="g" maxBarSize={14} style={{ cursor: 'pointer' }}>
                     {deptChartData.map(d => (
@@ -456,12 +456,12 @@ export default function EmployeeCostDetail({ data }) {
           {/* Gender breakdown panel — appears when a BU is selected */}
           {selectedBUHR && (
             <div className="bg-white rounded-2xl border-2 border-navy/20 p-5 shadow-card">
-              <h4 className="text-[11px] font-extrabold text-navy uppercase tracking-wider mb-3">
+              <h4 className="text-[11px] font-extrabold text-ink uppercase tracking-wider mb-3">
                 {selectedBUHR.name}
               </h4>
               {selectedBUHR.fromPayroll ? (
                 <p className="text-[10px] text-muted">
-                  Filtered employees: <strong className="text-navy">{selectedBUHR.count}</strong>
+                  Filtered employees: <strong className="text-ink">{selectedBUHR.count}</strong>
                   <span className="block mt-1 opacity-70">Gender breakdown not available with active filters</span>
                 </p>
               ) : (
@@ -471,7 +471,7 @@ export default function EmployeeCostDetail({ data }) {
                       <span style={{ color: MALE_COLOR }}>Male</span>
                       <span style={{ color: MALE_COLOR }}>{selectedBUHR.male} · {pct(selectedBUHR.male, selectedBUHR.count)}</span>
                     </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E6E9EC' }}>
                       <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.male, selectedBUHR.count), background: MALE_COLOR }} />
                     </div>
                   </div>
@@ -480,11 +480,11 @@ export default function EmployeeCostDetail({ data }) {
                       <span style={{ color: FEMALE_COLOR }}>Female</span>
                       <span style={{ color: FEMALE_COLOR }}>{selectedBUHR.female} · {pct(selectedBUHR.female, selectedBUHR.count)}</span>
                     </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E3E9F2' }}>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: '#E6E9EC' }}>
                       <div className="h-full rounded-full transition-all" style={{ width: pct(selectedBUHR.female, selectedBUHR.count), background: FEMALE_COLOR }} />
                     </div>
                   </div>
-                  <p className="text-[10px] text-muted pt-1 border-t border-border">Total headcount: <strong className="text-navy">{selectedBUHR.count}</strong></p>
+                  <p className="text-[10px] text-muted pt-1 border-t border-border">Total headcount: <strong className="text-ink">{selectedBUHR.count}</strong></p>
                 </div>
               )}
 
@@ -498,19 +498,19 @@ export default function EmployeeCostDetail({ data }) {
                 if (buTotal === 0) return null
                 return (
                   <div className="mt-3 pt-3 border-t border-border space-y-2">
-                    <p className="text-[10px] font-bold text-navy uppercase tracking-wider">Payroll Source</p>
+                    <p className="text-[10px] font-bold text-ink uppercase tracking-wider">Payroll Source</p>
                     <div className="flex gap-2">
                       {kifTotal > 0 && (
                         <div className="flex-1 rounded-lg p-2 text-center" style={{ background: '#EBF8F6' }}>
                           <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: KIF_COLOR }}>Kifiya</p>
-                          <p className="text-sm font-extrabold text-navy tabular-nums">{fmt(kifTotal)}</p>
+                          <p className="text-sm font-extrabold text-ink tabular-nums">{fmt(kifTotal)}</p>
                           <p className="text-[9px] text-muted">{pct(kifTotal, buTotal)}</p>
                         </div>
                       )}
                       {safTotal > 0 && (
                         <div className="flex-1 rounded-lg p-2 text-center" style={{ background: '#FEF3EA' }}>
                           <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: SAF_COLOR }}>MSP / Programme</p>
-                          <p className="text-sm font-extrabold text-navy tabular-nums">{fmt(safTotal)}</p>
+                          <p className="text-sm font-extrabold text-ink tabular-nums">{fmt(safTotal)}</p>
                           <p className="text-[9px] text-muted">{pct(safTotal, buTotal)}</p>
                         </div>
                       )}
@@ -531,8 +531,8 @@ export default function EmployeeCostDetail({ data }) {
             <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
               <table className="w-full text-[11px] border-collapse">
                 <thead className="sticky top-0 z-10">
-                  <tr style={{ background: '#02404F' }}>
-                    <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[210px]" style={{ background: '#02404F' }}>
+                  <tr style={{ background: '#0F5565' }}>
+                    <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[210px]" style={{ background: '#0F5565' }}>
                       Business Unit / Section / Employee
                     </th>
                     {months.map(m => (
@@ -540,7 +540,7 @@ export default function EmployeeCostDetail({ data }) {
                     ))}
                     <th className="px-3 py-3 font-bold text-right whitespace-nowrap min-w-[80px]" style={{ color: '#86EFCF' }}>Kifiya</th>
                     <th className="px-3 py-3 font-bold text-right whitespace-nowrap min-w-[80px]" style={{ color: '#FBB97B' }}>MSP / Programme</th>
-                    <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px] sticky right-0 z-20" style={{ background: '#02404F' }}>
+                    <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[80px] sticky right-0 z-20" style={{ background: '#0F5565' }}>
                       Total
                     </th>
                   </tr>
@@ -558,7 +558,7 @@ export default function EmployeeCostDetail({ data }) {
                       <Fragment key={bu.buCode}>
                         {/* Level 1: Business Unit */}
                         <tr className="border-t border-border" style={{ background: buBg }}>
-                          <td className="px-4 py-2.5 font-bold text-navy sticky left-0 z-10" style={{ background: buBg }}>
+                          <td className="px-4 py-2.5 font-bold text-ink sticky left-0 z-10" style={{ background: buBg }}>
                             <span className="inline-block w-4 text-[9px] font-extrabold" style={{ color: '#EB7D23' }}>▼</span>
                             {bu.buName}
                             <span className="ml-2 text-[9px] font-normal text-muted">({bu.sections.length} section{bu.sections.length !== 1 ? 's' : ''})</span>
@@ -566,7 +566,7 @@ export default function EmployeeCostDetail({ data }) {
                           {months.map(m => {
                             const mv = bu.sections.reduce((s, sec) => s + sec.employees.reduce((ss, e) => ss + empFullMonth(e, m), 0), 0)
                             return (
-                              <td key={m} className="px-3 py-2.5 text-right font-semibold text-navy tabular-nums">
+                              <td key={m} className="px-3 py-2.5 text-right font-semibold text-ink tabular-nums">
                                 {mv ? fmt(mv) : <span className="opacity-30">—</span>}
                               </td>
                             )
@@ -577,7 +577,7 @@ export default function EmployeeCostDetail({ data }) {
                           <td className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>
                             {buSafee > 0 ? fmt(buSafee) : <span className="opacity-20">—</span>}
                           </td>
-                          <td className="px-4 py-2.5 text-right font-bold text-navy sticky right-0 z-10 tabular-nums" style={{ background: buBg }}>
+                          <td className="px-4 py-2.5 text-right font-bold text-ink sticky right-0 z-10 tabular-nums" style={{ background: buBg }}>
                             {fmt(buTotal)}
                           </td>
                         </tr>
@@ -586,7 +586,7 @@ export default function EmployeeCostDetail({ data }) {
                         {bu.sections.map(sec => {
                           const secKey    = `${bu.buCode}|${sec.sectionCode}`
                           const secOpen   = !!expandedSec[secKey]
-                          const secBg     = secOpen ? '#F0FAF8' : '#F4F6FA'
+                          const secBg     = secOpen ? '#F0FAF8' : '#F7F9FA'
                           const secKifiya = sec.employees.reduce((s, e) => s + empKifiyaDisplay(e), 0)
                           const secSafee  = sec.employees.reduce((s, e) => s + empSafeeDisplay(e), 0)
                           const secTotal  = sec.employees.reduce((s, e) => s + empFullTotal(e), 0)
@@ -601,10 +601,10 @@ export default function EmployeeCostDetail({ data }) {
                                 onMouseLeave={e => { e.currentTarget.style.background = secBg }}
                               >
                                 <td className="pl-8 pr-4 py-2 sticky left-0 z-10" style={{ background: secBg }}>
-                                  <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: '#1FB6A6' }}>
+                                  <span className="inline-block w-4 text-[8px] font-extrabold" style={{ color: '#12707F' }}>
                                     {secOpen ? '▼' : '▶'}
                                   </span>
-                                  <span className="font-semibold text-navy">{sec.sectionName}</span>
+                                  <span className="font-semibold text-ink">{sec.sectionName}</span>
                                   <span className="ml-1.5 text-[9px] text-muted">({sec.employees.length})</span>
                                 </td>
                                 {months.map(m => {
@@ -621,7 +621,7 @@ export default function EmployeeCostDetail({ data }) {
                                 <td className="px-3 py-2 text-right tabular-nums" style={{ color: SAF_COLOR }}>
                                   {secSafee > 0 ? fmt(secSafee) : <span className="opacity-20">—</span>}
                                 </td>
-                                <td className="px-4 py-2 text-right font-semibold text-navy sticky right-0 z-10 tabular-nums" style={{ background: secBg }}>
+                                <td className="px-4 py-2 text-right font-semibold text-ink sticky right-0 z-10 tabular-nums" style={{ background: secBg }}>
                                   {fmt(secTotal)}
                                 </td>
                               </tr>
@@ -632,13 +632,13 @@ export default function EmployeeCostDetail({ data }) {
                                 const empSaf  = empSafeeDisplay(emp)
                                 const hasBoth = empKif > 0 && empSaf > 0
                                 const source  = hasBoth ? 'Both' : empSaf > 0 ? 'MSP / Programme' : 'Kifiya'
-                                const srcClr  = source === 'MSP / Programme' ? SAF_COLOR : source === 'Both' ? '#2EBD85' : KIF_COLOR
+                                const srcClr  = source === 'MSP / Programme' ? SAF_COLOR : source === 'Both' ? '#2E7D32' : KIF_COLOR
                                 return (
                                   <tr key={emp.employeeNo} className="border-t border-border/20 group" style={{ background: '#FAFFFE' }}>
                                     <td className="pl-14 pr-4 py-1.5 sticky left-0 z-10" style={{ background: '#FAFFFE' }}>
                                       <div className="flex items-center gap-2">
                                         <div className="min-w-0">
-                                          <span className="font-medium text-navy block leading-tight">{[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}</span>
+                                          <span className="font-medium text-ink block leading-tight">{[emp.employeeNo, emp.name].filter(Boolean).join(' ') || '—'}</span>
                                         </div>
                                         <span className="text-[8px] font-extrabold px-1.5 py-0.5 rounded-full flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                                           style={{ background: `${srcClr}18`, color: srcClr }}>
@@ -660,7 +660,7 @@ export default function EmployeeCostDetail({ data }) {
                                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold" style={{ color: SAF_COLOR }}>
                                       {empSaf > 0 ? fmtFull(empSaf) : <span className="opacity-20">—</span>}
                                     </td>
-                                    <td className="px-4 py-1.5 text-right font-bold text-navy sticky right-0 z-10 tabular-nums" style={{ background: '#FAFFFE' }}>
+                                    <td className="px-4 py-1.5 text-right font-bold text-ink sticky right-0 z-10 tabular-nums" style={{ background: '#FAFFFE' }}>
                                       {fmtFull(empFullTotal(emp))}
                                     </td>
                                   </tr>
@@ -674,8 +674,8 @@ export default function EmployeeCostDetail({ data }) {
                   })}
 
                   {/* Grand total row */}
-                  <tr className="border-t-2 sticky bottom-0 z-10" style={{ background: '#02404F' }}>
-                    <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: '#02404F' }}>
+                  <tr className="border-t-2 sticky bottom-0 z-10" style={{ background: '#0F5565' }}>
+                    <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20" style={{ background: '#0F5565' }}>
                       {selectedBU ? selectedBUHR?.name || selectedBU : 'Total'}
                     </td>
                     {months.map(m => {
@@ -690,7 +690,7 @@ export default function EmployeeCostDetail({ data }) {
                     <td className="px-3 py-3 text-right font-bold tabular-nums" style={{ color: '#FBB97B' }}>
                       {fmt(visibleDrillDown.reduce((s, bu) => s + bu.sections.reduce((ss, sec) => ss + sec.employees.reduce((sss, e) => sss + empSafeeDisplay(e), 0), 0), 0))}
                     </td>
-                    <td className="px-4 py-3 text-right font-extrabold text-white sticky right-0 z-20 tabular-nums" style={{ background: '#02404F' }}>
+                    <td className="px-4 py-3 text-right font-extrabold text-white sticky right-0 z-20 tabular-nums" style={{ background: '#0F5565' }}>
                       {fmt(grand)}
                     </td>
                   </tr>

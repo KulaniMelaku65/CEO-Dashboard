@@ -13,7 +13,7 @@ export default function PeriodToggle({ value, onChange }) {
           key={m}
           onClick={() => onChange(m)}
           className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
-          style={value === m ? { background: '#02404F', color: '#fff' } : { color: '#6B7C93' }}
+          style={value === m ? { background: '#0F5565', color: '#fff' } : { color: '#6B7780' }}
         >
           {LABELS[m]}
         </button>

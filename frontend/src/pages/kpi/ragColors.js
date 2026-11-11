@@ -2,14 +2,14 @@
 // same explicit-hex convention used everywhere else in this app (NAVY/ROW_BG duplicated
 // across Financial.jsx, Aging.jsx, Procurement.jsx, etc.) rather than Tailwind classes that
 // don't repaint for dark mode.
-export const NAVY = '#02404F'
-export const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
+export const NAVY = '#0F5565'
+export const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
 
 export const RAG_COLORS = {
-  green: '#2EBD85',
+  green: '#2E7D32',
   amber: '#EB7D23',
-  red:   '#E5544B',
-  null:  '#6B7C93', // not yet reported / can't auto-evaluate
+  red:   '#D32F2F',
+  null:  '#6B7780', // not yet reported / can't auto-evaluate
 }
 
 export const RAG_LABELS = {

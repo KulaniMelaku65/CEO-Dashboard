@@ -59,7 +59,7 @@ function Body({ proc, data }) {
           {month && <Chip label={fmtMonth(month)} onClear={() => setMonth(null)} />}
           {type && <Chip label={type} onClear={() => setType(null)} />}
           {vendor && <Chip label={truncateLabel(vendor, 28)} onClear={() => setVendor(null)} />}
-          <button onClick={() => { setMonth(null); setType(null); setVendor(null) }} className="text-[11px] font-bold text-muted hover:text-navy underline">Clear all</button>
+          <button onClick={() => { setMonth(null); setType(null); setVendor(null) }} className="text-[11px] font-bold text-muted hover:text-ink underline">Clear all</button>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { glDrilldown } from '../lib/api.js'
 
-const RED = '#E5544B'
+const RED = '#D32F2F'
 
 function fmtAmt(n) {
   if (n == null || isNaN(n)) return '—'
@@ -31,7 +31,10 @@ const MAX_ROWS = 300
 // `showDescDoc` (default true): some sources behind this panel (e.g. Corporate
 // Budget's department-level drilldown) don't carry a description/document number on
 // their entries — pass false to drop those two columns instead of showing them empty.
-export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from, compareAsOf, compareLabel, showDescDoc = true, onClose }) {
+// `scope` ('all') and `note` are for the Cashflow statement: its rows mix Income
+// Statement and Balance Sheet accounts, and some are shown with BC's "Show Opposite
+// Sign" — `note` explains why the panel's ledger total has the opposite sign.
+export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from, scope, note, compareAsOf, compareLabel, showDescDoc = true, onClose }) {
   const [viewAsOf, setViewAsOf] = useState(asOf)
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
@@ -45,12 +48,12 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
   useEffect(() => {
     if (!accounts?.length) return
     setLoading(true); setError(''); setData(null)
-    glDrilldown.get(accounts, viewAsOf, from)
+    glDrilldown.get(accounts, viewAsOf, from, scope)
       .then(r => r.ok ? r.json() : Promise.reject(new Error('Failed to load GL entries.')))
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [accounts, viewAsOf, from])
+  }, [accounts, viewAsOf, from, scope])
 
   const entries = data?.entries || []
   const shown = entries.slice(0, MAX_ROWS)
@@ -94,17 +97,18 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
   return (
     <tr>
       <td colSpan={colSpan} className="p-0">
-        <div className="mx-5 my-2 rounded-xl border border-border overflow-hidden" style={{ background: 'rgba(0,0,0,0.18)' }}>
+        <div className="mx-5 my-2 rounded-xl border border-border overflow-hidden" style={{ background: 'var(--tbl-row-sub)' }}>
           <div className="flex items-start justify-between px-4 py-3 border-b border-border/50 gap-3 flex-wrap">
             <div>
-              <p className="text-xs font-extrabold text-navy">{label} — general ledger entries</p>
+              <p className="text-xs font-extrabold text-ink">{label} — general ledger entries</p>
               <p className="text-[10px] text-muted mt-0.5">
                 {accounts?.length} account{accounts.length !== 1 ? 's' : ''}
-                {data?.asOf && ` · through ${fmtDate(data.asOf)}`}
+                {data?.from ? ` · ${fmtDate(data.from)} – ${fmtDate(data.asOf)}` : data?.asOf && ` · through ${fmtDate(data.asOf)}`}
                 {' · '}
-                <span className="text-navy font-semibold">Black</span> = debit/increase ·{' '}
+                <span className="text-ink font-semibold">Black</span> = debit/increase ·{' '}
                 <span className="font-semibold" style={{ color: RED }}>Red in parentheses</span> = credit/decrease
               </p>
+              {note && <p className="text-[10px] text-muted mt-0.5 italic">{note}</p>}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {isComparing && (
@@ -112,14 +116,14 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
                   <button
                     onClick={() => setViewAsOf(asOf)}
                     className="px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors"
-                    style={viewAsOf === asOf ? { background: '#fff', color: '#02404F' } : { color: 'rgba(255,255,255,0.6)' }}
+                    style={viewAsOf === asOf ? { background: '#fff', color: '#0F5565' } : { color: 'var(--tone-muted-fg)' }}
                   >
                     As of {fmtDate(asOf)}
                   </button>
                   <button
                     onClick={() => setViewAsOf(compareAsOf)}
                     className="px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors"
-                    style={viewAsOf === compareAsOf ? { background: '#fff', color: '#02404F' } : { color: 'rgba(255,255,255,0.6)' }}
+                    style={viewAsOf === compareAsOf ? { background: '#fff', color: '#0F5565' } : { color: 'var(--tone-muted-fg)' }}
                   >
                     {compareLabel ? `Compare: ${compareLabel}` : `As of ${fmtDate(compareAsOf)}`}
                   </button>
@@ -128,11 +132,11 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
               <button
                 onClick={exportExcel}
                 disabled={!entries.length || exporting}
-                className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-border/60 text-navy hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-border/60 text-ink hover:bg-[var(--chart-cursor)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
               >
                 {exporting ? 'Exporting…' : '⬇ Export Excel'}
               </button>
-              <button onClick={onClose} className="text-muted hover:text-navy text-base leading-none px-1.5 flex-shrink-0">×</button>
+              <button onClick={onClose} className="text-muted hover:text-ink text-base leading-none px-1.5 flex-shrink-0">×</button>
             </div>
           </div>
 
@@ -145,7 +149,7 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
               <p className="text-xs text-muted px-4 py-6 text-center">No GL entries found for this figure.</p>
             ) : (
               <table className="w-full text-[11px]">
-                <thead className="sticky top-0" style={{ background: '#052C36' }}>
+                <thead className="sticky top-0" style={{ background: 'var(--panel-header-bg)' }}>
                   <tr>
                     <th className="text-left px-4 py-1.5 font-extrabold text-muted uppercase tracking-wider">Date</th>
                     <th className="text-left px-3 py-1.5 font-extrabold text-muted uppercase tracking-wider">Account</th>
@@ -158,14 +162,14 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
                 </thead>
                 <tbody>
                   {shown.map((e, i) => (
-                    <tr key={i} className="border-t border-border/30 hover:bg-white/5">
-                      <td className="px-4 py-1.5 text-navy whitespace-nowrap">{fmtDate(e.postingDate)}</td>
-                      <td className="px-3 py-1.5 text-navy whitespace-nowrap">{e.accountNo}{e.accountName ? ` — ${e.accountName}` : ''}</td>
+                    <tr key={i} className="border-t border-border/30 hover:bg-[var(--chart-cursor)]">
+                      <td className="px-4 py-1.5 text-ink whitespace-nowrap">{fmtDate(e.postingDate)}</td>
+                      <td className="px-3 py-1.5 text-ink whitespace-nowrap">{e.accountNo}{e.accountName ? ` — ${e.accountName}` : ''}</td>
                       {showDescDoc && <>
-                        <td className="px-3 py-1.5 text-navy">{e.description || '—'}</td>
+                        <td className="px-3 py-1.5 text-ink">{e.description || '—'}</td>
                         <td className="px-3 py-1.5 text-muted whitespace-nowrap">{e.documentNo || '—'}</td>
                       </>}
-                      <td className={`px-4 py-1.5 text-right font-semibold whitespace-nowrap ${e.amount < 0 ? 'text-red-500' : 'text-navy'}`}>
+                      <td className={`px-4 py-1.5 text-right font-semibold whitespace-nowrap ${e.amount < 0 ? 'text-red-500' : 'text-ink'}`}>
                         {e.amount < 0 ? '(' : ''}ETB {fmtAmt(e.amount)}{e.amount < 0 ? ')' : ''}
                       </td>
                     </tr>
@@ -176,11 +180,13 @@ export default function GLDrilldownPanel({ colSpan, label, accounts, asOf, from,
           </div>
 
           {!loading && !error && entries.length > 0 && (
-            <div className="flex items-center justify-between px-4 py-2 border-t border-border/50" style={{ background: 'rgba(0,0,0,0.12)' }}>
+            <div className="flex items-center justify-between px-4 py-2 border-t border-border/50" style={{ background: 'var(--tbl-head-bg)' }}>
               <p className="text-[10px] text-muted">
                 {entries.length > MAX_ROWS ? `Showing most recent ${MAX_ROWS} of ${entries.length} entries — export for the full list` : `${entries.length} entries`}
               </p>
-              <p className="text-xs font-extrabold text-navy">Total: ETB {fmtAmt(data.total)}</p>
+              <p className={`text-xs font-extrabold ${data.total < 0 ? 'text-red-500' : 'text-ink'}`}>
+                Total: {data.total < 0 ? '(' : ''}ETB {fmtAmt(data.total)}{data.total < 0 ? ')' : ''}
+              </p>
             </div>
           )}
         </div>

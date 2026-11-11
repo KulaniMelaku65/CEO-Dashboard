@@ -16,14 +16,14 @@ function DepartmentCard({ dept, onClick }) {
     <button
       onClick={onClick}
       className="rounded-2xl border text-left p-4 transition-transform hover:-translate-y-0.5"
-      style={{ background: ROW_BG.even, borderColor: 'rgba(255,255,255,.08)' }}
+      style={{ background: ROW_BG.even, borderColor: 'var(--tbl-line)' }}
     >
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-white font-bold text-sm truncate">{dept.department.name}</span>
+        <span className="text-ink font-bold text-sm truncate">{dept.department.name}</span>
         <StatusDot status={dept.status} size={14} />
       </div>
-      <p className="text-white/50 text-[10px] font-bold uppercase tracking-wider mb-2">{dept.department.accountable_exec}</p>
-      <div className="flex items-center gap-3 text-[11px] font-semibold text-white/70">
+      <p className="text-muted text-[10px] font-bold uppercase tracking-wider mb-2">{dept.department.accountable_exec}</p>
+      <div className="flex items-center gap-3 text-[11px] font-semibold text-muted">
         <span className="flex items-center gap-1"><StatusDot status="green" /> {counts.green || 0}</span>
         <span className="flex items-center gap-1"><StatusDot status="amber" /> {counts.amber || 0}</span>
         <span className="flex items-center gap-1"><StatusDot status="red" /> {counts.red || 0}</span>
@@ -47,7 +47,7 @@ export default function KpiOverview({ onNavigate }) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Group KPI Dashboard</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Group KPI Dashboard</h2>
         <p className="text-xs text-muted font-medium">
           Red / Amber / Green status across all 12 departments — {period}. Click a department to see its KPIs.
         </p>
@@ -56,9 +56,9 @@ export default function KpiOverview({ onNavigate }) {
       {reminders && (
         <div
           className="rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3"
-          style={{ background: reminders.overdue ? 'rgba(229,84,75,.12)' : 'rgba(235,125,35,.1)', borderColor: reminders.overdue ? '#E5544B' : '#EB7D23' }}
+          style={{ background: reminders.overdue ? 'rgba(229,84,75,.12)' : 'rgba(235,125,35,.1)', borderColor: reminders.overdue ? '#D32F2F' : '#EB7D23' }}
         >
-          <p className="text-xs font-bold text-navy">
+          <p className="text-xs font-bold text-ink">
             {reminders.overdue
               ? `Submission deadline (WD5, ${reminders.deadline}) has passed`
               : `Submission deadline: ${reminders.deadline} (${reminders.daysLeft} day${reminders.daysLeft === 1 ? '' : 's'} left)`}

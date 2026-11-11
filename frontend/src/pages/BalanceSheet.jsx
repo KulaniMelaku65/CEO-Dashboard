@@ -3,14 +3,14 @@ import { fmtETB, fmtDate } from '../lib/fmt.js'
 import { usePeriodSelection, YearPeriodFilterBar, yearsFromMonthData } from '../components/PeriodFilterBar.jsx'
 import GLDrilldownPanel from '../components/GLDrilldownPanel.jsx'
 
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
 const GREEN  = '#22C55E'
 
 // Same KPI card language as P&L by Business Line / Financial Performance — a colored
 // left accent bar + navy value text (readable on the card in both light and dark mode,
-// since "text-navy" is a class index.css's .dark-app remaps, unlike a hardcoded inline
+// since "text-ink" is a class index.css's .dark-app remaps, unlike a hardcoded inline
 // white) — instead of the plain white-card-with-colored-value-text this page had before,
 // which also only worked by coincidence in dark mode (default-colored value text was
 // literally inline white-on-white in light mode whenever no accent was passed).
@@ -24,10 +24,10 @@ function StatCard({ label, value, sub, accent, delta, deltaLabel }) {
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: accent || NAVY }} />
       <div className="pl-2">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1">{label}</p>
-        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        <p className="text-xl font-extrabold text-ink leading-none mb-1">{value}</p>
         {sub && <p className="text-[10px] text-muted">{sub}</p>}
         {delta != null && (
-          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2EBD85' : '#E5544B' }}>
+          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2E7D32' : '#D32F2F' }}>
             {delta >= 0 ? '▲' : '▼'} ETB {fmtETB(Math.abs(delta))} vs {deltaLabel}
           </p>
         )}
@@ -51,10 +51,10 @@ function ExpandableStatCard({ label, value, sub, accent, open, onToggle, delta, 
           <span className="text-[9px]">{open ? '▾' : '▸'}</span>
           {label}
         </p>
-        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        <p className="text-xl font-extrabold text-ink leading-none mb-1">{value}</p>
         {sub && <p className="text-[10px] text-muted">{sub}</p>}
         {delta != null && (
-          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2EBD85' : '#E5544B' }}>
+          <p className="text-[10px] font-semibold mt-1" style={{ color: delta >= 0 ? '#2E7D32' : '#D32F2F' }}>
             {delta >= 0 ? '▲' : '▼'} ETB {fmtETB(Math.abs(delta))} vs {deltaLabel}
           </p>
         )}
@@ -115,8 +115,8 @@ function AccountRow({ name, balance, accounts, onDrill, compareValue, showCompar
         className={`border-b border-border/40 hover:bg-bg/40 ${clickable ? 'cursor-pointer' : ''}`}
         onClick={clickable ? () => onDrill(name, accounts) : undefined}
       >
-        <td className="px-5 py-2 pl-12 text-[13px] font-medium text-navy">{name}</td>
-        <td className={`px-5 py-2 text-right text-[13px] font-semibold ${balance < 0 ? 'text-red-600' : 'text-navy'} ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
+        <td className="px-5 py-2 pl-12 text-[13px] font-medium text-ink">{name}</td>
+        <td className={`px-5 py-2 text-right text-[13px] font-semibold ${balance < 0 ? 'text-red-600' : 'text-ink'} ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
           {balance < 0 ? '(' : ''}ETB {fmtRaw(balance)}{balance < 0 ? ')' : ''}
         </td>
         {showCompare && <CompareCell value={compareValue} />}
@@ -132,12 +132,12 @@ function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, sho
   return (
     <>
       <tr
-        className={clickable ? 'cursor-pointer hover:bg-white/5' : ''}
-        style={{ background: light ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)' }}
+        className={clickable ? 'cursor-pointer hover:bg-[var(--chart-cursor)]' : ''}
+        style={{ background: light ? 'var(--row-tint-a)' : 'var(--row-tint-b)' }}
         onClick={clickable ? () => onDrill(label, accounts) : undefined}
       >
-        <td className="px-5 py-2.5 pl-9 text-[13px] font-bold text-navy">{label}</td>
-        <td className={`px-5 py-2.5 text-right text-[13px] font-bold text-navy border-t border-border ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
+        <td className="px-5 py-2.5 pl-9 text-[13px] font-bold text-ink">{label}</td>
+        <td className={`px-5 py-2.5 text-right text-[13px] font-bold text-ink border-t border-border ${clickable ? 'underline decoration-dotted underline-offset-2' : ''}`}>
           ETB {fmtRaw(total)}
         </td>
         {showCompare && <CompareCell value={compareValue} />}
@@ -149,7 +149,7 @@ function SubtotalRow({ label, total, light, accounts, onDrill, compareValue, sho
 }
 
 function GrandTotalRow({ label, total, accent, accounts, onDrill, compareValue, showCompare, drillOpen, asOf, compareAsOf, compareLabel, colSpan }) {
-  const color = accent || '#FFFFFF'
+  const color = accent || 'var(--tbl-fg)'
   const clickable = onDrill && accounts?.length > 0
   return (
     <>
@@ -300,7 +300,7 @@ export default function BalanceSheet({ data }) {
           the period filter inline at the top-right, no separate boxed card around it. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">Balance Sheet</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">Balance Sheet</h2>
           <p className="text-xs text-muted font-medium">
             {periodBs
               ? `As of end of ${displayPeriodLabel} · source: Business Central`
@@ -382,7 +382,7 @@ export default function BalanceSheet({ data }) {
       {hasSections ? (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Balance Sheet Statement</h3>
+            <h3 className="text-sm font-bold text-ink">Balance Sheet Statement</h3>
             <p className="text-[10px] text-muted mt-0.5">
               {periodBs ? `As of end of ${displayPeriodLabel}` : `As of ${fmtDate(liveBs.asOf)}`}
               {showCompare && ` vs ${sel.priorLabel}`} · click a section header to expand / collapse
@@ -404,7 +404,7 @@ export default function BalanceSheet({ data }) {
             <tbody>
               {/* ── ASSETS ──────────────────────────────── */}
               <tr style={{ background: NAVY + '10' }}>
-                <td colSpan={showCompare ? 3 : 2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase" style={{ color: '#FFFFFF' }}>
+                <td colSpan={showCompare ? 3 : 2} className="px-5 py-2 text-[11px] font-extrabold tracking-widest uppercase text-ink">
                   ASSETS
                 </td>
               </tr>
@@ -421,7 +421,7 @@ export default function BalanceSheet({ data }) {
                 compareValue={priorBs ? sumRows(compareOf('currentAssets')) : null} showCompare={showCompare}
                 drillOpen={drillKey === 'Total Current Assets'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
-              <GrandTotalRow label="TOTAL ASSETS" total={stmtTotalAssets} accent="#FFFFFF" accounts={sections.totalAssetsAccounts} onDrill={toggleDrill}
+              <GrandTotalRow label="TOTAL ASSETS" total={stmtTotalAssets} accounts={sections.totalAssetsAccounts} onDrill={toggleDrill}
                 compareValue={compareTotalAssets} showCompare={showCompare}
                 drillOpen={drillKey === 'TOTAL ASSETS'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
 
@@ -465,7 +465,7 @@ export default function BalanceSheet({ data }) {
 
               {/* ── CHECK ─────────────────────────────── */}
               <tr><td colSpan={stmtColSpan} className="py-2" /></tr>
-              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={stmtTotalLiabilities + stmtTotalEquity} accent="#FFFFFF"
+              <GrandTotalRow label="TOTAL LIABILITIES + EQUITY" total={stmtTotalLiabilities + stmtTotalEquity}
                 accounts={[...new Set([...(sections.totalLiabilitiesAccounts || []), ...(sections.equity?.accounts || [])])]} onDrill={toggleDrill}
                 compareValue={showCompare ? compareTotalLiabilities + compareTotalEquity : null} showCompare={showCompare}
                 drillOpen={drillKey === 'TOTAL LIABILITIES + EQUITY'} asOf={stmtAsOf} compareAsOf={compareAsOf} compareLabel={compareLabel} colSpan={stmtColSpan} />
@@ -476,34 +476,34 @@ export default function BalanceSheet({ data }) {
         /* Fallback summary when sections aren't available */
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-sm font-bold text-navy">Balance Sheet Summary</h3>
+            <h3 className="text-sm font-bold text-ink">Balance Sheet Summary</h3>
             <p className="text-[10px] text-muted mt-0.5">As of {fmtDate(liveBs.asOf)}</p>
           </div>
           <table className="w-full text-sm">
             <tbody>
               <tr className="border-b border-border/40">
-                <td className="px-5 py-2.5 font-medium text-navy">Non-Current Assets</td>
-                <td className="px-5 py-2.5 text-right font-semibold text-navy">ETB {fmtETB(nonCurrentAssets)}</td>
+                <td className="px-5 py-2.5 font-medium text-ink">Non-Current Assets</td>
+                <td className="px-5 py-2.5 text-right font-semibold text-ink">ETB {fmtETB(nonCurrentAssets)}</td>
               </tr>
               <tr className="border-b border-border/40">
-                <td className="px-5 py-2.5 font-medium text-navy">Current Assets</td>
-                <td className="px-5 py-2.5 text-right font-semibold text-navy">ETB {fmtETB(currentAssets)}</td>
+                <td className="px-5 py-2.5 font-medium text-ink">Current Assets</td>
+                <td className="px-5 py-2.5 text-right font-semibold text-ink">ETB {fmtETB(currentAssets)}</td>
               </tr>
               <tr className="bg-bg/60 border-b border-border/40">
-                <td className="px-5 py-2.5 font-extrabold text-navy">Total Assets</td>
-                <td className="px-5 py-2.5 text-right font-extrabold text-navy">ETB {fmtETB(totalAssets || bs.totalAssetsImplied)}</td>
+                <td className="px-5 py-2.5 font-extrabold text-ink">Total Assets</td>
+                <td className="px-5 py-2.5 text-right font-extrabold text-ink">ETB {fmtETB(totalAssets || bs.totalAssetsImplied)}</td>
               </tr>
               <tr className="border-b border-border/40">
-                <td className="px-5 py-2.5 font-medium text-navy">Current Liabilities</td>
-                <td className="px-5 py-2.5 text-right font-semibold text-navy">ETB {fmtETB(bs.currentLiabilities)}</td>
+                <td className="px-5 py-2.5 font-medium text-ink">Current Liabilities</td>
+                <td className="px-5 py-2.5 text-right font-semibold text-ink">ETB {fmtETB(bs.currentLiabilities)}</td>
               </tr>
               <tr className="bg-bg/60 border-b border-border/40">
-                <td className="px-5 py-2.5 font-extrabold text-navy">Total Liabilities</td>
-                <td className="px-5 py-2.5 text-right font-extrabold text-navy">ETB {fmtETB(totalLiabilities)}</td>
+                <td className="px-5 py-2.5 font-extrabold text-ink">Total Liabilities</td>
+                <td className="px-5 py-2.5 text-right font-extrabold text-ink">ETB {fmtETB(totalLiabilities)}</td>
               </tr>
               <tr className="bg-bg/60">
-                <td className="px-5 py-2.5 font-extrabold text-navy">Equity</td>
-                <td className="px-5 py-2.5 text-right font-extrabold text-navy">ETB {fmtETB(equity)}</td>
+                <td className="px-5 py-2.5 font-extrabold text-ink">Equity</td>
+                <td className="px-5 py-2.5 text-right font-extrabold text-ink">ETB {fmtETB(equity)}</td>
               </tr>
             </tbody>
           </table>

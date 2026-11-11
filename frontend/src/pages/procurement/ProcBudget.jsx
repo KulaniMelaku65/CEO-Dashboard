@@ -6,27 +6,27 @@ import {
   Kpi, Panel, Notice, PageHeader, DrillTable, ProcData,
 } from './shared.jsx'
 
-const utilColor = p => (!p ? '#6B7C93' : p > 100 ? RED : p >= 80 ? ORANGE : GREEN)
+const utilColor = p => (!p ? '#6B7780' : p > 100 ? RED : p >= 80 ? ORANGE : GREEN)
 
 function BudgetCard({ b, selected, onClick }) {
   const pct = b.utilizationPct
   return (
     <button
       onClick={onClick}
-      className="rounded-2xl p-4 text-left transition-transform"
-      style={{ background: NAVY, boxShadow: selected ? `0 0 0 2px #FFFFFF, 0 0 0 4px ${NAVY}` : 'none', transform: selected ? 'scale(1.01)' : 'none' }}
+      className="bg-white rounded-2xl border border-border shadow-card p-4 text-left transition-transform"
+      style={{ boxShadow: selected ? `0 0 0 2px ${NAVY}` : undefined, transform: selected ? 'scale(1.01)' : 'none' }}
     >
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] uppercase tracking-widest font-bold text-white/60">Budget {b.name}</p>
-        <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,.12)', color: '#fff' }}>{b.currency}</span>
+        <p className="text-[10px] uppercase tracking-widest font-bold text-muted">Budget {b.name}</p>
+        <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full" style={{ background: 'var(--tone-muted-bg)', color: 'var(--tbl-fg)' }}>{b.currency}</span>
       </div>
-      <p className="text-white font-black text-xl tabular-nums leading-none">{fmtMoney(b.committed, b.currency)}</p>
-      <p className="text-[11px] text-white/55 mt-1">committed of {fmtMoney(b.allocated, b.currency)} allocated</p>
-      <div className="h-2 rounded-full mt-3 overflow-hidden" style={{ background: 'rgba(255,255,255,.12)' }}>
+      <p className="text-ink font-black text-xl tabular-nums leading-none">{fmtMoney(b.committed, b.currency)}</p>
+      <p className="text-[11px] text-muted mt-1">committed of {fmtMoney(b.allocated, b.currency)} allocated</p>
+      <div className="h-2 rounded-full mt-3 overflow-hidden" style={{ background: 'var(--tone-muted-bg)' }}>
         <div className="h-full rounded-full" style={{ width: `${Math.min(pct || 0, 100)}%`, background: utilColor(pct) }} />
       </div>
       <p className="text-[11px] font-bold mt-1.5" style={{ color: utilColor(pct) }}>{pct == null ? '—' : `${pct.toFixed(1)}% utilised`}</p>
-      <p className="text-[10px] text-white/40 mt-0.5">{fmtDay(b.dateFrom)} – {fmtDay(b.dateTo)}</p>
+      <p className="text-[10px] text-muted mt-0.5">{fmtDay(b.dateFrom)} – {fmtDay(b.dateTo)}</p>
     </button>
   )
 }

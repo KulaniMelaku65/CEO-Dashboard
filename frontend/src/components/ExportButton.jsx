@@ -5,8 +5,8 @@ import { downloadCSV } from '../lib/csvExport.js'
 export default function ExportButton({ rows, columns, filename, meta, label = 'Export', variant = 'light' }) {
   const disabled = !rows || rows.length === 0
   const variantStyle = variant === 'dark'
-    ? { borderColor: 'rgba(255,255,255,0.2)', color: '#fff' }
-    : { borderColor: '#D7DEE6', color: '#02404F' }
+    ? { borderColor: 'var(--tbl-line)', color: 'var(--tbl-fg)' } // sits on theme-aware table panels
+    : { borderColor: '#D7DEE6', color: '#0F5565' }
   return (
     <button
       onClick={() => downloadCSV(filename, rows, columns, meta)}

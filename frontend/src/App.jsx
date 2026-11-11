@@ -64,6 +64,10 @@ export default function App() {
   const [histDate, setHistDate]     = useState(null)
   const [booting, setBooting]       = useState(true)
   const [sidebarOpen, setSidebar]   = useState(false)
+  // Light is the real default (white bg, black text) — EPMS's own theme toggle defaults
+  // to light too. Persisted so a user's choice survives a reload/re-login.
+  const [dark, setDark] = useState(() => localStorage.getItem('kft-theme') === 'dark')
+  useEffect(() => { localStorage.setItem('kft-theme', dark ? 'dark' : 'light') }, [dark])
 
   // Per-user sidebar — replaces the old single hardcoded VISIBLE_IDS global. A user with
   // no page grants at all sees an empty list (handled below) rather than crashing.
@@ -171,7 +175,7 @@ export default function App() {
   }
 
   return (
-    <div className="dark-app flex h-screen overflow-hidden font-sans bg-bg">
+    <div className={(dark ? 'dark-app ' : '') + 'flex h-screen overflow-hidden font-sans bg-bg'}>
       <Sidebar
         slides={slides}
         current={slide}
@@ -190,13 +194,15 @@ export default function App() {
           onRefresh={handleRefresh}
           onHistDate={handleHistDate}
           onMenuToggle={() => setSidebar(o => !o)}
+          dark={dark}
+          onToggleDark={() => setDark(d => !d)}
         />
 
         <main className="flex-1 relative overflow-hidden">
           {slides.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <div className="text-center max-w-sm">
-                <p className="text-navy font-bold text-sm mb-1">No pages available yet</p>
+                <p className="text-ink font-bold text-sm mb-1">No pages available yet</p>
                 <p className="text-muted text-xs leading-relaxed">
                   Your account doesn't have access to any dashboard pages yet — ask an admin to grant you access.
                 </p>
@@ -215,11 +221,11 @@ export default function App() {
             <div className="absolute inset-0 flex items-center justify-center p-6">
               <div className="text-center max-w-sm">
                 <div className="w-12 h-12 rounded-full bg-bg flex items-center justify-center mx-auto mb-3">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7C93" strokeWidth="2">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7780" strokeWidth="2">
                     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                   </svg>
                 </div>
-                <p className="text-navy font-bold text-sm mb-1">No snapshot available yet</p>
+                <p className="text-ink font-bold text-sm mb-1">No snapshot available yet</p>
                 <p className="text-muted text-xs leading-relaxed">
                   The server pulls data from Business Central automatically. Use the refresh button above to sync now, or wait for the next scheduled run.
                 </p>

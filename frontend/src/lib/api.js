@@ -19,7 +19,9 @@ export const auth = {
 export const glDrilldown = {
   // `from` switches the query to a date-range Income Statement lookup instead of a
   // cumulative-since-inception Balance Sheet one — see routes/gl-drilldown.js.
-  get: (accounts, asOf, from) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}${from ? `&from=${from}` : ''}`),
+  // `scope: 'all'` searches every account regardless of Income Statement/Balance Sheet
+  // (the Cashflow statement's rows mix both).
+  get: (accounts, asOf, from, scope) => req(`/api/gl-drilldown?accounts=${accounts.join(',')}${asOf ? `&asOf=${asOf}` : ''}${from ? `&from=${from}` : ''}${scope ? `&scope=${scope}` : ''}`),
 }
 
 export const cashflow = {

@@ -7,12 +7,12 @@ import { fmtNum, fmtPct } from '../lib/fmt.js'
 import PeopleOpsFilterBar from '../components/PeopleOpsFilterBar.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 
-const PIE_COLORS   = ['#7FA8C9', '#1FB6A6', '#EB7D23', '#2EBD85', '#F5A870', '#E5544B']
+const PIE_COLORS   = ['#7FA8C9', '#12707F', '#EB7D23', '#2E7D32', '#F39A4D', '#D32F2F']
 const MALE_COLOR   = '#7FA8C9'
-const FEMALE_COLOR = '#1FB6A6'
-const AXIS_COLOR   = 'rgba(255,255,255,0.55)'
-const GRID_COLOR   = 'rgba(255,255,255,0.12)'
-const TOOLTIP_STYLE = { fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: '#0A3A46', color: '#fff' }
+const FEMALE_COLOR = '#12707F'
+const AXIS_COLOR   = 'var(--chart-axis)'
+const GRID_COLOR   = 'var(--chart-grid)'
+const TOOLTIP_STYLE = { fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: '#0A3A46', color: '#fff' } // retheme-skip
 
 const fmtM = (n) => {
   if (n == null || isNaN(n)) return '—'
@@ -27,7 +27,7 @@ function GenderTooltip({ active, payload, label }) {
   const male   = payload.find(p => p.dataKey === 'male')?.value   || 0
   const female = payload.find(p => p.dataKey === 'female')?.value || 0
   return (
-    <div style={{ background: '#0A3A46', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '8px 12px', fontSize: 11, minWidth: 140 }}>
+    <div style={{ background: '#0A3A46', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '8px 12px', fontSize: 11, minWidth: 140 }}> // retheme-skip
       <p style={{ fontWeight: 700, color: '#fff', marginBottom: 6 }}>{label}</p>
       <p style={{ color: MALE_COLOR,   marginBottom: 2 }}>Male: <strong>{male}</strong></p>
       <p style={{ color: FEMALE_COLOR, marginBottom: 2 }}>Female: <strong>{female}</strong></p>
@@ -65,7 +65,7 @@ function MiniDonut({ data, size = 140 }) {
         {data.map((d, i) => (
           <div key={d.name} className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-            <span className="text-[10px] font-semibold text-navy truncate">{d.name}</span>
+            <span className="text-[10px] font-semibold text-ink truncate">{d.name}</span>
             <span className="text-[10px] text-muted font-medium ml-auto pl-2">{fmtNum(d.value)}</span>
           </div>
         ))}
@@ -298,7 +298,7 @@ export default function HR({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">People & HR</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">People & HR</h2>
         <p className="text-xs text-muted font-medium">Workforce composition, diversity, and payroll analytics</p>
       </div>
 
@@ -318,20 +318,20 @@ export default function HR({ data }) {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">No Employees per Entity</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">No Employees per Entity</h3>
           {filteredVCData.length > 0
             ? <MiniDonut data={filteredVCData} size={140} />
             : <div className="h-36 flex items-center justify-center text-muted text-sm">No data</div>}
         </div>
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">HR Cost Allocation</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">HR Cost Allocation</h3>
           <p className="text-[10px] text-muted mb-3">Kifiya vs MSP / Programme</p>
           {costSourceData.length > 0 ? (
             <>
               <MiniDonut data={costSourceData} size={120} />
               <p className="text-[10px] text-muted mt-3 border-t border-border pt-2">
-                Total: <strong className="text-navy">{fmtM(totalCost)} ETB</strong>
+                Total: <strong className="text-ink">{fmtM(totalCost)} ETB</strong>
               </p>
             </>
           ) : (
@@ -343,7 +343,7 @@ export default function HR({ data }) {
       {/* ── Workforce Diversity ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-2">Employee per Gender Type</h3>
+          <h3 className="text-sm font-bold text-ink mb-2">Employee per Gender Type</h3>
           {filteredGenderData.length > 0 ? (
             <div className="flex items-center justify-center gap-6">
               <PieChart width={160} height={160}>
@@ -358,7 +358,7 @@ export default function HR({ data }) {
                 {filteredGenderData.map((g, i) => (
                   <div key={g.gender} className="flex items-center gap-2.5">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                    <span className="text-xs font-bold text-navy">{g.gender}</span>
+                    <span className="text-xs font-bold text-ink">{g.gender}</span>
                     <span className="text-xs text-muted font-medium">
                       {fmtNum(g.count)} ({filteredGenderTotal ? fmtPct((g.count / filteredGenderTotal) * 100) : '—'})
                     </span>
@@ -372,7 +372,7 @@ export default function HR({ data }) {
         </div>
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-2">Gender per Contract Type</h3>
+          <h3 className="text-sm font-bold text-ink mb-2">Gender per Contract Type</h3>
           <GenderLegend />
           {filteredTypeData.length > 0 ? (
             <ResponsiveContainer width="100%" height={Math.max(180, filteredTypeData.length * 38)}>
@@ -380,7 +380,7 @@ export default function HR({ data }) {
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <YAxis type="category" dataKey="type" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={90} />
-                <Tooltip content={<GenderTooltip />} cursor={{ fill: 'rgba(255,255,255,0.06)' }} />
+                <Tooltip content={<GenderTooltip />} cursor={{ fill: 'var(--chart-cursor)' }} />
                 <Bar dataKey="male"   name="Male"   stackId="g" fill={MALE_COLOR}   maxBarSize={18} />
                 <Bar dataKey="female" name="Female" stackId="g" fill={FEMALE_COLOR} maxBarSize={18} radius={[0, 4, 4, 0]} />
               </BarChart>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ai, departmentOverrides, kpi } from '../lib/api.js'
+import { ai, departmentOverrides } from '../lib/api.js'
 import { renderMarkdown } from '../lib/markdown.jsx'
 
 // Which top-level snapshot keys are relevant per page — without this, the context
@@ -279,16 +279,18 @@ export default function ChatBot({ data, pageId, pageLabel }) {
       }
       // The Group KPI Dashboard and its 12 department pages aren't backed by the daily
       // BC/Superset snapshot at all — their RAG grid, targets and submissions live in a
-      // separate DB-backed feed (routes/kpi.js), so without this fetch the chatbot would
-      // have no real KPI data to answer from on these pages.
+      // separate DB-backed feed (routes/kpi.js). This used to fetch and dump up to 16000
+      // chars of that data into every system prompt; now that the agent has its own
+      // get_kpi_overview/get_kpi_department tools (backend/services/ai-tools.js) that hit
+      // the exact same feed live, duplicating it here only burns tokens — a real cost on
+      // Groq's free-tier 8000 TPM cap (this plus buildContext's 20000-char budget alone
+      // could exceed it before the model even answers). Just naming the current page's
+      // departmentId lets the model call the right tool itself.
       let kpiBlock = ''
-      if (pageId === 'kpi-dashboard' || pageId?.startsWith('kpi-')) {
-        try {
-          const period = new Date().toISOString().slice(0, 7)
-          const kr = pageId === 'kpi-dashboard' ? await kpi.overview(period) : await kpi.department(pageId, period)
-          const kj = kr.ok ? await kr.json() : null
-          if (kj) kpiBlock = `\nGroup KPI Dashboard data for period ${period} (RAG = Red/Amber/Green rating against target): ${JSON.stringify(kj).slice(0, 16000)}`
-        } catch { /* best-effort — omit if unavailable */ }
+      if (pageId === 'kpi-dashboard') {
+        kpiBlock = '\nThe user is on the Group KPI Dashboard (company-wide view) — use get_kpi_overview for KPI questions.'
+      } else if (pageId?.startsWith('kpi-')) {
+        kpiBlock = `\nThe user is on a department KPI page (departmentId: "${pageId}") — use get_kpi_department with this departmentId for KPI questions about it.`
       }
       const employeeBlock = buildEmployeeBlock(findEmployeeMatches(text, data), data)
       const system = `You are an executive dashboard assistant for Kifiya Financial Technology. Be concise.
@@ -324,7 +326,7 @@ Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${kpiBlock}
           className="fixed bottom-32 right-5 z-50 bg-white rounded-2xl shadow-2xl border border-border flex flex-col overflow-hidden"
           style={{ width: 400, height: 520, maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 160px)' }}
         >
-          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border flex-shrink-0" style={{ background: '#02404F' }}>
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border flex-shrink-0" style={{ background: '#0F5565' }}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#EB7D23' }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
                 <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -342,7 +344,7 @@ Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${kpiBlock}
                 <div
                   className={`${m.role === 'assistant' ? 'max-w-[95%]' : 'max-w-[85%]'} rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed font-medium`}
                   style={m.role === 'user'
-                    ? { background: '#02404F', color: 'white', borderBottomRightRadius: 4 }
+                    ? { background: '#0F5565', color: 'white', borderBottomRightRadius: 4 }
                     : { background: '#0F3D46', color: '#FFFFFF', borderBottomLeftRadius: 4 }
                   }
                 >
@@ -362,7 +364,7 @@ Current data snapshot: ${buildContext(data, pageId)}${overridesBlock}${kpiBlock}
 
           <div className="flex items-center gap-2 px-3 py-3 border-t border-border flex-shrink-0">
             <input
-              className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none text-navy font-medium focus:border-navy transition-colors"
+              className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none text-ink font-medium focus:border-navy transition-colors"
               placeholder="Ask about the data…"
               value={input}
               onChange={e => setInput(e.target.value)}

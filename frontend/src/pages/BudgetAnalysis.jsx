@@ -9,17 +9,17 @@ import PeriodToggle from '../components/PeriodToggle.jsx'
 import { PeriodTree, usePeriodSelection } from '../components/PeriodFilterBar.jsx'
 import GLDrilldownPanel from '../components/GLDrilldownPanel.jsx'
 
-const NAVY   = '#02404F'
+const NAVY   = '#0F5565'
 const ORANGE = '#EB7D23'
-const GREEN  = '#2EBD85'
-const RED    = '#E5544B'
-const TEAL   = '#1FB6A6'
+const GREEN  = '#2E7D32'
+const RED    = '#D32F2F'
+const TEAL   = '#12707F'
 
 // Same dark-theme section/zebra-stripe palette as HR Analysis's own tables
 // (HRPageReview.jsx) and SAFEE Budget Analysis — keeps this page's drill-down tables
 // visually consistent with the rest of the app instead of a one-off hover/white style.
-const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
-const SEC_BG = { open: '#123C46', closed: '#0C3841' }
+const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
+const SEC_BG = { open: 'var(--tbl-row-sub)', closed: 'var(--tbl-row-even)' }
 
 // Rolls this page's own section-level Business Unit rows (e.g. "MSP-001") up under the
 // SAME parent Business Unit grouping HR Analysis uses (hr.sectionToDept/deptDisplayNames
@@ -69,7 +69,7 @@ function ExportButton({ onExport, label }) {
     <button
       onClick={async () => { setExporting(true); try { await onExport() } finally { setExporting(false) } }}
       disabled={exporting}
-      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-navy hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+      className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-ink hover:bg-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
     >
       {exporting ? 'Exporting…' : (label || '⬇ Export Excel')}
     </button>
@@ -176,7 +176,7 @@ function KpiCard({ label, value, sub, color }) {
   return (
     <div className="bg-white rounded-2xl p-4 border border-border">
       <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-black" style={{ color: color || '#FFFFFF' }}>{value}</p>
+      <p className="text-2xl font-black" style={{ color: color || 'var(--tbl-fg)' }}>{value}</p>
       {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
     </div>
   )
@@ -225,11 +225,11 @@ function OverviewTab({ cb, buLabel, periodLabel, sectionToDept, deptDisplayNames
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
             <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
           </BarChart>
@@ -249,7 +249,7 @@ function OverviewTab({ cb, buLabel, periodLabel, sectionToDept, deptDisplayNames
                   className="flex justify-between text-xs mb-0.5 cursor-pointer select-none"
                   onClick={() => setExpanded(p => ({ ...p, [r.code]: !p[r.code] }))}
                 >
-                  <span className="text-navy font-semibold truncate max-w-[160px] flex items-center gap-1">
+                  <span className="text-ink font-semibold truncate max-w-[160px] flex items-center gap-1">
                     <span className="inline-block w-2.5 text-muted transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
                     {r.name}
                   </span>
@@ -300,7 +300,7 @@ function CategoryDrilldown({ unit, buLabel, categories, colSpan }) {
       <td colSpan={colSpan} className="p-0">
         <div className="mx-4 my-2 rounded-xl border border-border overflow-hidden" style={{ background: 'rgba(0,0,0,0.18)' }}>
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-            <p className="text-xs font-extrabold text-navy">{buLabel(unit)} — expense category breakdown</p>
+            <p className="text-xs font-extrabold text-ink">{buLabel(unit)} — expense category breakdown</p>
             <ExportButton
               label="⬇ Export"
               onExport={() => exportRowsToExcel(
@@ -321,9 +321,9 @@ function CategoryDrilldown({ unit, buLabel, categories, colSpan }) {
             <tbody>
               {categories.map((c, i) => (
                 <tr key={c.code} style={{ background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
-                  <td className="px-3 py-1.5 font-semibold text-navy">{c.name}</td>
+                  <td className="px-3 py-1.5 font-semibold text-ink">{c.name}</td>
                   <td className="px-2 py-1.5 text-right text-muted">{fmtM(c.budgetYTD)}</td>
-                  <td className="px-2 py-1.5 text-right font-semibold text-navy">{fmtM(c.actualYTD)}</td>
+                  <td className="px-2 py-1.5 text-right font-semibold text-ink">{fmtM(c.actualYTD)}</td>
                   <td className="px-3 py-1.5 text-right font-bold"
                     style={{ color: (c.utilPct || 0) > 100 ? RED : (c.utilPct || 0) > 80 ? ORANGE : GREEN }}>
                     {fmtPct(c.utilPct)}
@@ -345,17 +345,17 @@ function BUGroupRows({ g, hasActuals, buLabel, expanded, onToggle, drillUnit, on
   return (
     <>
       <tr style={secBg} className="cursor-pointer select-none" onClick={onToggle}>
-        <td className="px-4 py-1.5 font-extrabold text-navy" style={secBg}>
+        <td className="px-4 py-1.5 font-extrabold text-ink" style={secBg}>
           <span className="inline-block w-3 mr-1 text-muted transition-transform" style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}>▸</span>
           {g.name}
           <span className="ml-2 text-[10px] font-semibold text-muted">({g.children.length})</span>
         </td>
-        <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtM(g.budgetYTD)}</td>
+        <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtM(g.budgetYTD)}</td>
         {hasActuals && <>
-          <td className="px-4 py-1.5 text-right font-extrabold text-navy">{fmtM(g.actualYTD)}</td>
+          <td className="px-4 py-1.5 text-right font-extrabold text-ink">{fmtM(g.actualYTD)}</td>
           <td className="px-4 py-1.5 text-right font-extrabold" style={{ color: (g.varianceYTD || 0) >= 0 ? GREEN : RED }}>{fmtM(g.varianceYTD)}</td>
-          <td className="px-4 py-1.5 text-right text-navy">{fmtPct(g.varPct)}</td>
-          <td className="px-4 py-1.5 text-right font-extrabold" style={{ color: (g.utilPct || 0) > 100 ? RED : '#fff' }}>{fmtPct(g.utilPct)}</td>
+          <td className="px-4 py-1.5 text-right text-ink">{fmtPct(g.varPct)}</td>
+          <td className="px-4 py-1.5 text-right font-extrabold" style={{ color: (g.utilPct || 0) > 100 ? RED : 'var(--tbl-fg)' }}>{fmtPct(g.utilPct)}</td>
         </>}
       </tr>
       {expanded && g.children.map((r, i) => {
@@ -368,16 +368,16 @@ function BUGroupRows({ g, hasActuals, buLabel, expanded, onToggle, drillUnit, on
           <Fragment key={r.unit}>
             <tr style={rowBg}>
               <td
-                className={`px-4 py-1.5 pl-8 text-navy ${hasCategories ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                className={`px-4 py-1.5 pl-8 text-ink ${hasCategories ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                 onClick={hasCategories ? () => onToggleDrill(r.unit) : undefined}
                 title={hasCategories ? 'Click to see the expense category breakdown' : undefined}
               >
                 {buLabel(r.unit)}
               </td>
-              <td className="px-4 py-1.5 text-right text-navy">{fmtM(r.budgetYTD)}</td>
+              <td className="px-4 py-1.5 text-right text-ink">{fmtM(r.budgetYTD)}</td>
               {hasActuals && <>
                 <td
-                  className={`px-4 py-1.5 text-right font-semibold text-navy ${hasAccounts ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
+                  className={`px-4 py-1.5 text-right font-semibold text-ink ${hasAccounts ? 'underline decoration-dotted cursor-pointer hover:text-teal-400' : ''}`}
                   onClick={hasAccounts ? () => onToggleGl(r.unit) : undefined}
                   title={hasAccounts ? 'Click to see the Business Central GL entries behind this figure' : undefined}
                 >
@@ -385,7 +385,7 @@ function BUGroupRows({ g, hasActuals, buLabel, expanded, onToggle, drillUnit, on
                 </td>
                 <td className="px-4 py-1.5 text-right" style={{ color: (r.varianceYTD || 0) >= 0 ? GREEN : RED }}>{fmtM(r.varianceYTD)}</td>
                 <td className="px-4 py-1.5 text-right text-muted">{fmtPct(r.varPct)}</td>
-                <td className="px-4 py-1.5 text-right font-bold" style={{ color: (r.utilPct || 0) > 100 ? RED : '#fff' }}>{fmtPct(r.utilPct)}</td>
+                <td className="px-4 py-1.5 text-right font-bold" style={{ color: (r.utilPct || 0) > 100 ? RED : 'var(--tbl-fg)' }}>{fmtPct(r.utilPct)}</td>
               </>}
             </tr>
             {open && <CategoryDrilldown unit={r.unit} buLabel={buLabel} categories={r.categories} colSpan={colSpan} />}
@@ -459,13 +459,13 @@ function ByBUTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
                 />
               ))}
               <tr className="border-t-2 border-border font-extrabold bg-bg">
-                <td className="px-4 py-2 text-navy">Total</td>
+                <td className="px-4 py-2 text-ink">Total</td>
                 <td className="px-4 py-2 text-right text-muted">{fmtM(totBud)}</td>
                 {hasActuals && <>
-                  <td className="px-4 py-2 text-right text-navy">{fmtM(totAct)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtM(totAct)}</td>
                   <td className="px-4 py-2 text-right" style={{ color: totVar >= 0 ? GREEN : RED }}>{fmtM(totVar)}</td>
                   <td className="px-4 py-2 text-right text-muted">{fmtPct(totBud ? (totVar / totBud * 100) : null)}</td>
-                  <td className="px-4 py-2 text-right text-navy">{fmtPct(totBud ? (totAct / totBud * 100) : null)}</td>
+                  <td className="px-4 py-2 text-right text-ink">{fmtPct(totBud ? (totAct / totBud * 100) : null)}</td>
                 </>}
               </tr>
             </tbody>
@@ -519,7 +519,7 @@ function MonthlyTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
         <select
           value={selectedBU}
           onChange={e => setSelectedBU(e.target.value)}
-          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-navy outline-none focus:border-navy"
+          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-ink outline-none focus:border-navy"
         >
           <option value="__all__">All Business Units</option>
           {groups.map(g => (
@@ -545,11 +545,11 @@ function MonthlyTab({ cb, buLabel, sectionToDept, deptDisplayNames }) {
         </p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 0, right: 8, bottom: 0, left: -10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
-            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+            <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
             <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
             <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
           </BarChart>
@@ -591,7 +591,7 @@ function OpexTab({ cb }) {
         <select
           value={selectedAcct}
           onChange={e => setSelectedAcct(e.target.value)}
-          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-navy outline-none focus:border-navy"
+          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-ink outline-none focus:border-navy"
         >
           {acctList.map(a => (
             <option key={a.code} value={a.code}>{a.name}</option>
@@ -607,20 +607,20 @@ function OpexTab({ cb }) {
           <ResponsiveContainer width="100%" height={selectedAcct === '__all__' ? 280 : 240}>
             <BarChart data={chartData}
               margin={{ top: 8, right: 8, bottom: selectedAcct === '__all__' ? 60 : 0, left: selectedAcct === '__all__' ? 20 : -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
               {selectedAcct === '__all__' ? (
                 <>
-                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7C93' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={60} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#6B7780' }} axisLine={false} tickLine={false} angle={-40} textAnchor="end" interval={0} height={60} />
+                  <YAxis tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                 </>
               ) : (
                 <>
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} tickFormatter={fmtM} />
                 </>
               )}
-              <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#02404F', fontWeight: 700 }} itemStyle={{ color: '#02404F' }} />
-              <Legend wrapperStyle={{ fontSize: 11, color: "#6B7C93" }} />
+              <Tooltip formatter={v => [fmtM(v), '']} contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ color: '#0F5565', fontWeight: 700 }} itemStyle={{ color: '#0F5565' }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#6B7780" }} />
               <Bar dataKey="Budget" fill={TEAL} radius={[2, 2, 0, 0]} />
               <Bar dataKey="Actual" fill={ORANGE}       radius={[2, 2, 0, 0]} />
             </BarChart>
@@ -648,11 +648,11 @@ function OpexTab({ cb }) {
                     className={`cursor-pointer transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-bg/50'} ${selectedAcct === r.code ? 'ring-1 ring-inset ring-navy/20' : 'hover:bg-bg'}`}
                     onClick={() => setSelectedAcct(selectedAcct === r.code ? '__all__' : r.code)}
                   >
-                    <td className="px-4 py-2 font-semibold text-navy">
+                    <td className="px-4 py-2 font-semibold text-ink">
                       <span className="text-muted mr-1">{r.code}</span>{r.name}
                     </td>
                     <td className="px-3 py-2 text-right text-muted">{fmtM(r.budgetYTD)}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-navy">{fmtM(r.actualYTD)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-ink">{fmtM(r.actualYTD)}</td>
                     <td className="px-3 py-2 text-right font-bold"
                       style={{ color: (r.utilPct || 0) > 100 ? RED : (r.utilPct || 0) > 80 ? ORANGE : GREEN }}>
                       {fmtPct(r.utilPct)}
@@ -724,7 +724,7 @@ function BudgetMatrixTab({ apiData, loading, error, buLabel, sectionToDept, dept
         <select
           value={buFilter}
           onChange={e => setBuFilter(e.target.value)}
-          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-navy outline-none focus:border-navy"
+          className="text-xs font-semibold border border-border rounded-xl px-3 py-1.5 bg-bg text-ink outline-none focus:border-navy"
         >
           <option value="__all__">All Business Units</option>
           {buGroups.map(g => (
@@ -741,7 +741,7 @@ function BudgetMatrixTab({ apiData, loading, error, buLabel, sectionToDept, dept
         <div className="overflow-x-auto">
           <table className="w-full text-xs" style={{ minWidth: 1000 }}>
             <thead>
-              <tr style={{ background: NAVY, color: '#fff' }}>
+              <tr style={{ background: 'var(--tbl-head-bg)', color: 'var(--tbl-fg)' }}>
                 <th className="text-left px-3 py-2.5 font-bold" style={{ minWidth: 240, position: 'sticky', left: 0, background: NAVY, zIndex: 2 }}>
                   Account
                 </th>
@@ -756,10 +756,10 @@ function BudgetMatrixTab({ apiData, loading, error, buLabel, sectionToDept, dept
                 const monthly   = getMonthly(acct)
                 const rowTotal  = monthly.reduce((s, v) => s + v, 0)
                 return (
-                  <tr key={acct.accountNo} style={{ background: i % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                  <tr key={acct.accountNo} style={{ background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd }}>
                     <td
                       className="px-3 py-1.5"
-                      style={{ position: 'sticky', left: 0, background: i % 2 === 0 ? '#fff' : '#F8FAFC', zIndex: 1 }}
+                      style={{ position: 'sticky', left: 0, background: i % 2 === 0 ? ROW_BG.even : ROW_BG.odd, zIndex: 1 }}
                     >
                       <span className="font-semibold block" style={{ color: NAVY }}>{acct.name || acct.accountNo}</span>
                       <span className="font-mono text-[10px]" style={{ color: '#9BAAB8' }}>{acct.accountNo}</span>
@@ -856,13 +856,13 @@ export default function BudgetAnalysis({ data }) {
           moved to their own row below so this one never has to wrap. */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-navy">Corporate Budget Analysis</h1>
+          <h1 className="text-xl font-extrabold text-ink">Corporate Budget Analysis</h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-xs text-muted">Budget:</p>
             <select
               value={selectedBudget}
               onChange={e => setSelectedBudget(e.target.value)}
-              className="text-xs font-bold border border-border rounded-lg px-2.5 py-1 bg-bg text-navy outline-none focus:border-navy"
+              className="text-xs font-bold border border-border rounded-lg px-2.5 py-1 bg-bg text-ink outline-none focus:border-navy"
             >
               {budgetNames.length
                 ? budgetNames.map(b => (
@@ -884,7 +884,7 @@ export default function BudgetAnalysis({ data }) {
             {sel.selMonths.length > 0 && (
               <button
                 onClick={sel.clearPeriod}
-                className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+                className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
               >
                 Clear filters
               </button>
@@ -899,7 +899,7 @@ export default function BudgetAnalysis({ data }) {
             key={t.id}
             onClick={() => setTab(t.id)}
             className="px-3 py-1.5 text-xs font-bold rounded-lg transition-all"
-            style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7C93' }}
+            style={tab === t.id ? { background: NAVY, color: '#fff' } : { color: '#6B7780' }}
           >
             {t.label}
           </button>

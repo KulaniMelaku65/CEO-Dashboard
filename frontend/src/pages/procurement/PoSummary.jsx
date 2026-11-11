@@ -114,7 +114,7 @@ function Body({ proc, data }) {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search PO or vendor"
-            className="text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy w-48 bg-transparent"
+            className="text-xs border border-border rounded-xl px-3 py-2 text-ink outline-none focus:border-navy w-48 bg-transparent"
           />
         }
       >

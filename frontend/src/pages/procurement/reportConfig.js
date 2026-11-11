@@ -42,9 +42,9 @@ export function getReportStatus(report, proc) {
 }
 
 export const STATUS_TONE_COLORS = {
-  green:  { bg: 'rgba(46,189,133,.2)',  fg: '#2EBD85' },
+  green:  { bg: 'rgba(46,189,133,.2)',  fg: '#2E7D32' },
   amber:  { bg: 'rgba(235,125,35,.2)',  fg: '#EB7D23' },
   orange: { bg: 'rgba(235,125,35,.2)',  fg: '#EB7D23' },
-  red:    { bg: 'rgba(229,84,75,.2)',   fg: '#E5544B' },
-  muted:  { bg: 'rgba(255,255,255,.1)', fg: '#9FB4BD' },
+  red:    { bg: 'rgba(229,84,75,.2)',   fg: '#D32F2F' },
+  muted:  { bg: 'var(--tone-muted-bg)', fg: 'var(--tone-muted-fg)' },
 }

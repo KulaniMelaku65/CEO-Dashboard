@@ -7,15 +7,15 @@ import { fmtETB, fmtPct } from '../lib/fmt.js'
 
 // Same palette as Tax/HR Analysis/Financial Performance — kept identical for visual
 // consistency across the finance pages rather than introducing a new one here.
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
-const RED    = '#E5544B'
+const RED    = '#D32F2F'
 const DTEAL  = '#1A7A72'
 const SERIES_COLORS = [ORANGE, TEAL, NAVY, RED, DTEAL, '#3FA7E1', '#B0862E', '#7A2E8A']
 // Same dark zebra-stripe colors as HR Analysis / Financial Performance's drilldown
 // table — explicit backgrounds so text stays legible regardless of theme repaint.
-const ROW_BG = { even: '#0A3A46', odd: '#0E434D' }
+const ROW_BG = { even: 'var(--tbl-row-even)', odd: 'var(--tbl-row-odd)' }
 const AGING_BUCKETS = ['Current', '1-30 Days', '31-60 Days', '61-90 Days', '90+ Days']
 
 // `raw` bypasses both the ETB-currency and percent formatters for a pre-formatted
@@ -34,27 +34,27 @@ function Kpi({ label, value, isPct, raw, sub, accent, onClick, selected }) {
         transform: selected ? 'scale(1.02)' : 'none'
       }}
     >
-      <p className="text-[9px] uppercase tracking-widest font-bold text-white/60 leading-tight">{label}</p>
+      <p className="text-[9px] uppercase tracking-widest font-bold text-white/70 leading-tight">{label}</p>
       <p className="font-black text-white leading-none mt-2 tabular-nums text-xl">
         {raw ? value : isPct ? fmtPct(value, 1) : `ETB ${fmtETB(value)}`}
       </p>
-      {sub && <p className="text-[10px] text-white/50 mt-1 truncate">{sub}</p>}
+      {sub && <p className="text-[10px] text-white/60 mt-1 truncate">{sub}</p>}
     </button>
   )
 }
 
 // Same table treatment as Financial Performance's line-item drilldowns: solid navy
 // header, dark zebra-striped rows — explicit colors instead of the light bg-bg/
-// #F4F6FA classes, which don't get repainted once an inline background is set.
+// #F7F9FA classes, which don't get repainted once an inline background is set.
 function DrillTable({ columns, rows, emptyLabel }) {
   if (!rows.length) return <p className="text-xs text-muted py-6 text-center">{emptyLabel || 'No data'}</p>
   return (
     <div className="overflow-x-auto -mx-5 px-5">
       <table className="w-full text-sm min-w-[420px]">
         <thead>
-          <tr style={{ background: NAVY }}>
+          <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
             {columns.map((c, i) => (
-              <th key={c.key} className={`py-2.5 px-3 text-[10px] font-bold text-white/70 uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{c.label}</th>
+              <th key={c.key} className={`py-2.5 px-3 text-[10px] font-bold text-muted uppercase tracking-wider ${i === 0 ? 'text-left' : 'text-right'}`}>{c.label}</th>
             ))}
           </tr>
         </thead>
@@ -67,8 +67,8 @@ function DrillTable({ columns, rows, emptyLabel }) {
                 return (
                   <td
                     key={c.key}
-                    className={`py-2 px-3 text-xs ${ci === 0 ? 'font-bold text-white' : 'font-semibold text-right'}`}
-                    style={ci > 0 ? { color: c.colorNeg && neg ? c.colorNeg : (c.color || '#FFFFFF') } : undefined}
+                    className={`py-2 px-3 text-xs ${ci === 0 ? 'font-bold text-ink' : 'font-semibold text-right'}`}
+                    style={ci > 0 ? { color: c.colorNeg && neg ? c.colorNeg : (c.color || 'var(--tbl-fg)') } : undefined}
                   >
                     {c.format ? c.format(val, r) : val}
                   </td>
@@ -134,11 +134,11 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
   if (!aging) {
     return (
       <div className="bg-white rounded-2xl border border-border p-8">
-        <p className="text-sm font-bold text-navy mb-1">{fullTitle} — no data yet</p>
+        <p className="text-sm font-bold text-ink mb-1">{fullTitle} — no data yet</p>
         <p className="text-xs text-muted leading-relaxed max-w-xl">Nothing came back from the ERP endpoint for this yet. Needed:</p>
         <ul className="space-y-1.5 mt-2">
           {NEEDED.map(item => (
-            <li key={item} className="text-xs text-navy flex items-start gap-2">
+            <li key={item} className="text-xs text-ink flex items-start gap-2">
               <span className="text-muted mt-0.5">—</span><span>{item}</span>
             </li>
           ))}
@@ -169,9 +169,9 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
   return (
     <div className="space-y-4">
       {/* Banner header */}
-      <div className="rounded-2xl px-5 py-4 flex items-center justify-between" style={{ background: NAVY }}>
-        <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">{fullTitle}</h2>
-        <span className="text-[10px] font-extrabold text-white/70 uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,255,255,.12)' }}>
+      <div className="bg-white rounded-2xl border border-border shadow-card px-5 py-4 flex items-center justify-between">
+        <h2 className="text-lg sm:text-xl font-black text-ink tracking-tight">{fullTitle}</h2>
+        <span className="text-[10px] font-extrabold text-muted uppercase tracking-widest px-2.5 py-1 rounded-full" style={{ background: 'var(--tone-muted-bg)' }}>
           {title} Overview
         </span>
       </div>
@@ -195,12 +195,12 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
       {selectedKpi && (
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-bold text-navy">
+            <h3 className="text-sm font-bold text-ink">
               {selectedKpi === 'total' ? `Total ${title} by ${isAR ? 'Customer' : 'Vendor'} & Bucket`
                 : selectedKpi === 'sales' ? salesLabel
                 : 'Overdue by ' + (isAR ? 'Customer' : 'Vendor')}
             </h3>
-            <button onClick={() => setSelectedKpi(null)} className="text-xs font-bold text-muted hover:text-navy px-2 py-1">✕</button>
+            <button onClick={() => setSelectedKpi(null)} className="text-xs font-bold text-muted hover:text-ink px-2 py-1">✕</button>
           </div>
           <p className="text-[10px] text-muted mb-4 font-medium">
             {selectedKpi === 'total' ? 'Every open entry, not just the top 8 shown in the charts below'
@@ -224,7 +224,7 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
               rows={buildOverduePivot(aging)}
               columns={[
                 { key: 'name', label: isAR ? 'Customer' : 'Vendor' },
-                { key: 'amount', label: 'Overdue', format: money, colorNeg: '#E5544B' }
+                { key: 'amount', label: 'Overdue', format: money, colorNeg: '#D32F2F' }
               ]}
             />
           )}
@@ -276,7 +276,7 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
         {/* Aging bar chart — click a bar to filter the two panels below to just that bucket */}
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-bold text-navy">{title} Aging</h3>
+            <h3 className="text-sm font-bold text-ink">{title} Aging</h3>
             {selectedBucket && (
               <button
                 onClick={() => setSelectedBucket(null)}
@@ -290,10 +290,10 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
           <p className="text-[10px] text-muted mb-4 font-medium">{subtitle} — click a bar to see who's in it</p>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={bucketRows} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
-              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, title]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={46} />
+              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, title]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC' }} />
               <Bar
                 dataKey="amount"
                 radius={[4, 4, 0, 0]}
@@ -301,7 +301,7 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
                 cursor="pointer"
                 onClick={(d) => setSelectedBucket(cur => cur === d.bucket ? null : d.bucket)}
               >
-                <LabelList dataKey="amount" position="top" formatter={v => fmtETB(v)} style={{ fontSize: 11, fontWeight: 700, fill: '#FFFFFF' }} />
+                <LabelList dataKey="amount" position="top" formatter={v => fmtETB(v)} style={{ fontSize: 11, fontWeight: 700, fill: 'var(--tbl-fg)' }} />
                 {bucketRows.map((b, i) => (
                   <Cell
                     key={i}
@@ -317,7 +317,7 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
         {/* Outstanding by Business Unit — real dimension already on every entry,
             standing in for a "payment performance" panel we don't have data for */}
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-1">Outstanding by Business Unit</h3>
+          <h3 className="text-sm font-bold text-ink mb-1">Outstanding by Business Unit</h3>
           <p className="text-[10px] text-muted mb-4 font-medium">
             {selectedBucket ? `${selectedBucket} only` : 'All buckets'} · top {buRows.length}
           </p>
@@ -326,12 +326,12 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
           ) : (
             <ResponsiveContainer width="100%" height={Math.max(180, buRows.length * 40)}>
               <BarChart data={buRows} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-                <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="unit" tickFormatter={v => truncateLabel(v, 16)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={110} interval={0} />
-                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Outstanding']} labelFormatter={l => l} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+                <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="unit" tickFormatter={v => truncateLabel(v, 16)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={110} interval={0} />
+                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Outstanding']} labelFormatter={l => l} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }} />
                 <Bar dataKey="amount" fill={accent} radius={[0, 4, 4, 0]} maxBarSize={20}>
-                  <LabelList dataKey="amount" position="right" formatter={v => fmtETB(v)} style={{ fontSize: 10, fill: '#FFFFFF' }} />
+                  <LabelList dataKey="amount" position="right" formatter={v => fmtETB(v)} style={{ fontSize: 10, fill: 'var(--tbl-fg)' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -341,19 +341,19 @@ function AgingSection({ title, fullTitle, subtitle, aging, accent, salesLabel, s
 
       {/* Top customers/vendors — same bucket filter as above */}
       <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-        <h3 className="text-sm font-bold text-navy mb-1">Top {isAR ? 'Customers' : 'Vendors'} by Outstanding</h3>
+        <h3 className="text-sm font-bold text-ink mb-1">Top {isAR ? 'Customers' : 'Vendors'} by Outstanding</h3>
         <p className="text-[10px] text-muted mb-4 font-medium">{selectedBucket ? `${selectedBucket} only` : 'All buckets'}</p>
         {partyRows.length === 0 ? (
           <p className="text-xs text-muted py-8 text-center">No entries in this bucket</p>
         ) : (
           <ResponsiveContainer width="100%" height={Math.max(200, partyRows.length * 40)}>
             <BarChart data={partyRows} layout="vertical" margin={{ top: 0, right: 50, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
-              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tickFormatter={v => truncateLabel(v, 22)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={150} interval={0} />
-              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Outstanding']} labelFormatter={l => l} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
+              <XAxis type="number" tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tickFormatter={v => truncateLabel(v, 22)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={150} interval={0} />
+              <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Outstanding']} labelFormatter={l => l} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }} />
               <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={20}>
-                <LabelList dataKey="amount" position="right" formatter={v => fmtETB(v)} style={{ fontSize: 10, fill: '#FFFFFF' }} />
+                <LabelList dataKey="amount" position="right" formatter={v => fmtETB(v)} style={{ fontSize: 10, fill: 'var(--tbl-fg)' }} />
                 {partyRows.map((_, i) => <Cell key={i} fill={SERIES_COLORS[i % SERIES_COLORS.length]} />)}
               </Bar>
             </BarChart>
@@ -376,7 +376,7 @@ export default function Aging({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Aging (AR/AP)</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Aging (AR/AP)</h2>
         <p className="text-xs text-muted font-medium">
           Open receivables and payables by aging bucket — as of {data?.asOf || 'current period'} · source: ERP
         </p>

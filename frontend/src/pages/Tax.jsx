@@ -8,10 +8,10 @@ import { fmtETB } from '../lib/fmt.js'
 // Same palette as the HR Analysis page's KpiBlock (NAVY/TEAL/ORANGE, plus the darker
 // teal variant it uses for a 4th accent) — kept identical here for visual consistency
 // across the two pages, rather than introducing a separate ad hoc chart palette.
-const NAVY   = '#02404F'
-const TEAL   = '#1FB6A6'
+const NAVY   = '#0F5565'
+const TEAL   = '#12707F'
 const ORANGE = '#EB7D23'
-const RED    = '#E5544B'
+const RED    = '#D32F2F'
 const DTEAL  = '#1A7A72'
 const SLICE_COLORS = [ORANGE, TEAL, NAVY, RED, DTEAL]
 
@@ -48,7 +48,7 @@ function TypeMultiSelect({ options, selected, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Tax Type</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-lg px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-lg px-3 py-2 text-xs font-bold text-ink"
       >
         <span className="truncate">{label}</span>
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -57,13 +57,13 @@ function TypeMultiSelect({ options, selected, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
           <button
             onClick={() => onChange([])}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             All types {selected.length === 0 && <span>✓</span>}
           </button>
           <div className="border-t border-border my-1" />
           {options.map(o => (
-            <label key={o} className="flex items-center gap-2 px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
+            <label key={o} className="flex items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-[#F0F7F6] cursor-pointer">
               <input type="checkbox" checked={selected.includes(o)} onChange={() => toggle(o)} className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="truncate">{o}</span>
             </label>
@@ -152,7 +152,7 @@ export default function Tax({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Taxes Payable</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Taxes Payable</h2>
         <p className="text-xs text-muted font-medium">
           {tax
             ? `Tax Payables (326) · live outstanding balance ETB ${fmtETB(tax.totalOutstanding)} as of ${tax.asOf}`
@@ -171,7 +171,7 @@ export default function Tax({ data }) {
               <select
                 value={rangeFrom}
                 onChange={e => setFromIdx(Number(e.target.value))}
-                className="text-xs font-bold text-navy border border-border rounded-lg px-3 py-2 outline-none"
+                className="text-xs font-bold text-ink border border-border rounded-lg px-3 py-2 outline-none"
               >
                 {labels.map((l, i) => <option key={i} value={i} disabled={i > rangeTo}>{l}</option>)}
               </select>
@@ -181,7 +181,7 @@ export default function Tax({ data }) {
               <select
                 value={rangeTo}
                 onChange={e => setToIdx(Number(e.target.value))}
-                className="text-xs font-bold text-navy border border-border rounded-lg px-3 py-2 outline-none"
+                className="text-xs font-bold text-ink border border-border rounded-lg px-3 py-2 outline-none"
               >
                 {labels.map((l, i) => <option key={i} value={i} disabled={i < rangeFrom}>{l}</option>)}
               </select>
@@ -189,7 +189,7 @@ export default function Tax({ data }) {
             {anyFilterActive && (
               <button
                 onClick={clearFilters}
-                className="px-3 py-2 rounded-lg text-[11px] font-bold border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+                className="px-3 py-2 rounded-lg text-[11px] font-bold border border-border text-muted hover:text-ink hover:border-navy transition-colors"
               >
                 Clear filters
               </button>
@@ -203,7 +203,7 @@ export default function Tax({ data }) {
           <div className="flex items-start gap-3 mb-5">
             <span className="text-lg" style={{ color: ORANGE }}>ⓘ</span>
             <div>
-              <p className="text-sm font-bold text-navy mb-1">No tax data source yet</p>
+              <p className="text-sm font-bold text-ink mb-1">No tax data source yet</p>
               <p className="text-xs text-muted leading-relaxed max-w-xl">
                 This tab is placed here so it's tracked as part of the finance dashboard, but there's
                 currently no tax account mapping in Business Central to report from. Nothing is shown
@@ -217,7 +217,7 @@ export default function Tax({ data }) {
             <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">Needed to build this out</p>
             <ul className="space-y-1.5">
               {NEEDED.map(item => (
-                <li key={item} className="text-xs text-navy flex items-start gap-2">
+                <li key={item} className="text-xs text-ink flex items-start gap-2">
                   <span className="text-muted mt-0.5">—</span>
                   <span>{item}</span>
                 </li>
@@ -251,7 +251,7 @@ export default function Tax({ data }) {
           {/* Total Tax By Virtual Company + Tax Areas — both scoped to the selected range */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-              <h3 className="text-sm font-bold text-navy mb-1">Total Tax By Virtual Company</h3>
+              <h3 className="text-sm font-bold text-ink mb-1">Total Tax By Virtual Company</h3>
               <p className="text-[10px] text-muted mb-4 font-medium">
                 Tax accrued, {labels[rangeFrom]}–{labels[rangeTo]}{typeFilterLabel ? ` · ${typeFilterLabel}` : ''}
               </p>
@@ -262,7 +262,7 @@ export default function Tax({ data }) {
                       <Pie data={rangeByVC} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="size" nameKey="vc" paddingAngle={2}>
                         {rangeByVC.map((_, i) => <Cell key={i} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
                       </Pie>
-                      <Tooltip formatter={(v, n) => [`ETB ${fmtETB(Math.abs(v))}`, n]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
+                      <Tooltip formatter={(v, n) => [`ETB ${fmtETB(Math.abs(v))}`, n]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC' }} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-1.5 flex-1 min-w-[140px]">
@@ -271,9 +271,9 @@ export default function Tax({ data }) {
                       return (
                         <div key={v.vc} className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />
-                          <span className="text-xs font-semibold text-navy flex-1 truncate">{v.vc}</span>
+                          <span className="text-xs font-semibold text-ink flex-1 truncate">{v.vc}</span>
                           <span className="text-[10px] text-muted">{pct.toFixed(1)}%</span>
-                          <span className="text-xs font-bold text-navy">ETB {fmtETB(Math.abs(v.amount))}</span>
+                          <span className="text-xs font-bold text-ink">ETB {fmtETB(Math.abs(v.amount))}</span>
                         </div>
                       )
                     })}
@@ -283,7 +283,7 @@ export default function Tax({ data }) {
             </div>
 
             <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-              <h3 className="text-sm font-bold text-navy mb-1">Tax Areas</h3>
+              <h3 className="text-sm font-bold text-ink mb-1">Tax Areas</h3>
               <p className="text-[10px] text-muted mb-4 font-medium">
                 {typeFilterLabel ? `${typeFilterLabel}, ` : 'Tax accrued by type, '}{labels[rangeFrom]}–{labels[rangeTo]}
               </p>
@@ -295,11 +295,11 @@ export default function Tax({ data }) {
                         <Pie data={rangeByType} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="size" nameKey="type" paddingAngle={2}>
                           {rangeByType.map((_, i) => <Cell key={i} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
                         </Pie>
-                        <Tooltip formatter={(v, n) => [`ETB ${fmtETB(Math.abs(v))}`, n]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
+                        <Tooltip formatter={(v, n) => [`ETB ${fmtETB(Math.abs(v))}`, n]} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC' }} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="text-lg font-black text-navy">{rangeTotal < 0 ? '-' : ''}{fmtETB(Math.abs(rangeTotal))}</span>
+                      <span className="text-lg font-black text-ink">{rangeTotal < 0 ? '-' : ''}{fmtETB(Math.abs(rangeTotal))}</span>
                     </div>
                   </div>
                   <div className="space-y-1.5 flex-1 min-w-[140px]">
@@ -309,7 +309,7 @@ export default function Tax({ data }) {
                       return (
                         <div key={t.type} className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />
-                          <span className="text-xs font-semibold text-navy flex-1 truncate">{t.type}</span>
+                          <span className="text-xs font-semibold text-ink flex-1 truncate">{t.type}</span>
                           <span className="text-[10px] text-muted">{pct.toFixed(1)}%</span>
                         </div>
                       )
@@ -322,16 +322,16 @@ export default function Tax({ data }) {
 
           {/* Monthly trend — total tax accrued (net change) per month */}
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-1">Monthly Tax Accrued (ETB)</h3>
+            <h3 className="text-sm font-bold text-ink mb-1">Monthly Tax Accrued (ETB)</h3>
             <p className="text-[10px] text-muted mb-4 font-medium">
               Net change {typeFilterLabel ? `for ${typeFilterLabel}` : 'across all Tax Payables accounts'}, {labels[rangeFrom]}–{labels[rangeTo]} — positive means tax accrued that month
             </p>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={monthlyData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7C93' }} axisLine={false} tickLine={false} width={46} />
-                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Tax Accrued']} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E3E9F2' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: '#6B7780' }} axisLine={false} tickLine={false} width={46} />
+                <Tooltip formatter={v => [`ETB ${fmtETB(v, 2)}`, 'Tax Accrued']} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid #E6E9EC' }} />
                 <Bar dataKey="Tax" radius={[3, 3, 0, 0]} maxBarSize={28}>
                   {monthlyData.map((d, i) => (
                     <Cell key={i} fill={d.Tax < 0 ? RED : TEAL} />
@@ -343,7 +343,7 @@ export default function Tax({ data }) {
 
           {/* By tax type — accrued-in-range bars */}
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-1">Accrued by Type</h3>
+            <h3 className="text-sm font-bold text-ink mb-1">Accrued by Type</h3>
             <p className="text-[10px] text-muted mb-4 font-medium">
               Tax accrued, {labels[rangeFrom]}–{labels[rangeTo]}{typeFilterLabel ? ` · ${typeFilterLabel}` : ''}
             </p>
@@ -354,12 +354,12 @@ export default function Tax({ data }) {
                 return (
                   <div key={t.type}>
                     <div className="flex justify-between items-baseline mb-1 gap-2">
-                      <span className="text-xs font-bold text-navy truncate">{t.type}</span>
-                      <span className="text-xs font-extrabold flex-shrink-0" style={{ color: neg ? RED : '#FFFFFF' }}>
+                      <span className="text-xs font-bold text-ink truncate">{t.type}</span>
+                      <span className="text-xs font-extrabold flex-shrink-0" style={{ color: neg ? RED : 'var(--tbl-fg)' }}>
                         {neg ? '-' : ''}ETB {fmtETB(t.size)}
                       </span>
                     </div>
-                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: '#F7F9FA' }}>
                       <div
                         className="h-full rounded-full transition-all"
                         style={{ width: `${pct}%`, background: neg ? RED : TEAL }}
@@ -373,7 +373,7 @@ export default function Tax({ data }) {
 
           {/* Description × Month pivot — matches the ERP tax report layout */}
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card overflow-x-auto">
-            <h3 className="text-sm font-bold text-navy mb-1">Monthly Detail by Type</h3>
+            <h3 className="text-sm font-bold text-ink mb-1">Monthly Detail by Type</h3>
             <p className="text-[10px] text-muted mb-4 font-medium">
               Monthly breakdown, {labels[rangeFrom]}–{labels[rangeTo]}{typeFilterLabel ? ` · ${typeFilterLabel}` : ''}
             </p>
@@ -392,16 +392,16 @@ export default function Tax({ data }) {
                   const rowTotal = sumRange(t.monthly?.data)
                   return (
                     <tr key={t.type} className="border-b border-border/60">
-                      <td className="py-2 pr-3 font-semibold text-navy whitespace-nowrap">{t.type}</td>
+                      <td className="py-2 pr-3 font-semibold text-ink whitespace-nowrap">{t.type}</td>
                       {monthCols.map((m, ci) => {
                         const v = t.monthly?.data?.[rangeFrom + ci] || 0
                         return (
-                          <td key={m} className="text-right py-2 px-2 font-medium" style={{ color: v < 0 ? RED : '#FFFFFF' }}>
+                          <td key={m} className="text-right py-2 px-2 font-medium" style={{ color: v < 0 ? RED : 'var(--tbl-fg)' }}>
                             {v ? fmtETB(v, 2) : '—'}
                           </td>
                         )
                       })}
-                      <td className="text-right py-2 pl-2 font-extrabold" style={{ color: rowTotal < 0 ? RED : '#FFFFFF' }}>
+                      <td className="text-right py-2 pl-2 font-extrabold" style={{ color: rowTotal < 0 ? RED : 'var(--tbl-fg)' }}>
                         {fmtETB(rowTotal, 2)}
                       </td>
                     </tr>
@@ -410,16 +410,16 @@ export default function Tax({ data }) {
               </tbody>
               <tfoot>
                 <tr className="border-t-2" style={{ borderColor: NAVY }}>
-                  <td className="py-2 pr-3 font-black text-navy">Total</td>
+                  <td className="py-2 pr-3 font-black text-ink">Total</td>
                   {monthCols.map((m, ci) => {
                     const v = filteredTypeList.reduce((s, t) => s + (t.monthly?.data?.[rangeFrom + ci] || 0), 0)
                     return (
-                      <td key={m} className="text-right py-2 px-2 font-black" style={{ color: v < 0 ? RED : '#FFFFFF' }}>
+                      <td key={m} className="text-right py-2 px-2 font-black" style={{ color: v < 0 ? RED : 'var(--tbl-fg)' }}>
                         {fmtETB(v, 2)}
                       </td>
                     )
                   })}
-                  <td className="text-right py-2 pl-2 font-black" style={{ color: rangeTotal < 0 ? RED : '#FFFFFF' }}>
+                  <td className="text-right py-2 pl-2 font-black" style={{ color: rangeTotal < 0 ? RED : 'var(--tbl-fg)' }}>
                     {fmtETB(rangeTotal, 2)}
                   </td>
                 </tr>

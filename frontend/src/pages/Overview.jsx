@@ -5,10 +5,10 @@ import {
 import KpiCard from '../components/KpiCard.jsx'
 import { fmtETB, fmtPct, fmtNum } from '../lib/fmt.js'
 
-const BANK_COLORS = ['#1FB6A6', '#EB7D23', '#2EBD85', '#F5A870', '#90D4CE', '#E5544B', '#9BAAB8']
-const AXIS_COLOR = 'rgba(255,255,255,0.55)'
-const GRID_COLOR = 'rgba(255,255,255,0.12)'
-const TOOLTIP_STYLE = { fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: '#0A3A46', color: '#fff' }
+const BANK_COLORS = ['#12707F', '#EB7D23', '#2E7D32', '#F39A4D', '#90D4CE', '#D32F2F', '#9BAAB8']
+const AXIS_COLOR = 'var(--chart-axis)'
+const GRID_COLOR = 'var(--chart-grid)'
+const TOOLTIP_STYLE = { fontSize: 11, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: '#0A3A46', color: '#fff' } // retheme-skip
 
 export default function Overview({ data }) {
   const monthly    = data.budgetOverview?.monthly
@@ -42,7 +42,7 @@ export default function Overview({ data }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Executive Overview</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Executive Overview</h2>
         <p className="text-xs text-muted font-medium">Year-to-date performance — all business units</p>
       </div>
 
@@ -59,7 +59,7 @@ export default function Overview({ data }) {
           value={`ETB ${fmtETB(cos?.actual)}`}
           sub={cos?.budget ? `${fmtPct((cos.actual / cos.budget) * 100)} of budget` : null}
           trend={cos?.actual != null ? (cos.actual <= cos?.budget ? 'up' : 'down') : null}
-          accent={cos?.actual != null && cos.actual > cos?.budget ? '#E5544B' : undefined}
+          accent={cos?.actual != null && cos.actual > cos?.budget ? '#D32F2F' : undefined}
         />
         <KpiCard
           label={`Gross Profit ${effectiveMonthName}`}
@@ -96,21 +96,21 @@ export default function Overview({ data }) {
       {/* Charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Monthly Revenue — Budget vs Actual (ETB)</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">Monthly Revenue — Budget vs Actual (ETB)</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthlyData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={v => fmtETB(v)} tick={{ fontSize: 10, fill: AXIS_COLOR }} axisLine={false} tickLine={false} width={46} />
               <Tooltip formatter={(v, n) => [`ETB ${fmtETB(v, 2)}`, n]} contentStyle={TOOLTIP_STYLE} />
-              <Bar dataKey="Budget" fill="rgba(255,255,255,0.30)" radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <Bar dataKey="Budget" fill="var(--chart-muted-fill)" radius={[3, 3, 0, 0]} maxBarSize={24} />
               <Bar dataKey="Actual" fill="#EB7D23" radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-4">Disbursements by Partner Bank — YTD (ETB)</h3>
+          <h3 className="text-sm font-bold text-ink mb-4">Disbursements by Partner Bank — YTD (ETB)</h3>
           {disbByBank.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={disbByBank} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
@@ -131,7 +131,7 @@ export default function Overview({ data }) {
 
       {/* Budget vs Actual progress bars */}
       <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-        <h3 className="text-sm font-bold text-navy mb-4">
+        <h3 className="text-sm font-bold text-ink mb-4">
           P&L — Budget Attainment{effectiveMonthName ? ` (${effectiveMonthName})` : ''}
         </h3>
         <div className="space-y-4">
@@ -139,11 +139,11 @@ export default function Overview({ data }) {
             const hasActual = line.actual != null
             const pct = hasActual && line.budget ? (line.actual / line.budget) * 100 : null
             const good = pct != null ? (line.higherIsBetter ? pct >= 100 : pct <= 100) : null
-            const color = good === null ? '#9BAAB8' : good ? '#2EBD85' : '#E5544B'
+            const color = good === null ? '#9BAAB8' : good ? '#2E7D32' : '#D32F2F'
             return (
               <div key={line.name}>
                 <div className="flex justify-between text-xs font-semibold mb-1">
-                  <span className="text-navy">{line.name}</span>
+                  <span className="text-ink">{line.name}</span>
                   <span style={{ color }}>
                     {pct != null ? `${fmtPct(pct)} of budget` : 'No data yet'}
                   </span>

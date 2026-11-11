@@ -131,7 +131,7 @@ export function PeriodTree({ mData, selected, onChange, yearFilter }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Filter by Period</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -140,7 +140,7 @@ export function PeriodTree({ mData, selected, onChange, yearFilter }) {
         <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-80 overflow-y-auto">
           <button
             onClick={() => onChange([])}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             YTD (all) {selected.length === 0 && <span>✓</span>}
           </button>
@@ -154,7 +154,7 @@ export function PeriodTree({ mData, selected, onChange, yearFilter }) {
                 >
                   {expanded.has(qt.anchor) ? '−' : '+'}
                 </button>
-                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-navy cursor-pointer">
+                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-ink cursor-pointer">
                   <input
                     type="checkbox"
                     checked={qt.state === 'all'}
@@ -168,7 +168,7 @@ export function PeriodTree({ mData, selected, onChange, yearFilter }) {
               {expanded.has(qt.anchor) && (
                 <div className="pl-9">
                   {qt.months.map(i => (
-                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
+                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-ink hover:bg-[#F0F7F6] cursor-pointer">
                       <input type="checkbox" checked={selected.includes(i)} onChange={() => toggleMonth(i)} className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate">{mData[i]?.label}</span>
                     </label>
@@ -221,7 +221,7 @@ export function ComparePicker({ mode, mData, current, value, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Compare To</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -230,7 +230,7 @@ export function ComparePicker({ mode, mData, current, value, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
           <button
             onClick={() => { onChange(null); setOpen(false) }}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             <span className="truncate">{autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'}</span>
             {value == null && <span>✓</span>}
@@ -240,7 +240,7 @@ export function ComparePicker({ mode, mData, current, value, onChange }) {
             <button
               key={o.value}
               onClick={() => { onChange(o.value); setOpen(false) }}
-              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6]"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-ink hover:bg-[#F0F7F6]"
             >
               <span className="truncate">{o.label}</span>
               {value === o.value && <span>✓</span>}
@@ -362,7 +362,7 @@ export function YearPeriodFilterBar({ sel, mData, year, years, onYearChange, onC
         <select
           value={year}
           onChange={e => onYearChange(e.target.value)}
-          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy outline-none"
+          className="bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink outline-none"
         >
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
@@ -380,7 +380,7 @@ export function YearPeriodFilterBar({ sel, mData, year, years, onYearChange, onC
       {onClear && (
         <button
           onClick={onClear}
-          className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+          className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
         >
           Clear filters
         </button>

@@ -58,7 +58,7 @@ function Body({ proc, data }) {
               <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
               <Tooltip {...TOOLTIP_STYLE} formatter={v => [v, 'Requisitions']} />
               <Bar dataKey="n" fill={ORANGE} radius={[4, 4, 0, 0]}>
-                <LabelList dataKey="n" position="top" style={{ fill: '#E6F0F3', fontSize: 11, fontWeight: 700 }} />
+                <LabelList dataKey="n" position="top" style={{ fill: 'var(--tbl-fg)', fontSize: 11, fontWeight: 700 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -99,7 +99,7 @@ function Body({ proc, data }) {
             { key: 'u', label: 'Requester' },
             { key: 'bu', label: 'Business unit', format: v => truncateLabel(buName(v), 18) },
             { key: 'd', label: 'Doc date', format: fmtDay },
-            { key: 'age', label: 'Waiting (days)', color: r => (r.age > 30 ? RED : r.age > 14 ? ORANGE : '#FFFFFF') },
+            { key: 'age', label: 'Waiting (days)', color: r => (r.age > 30 ? RED : r.age > 14 ? ORANGE : 'var(--tbl-fg)') },
             { key: 'desc', label: 'Description', format: v => truncateLabel(v, 32) },
             { key: 'amt', label: 'Amount', format: (v, r) => (v ? `${r.cur} ${Math.round(v).toLocaleString()}` : '—') },
           ]}

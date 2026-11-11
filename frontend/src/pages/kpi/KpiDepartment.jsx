@@ -40,22 +40,22 @@ function KpiForm({ initial, isPrivileged, onSave, onCancel, busy, saveLabel }) {
   const set = (k) => (e) => setF(cur => ({ ...cur, [k]: e.target.value }))
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-      <input value={f.name} onChange={set('name')} placeholder="KPI name" className="bg-transparent border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs col-span-2 md:col-span-1" />
-      <select value={f.type} onChange={set('type')} className="bg-[#0A3A46] border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs">
+      <input value={f.name} onChange={set('name')} placeholder="KPI name" className="bg-transparent border border-border rounded-lg px-2 py-1.5 text-ink text-xs col-span-2 md:col-span-1" />
+      <select value={f.type} onChange={set('type')} className="bg-white border border-border rounded-lg px-2 py-1.5 text-ink text-xs">
         {KPI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <select value={f.frequency} onChange={set('frequency')} className="bg-[#0A3A46] border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs">
+      <select value={f.frequency} onChange={set('frequency')} className="bg-white border border-border rounded-lg px-2 py-1.5 text-ink text-xs">
         {FREQUENCIES.map(fr => <option key={fr} value={fr}>{fr}</option>)}
       </select>
-      <input value={f.targetNote} onChange={set('targetNote')} placeholder="Target (e.g. ≤10%, 4 live)" className="bg-transparent border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs col-span-2 md:col-span-1" />
-      <input value={f.source} onChange={set('source')} placeholder="Source (e.g. HRIS)" className="bg-transparent border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs" />
-      <select value={f.method} onChange={set('method')} className="bg-[#0A3A46] border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs">
+      <input value={f.targetNote} onChange={set('targetNote')} placeholder="Target (e.g. ≤10%, 4 live)" className="bg-transparent border border-border rounded-lg px-2 py-1.5 text-ink text-xs col-span-2 md:col-span-1" />
+      <input value={f.source} onChange={set('source')} placeholder="Source (e.g. HRIS)" className="bg-transparent border border-border rounded-lg px-2 py-1.5 text-ink text-xs" />
+      <select value={f.method} onChange={set('method')} className="bg-white border border-border rounded-lg px-2 py-1.5 text-ink text-xs">
         {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
       {isPrivileged && (
         <>
-          <input value={f.targetValue} onChange={set('targetValue')} type="number" placeholder="Numeric target (optional)" className="bg-transparent border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs" />
-          <input value={f.weight} onChange={set('weight')} type="number" step="0.1" placeholder="Weight" className="bg-transparent border border-white/20 rounded-lg px-2 py-1.5 text-white text-xs" />
+          <input value={f.targetValue} onChange={set('targetValue')} type="number" placeholder="Numeric target (optional)" className="bg-transparent border border-border rounded-lg px-2 py-1.5 text-ink text-xs" />
+          <input value={f.weight} onChange={set('weight')} type="number" step="0.1" placeholder="Weight" className="bg-transparent border border-border rounded-lg px-2 py-1.5 text-ink text-xs" />
         </>
       )}
       <div className="flex gap-2 col-span-2 md:col-span-3 mt-1">
@@ -67,7 +67,7 @@ function KpiForm({ initial, isPrivileged, onSave, onCancel, busy, saveLabel }) {
         >
           {saveLabel}
         </button>
-        <button onClick={onCancel} disabled={busy} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-white/20 text-white/70">
+        <button onClick={onCancel} disabled={busy} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted">
           Cancel
         </button>
       </div>
@@ -217,21 +217,21 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <button onClick={() => onNavigate?.('kpi-dashboard')} className="text-[11px] font-bold text-muted hover:text-navy mb-1">
+          <button onClick={() => onNavigate?.('kpi-dashboard')} className="text-[11px] font-bold text-muted hover:text-ink mb-1">
             ← Group KPI Dashboard
           </button>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">{deptMeta?.name}</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">{deptMeta?.name}</h2>
           <p className="text-xs text-muted font-medium">{period}{isOwnDeptHead ? ' — enter this month\'s actuals below' : ' — read-only'}</p>
         </div>
         <div className="flex items-center gap-2">
           {canManageDictionary && (
-            <button onClick={() => setAddingKpi(o => !o)} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors">
+            <button onClick={() => setAddingKpi(o => !o)} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors">
               {addingKpi ? 'Cancel' : '+ Add KPI'}
             </button>
           )}
           {isOwnDeptHead && allDraftOrEmpty && (
             <div className="flex gap-2">
-              <button onClick={saveDraft} disabled={busy} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors">
+              <button onClick={saveDraft} disabled={busy} className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors">
                 Save draft
               </button>
               <button onClick={submit} disabled={busy} className="text-[11px] font-bold px-4 py-2 rounded-xl text-white" style={{ background: NAVY }}>
@@ -255,19 +255,19 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
             className="text-[11px] font-bold px-3 py-1.5 rounded-full border transition-colors"
             style={freqFilter === f
               ? { background: NAVY, borderColor: NAVY, color: '#fff' }
-              : { borderColor: 'rgba(2,64,79,.25)', color: '#6B7C93' }}
+              : { borderColor: 'rgba(2,64,79,.25)', color: '#6B7780' }}
           >
             {f}{f !== 'All' && ` (${freqCounts[f] || 0})`}
           </button>
         ))}
       </div>
 
-      {error && <p className="text-xs font-semibold" style={{ color: '#E5544B' }}>{error}</p>}
-      {notice && <p className="text-xs font-semibold" style={{ color: '#2EBD85' }}>{notice}</p>}
+      {error && <p className="text-xs font-semibold" style={{ color: '#D32F2F' }}>{error}</p>}
+      {notice && <p className="text-xs font-semibold" style={{ color: '#2E7D32' }}>{notice}</p>}
 
       {addingKpi && (
         <div className="rounded-2xl border border-border p-4" style={{ background: ROW_BG.even }}>
-          <p className="text-[10px] font-extrabold text-white/60 uppercase tracking-wider mb-2">New KPI</p>
+          <p className="text-[10px] font-extrabold text-muted uppercase tracking-wider mb-2">New KPI</p>
           <KpiForm
             initial={emptyForm}
             isPrivileged={isApprover}
@@ -283,20 +283,20 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
         <div className="rounded-2xl border border-border shadow-card overflow-x-auto" style={{ background: ROW_BG.even }}>
           <table className="w-full text-xs">
             <thead>
-              <tr style={{ background: NAVY }}>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">KPI</th>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Target</th>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Deadline</th>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Actual</th>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Status</th>
-                <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Reason / action (if Amber or Red)</th>
-                {isApprover && <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Approve</th>}
-                {canManageDictionary && <th className="text-left font-bold text-white/60 uppercase tracking-wider px-4 py-3">Manage</th>}
+              <tr style={{ background: 'var(--tbl-head-bg)', borderBottom: '1px solid var(--tbl-line)' }}>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">KPI</th>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Target</th>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Deadline</th>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Actual</th>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Status</th>
+                <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Reason / action (if Amber or Red)</th>
+                {isApprover && <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Approve</th>}
+                {canManageDictionary && <th className="text-left font-bold text-muted uppercase tracking-wider px-4 py-3">Manage</th>}
               </tr>
             </thead>
             <tbody>
               {visibleRows.length === 0 && (
-                <tr><td colSpan={columnCount} className="px-4 py-6 text-center text-white/40">No {freqFilter.toLowerCase()} KPIs.</td></tr>
+                <tr><td colSpan={columnCount} className="px-4 py-6 text-center text-muted">No {freqFilter.toLowerCase()} KPIs.</td></tr>
               )}
               {visibleRows.map((row, i) => {
                 const e = getEdit(row)
@@ -310,30 +310,30 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
                 return (
                   <Fragment key={row.kpi.id}>
                     <tr style={{ background: i % 2 ? ROW_BG.odd : ROW_BG.even }}>
-                      <td className="px-4 py-2.5 text-white font-bold whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-ink font-bold whitespace-nowrap">
                         {row.kpi.name}
-                        <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white/50" style={{ background: 'rgba(255,255,255,.08)' }}>{row.kpi.frequency}</span>
+                        <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full text-muted" style={{ background: 'var(--tone-muted-bg)' }}>{row.kpi.frequency}</span>
                         {row.kpi.pending_action && (
                           <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(240,180,41,.2)', color: '#F0B429' }}>
                             Pending SLT approval — {isPendingAdd ? 'add' : 'remove'}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-white/60 whitespace-nowrap">{fmtTarget(row)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: isOverdue ? '#E5544B' : 'rgba(255,255,255,.6)' }}>{fmtDeadline(row.deadline)}</td>
+                      <td className="px-4 py-2.5 text-muted whitespace-nowrap">{fmtTarget(row)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: isOverdue ? '#D32F2F' : 'var(--tbl-fg-muted)' }}>{fmtDeadline(row.deadline)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         {isPendingAdd ? (
-                          <span className="text-white/30 text-[11px]">—</span>
+                          <span className="text-muted text-[11px]">—</span>
                         ) : editableRow ? (
                           <input
                             type="number"
                             value={e.actualValue}
                             onChange={ev => setEdit(row.kpi.id, { actualValue: ev.target.value })}
-                            className="w-28 bg-transparent border border-white/20 rounded-lg px-2 py-1 text-white text-xs"
+                            className="w-28 bg-transparent border border-border rounded-lg px-2 py-1 text-ink text-xs"
                             placeholder="—"
                           />
                         ) : (
-                          <span className="text-white font-semibold">{row.submission?.actual_value ?? '—'}</span>
+                          <span className="text-ink font-semibold">{row.submission?.actual_value ?? '—'}</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5"><RagPill status={status} /></td>
@@ -344,47 +344,47 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
                               value={e.reasonNote}
                               onChange={ev => setEdit(row.kpi.id, { reasonNote: ev.target.value })}
                               placeholder={needsReason ? 'Root cause (required)' : 'Root cause'}
-                              className="bg-transparent border border-white/20 rounded-lg px-2 py-1 text-white text-[11px] w-full"
+                              className="bg-transparent border border-border rounded-lg px-2 py-1 text-ink text-[11px] w-full"
                             />
                             <input
                               value={e.actionNote}
                               onChange={ev => setEdit(row.kpi.id, { actionNote: ev.target.value })}
                               placeholder="Action being taken"
-                              className="bg-transparent border border-white/20 rounded-lg px-2 py-1 text-white text-[11px] w-full"
+                              className="bg-transparent border border-border rounded-lg px-2 py-1 text-ink text-[11px] w-full"
                             />
                           </div>
                         ) : (
-                          <span className="text-white/60">{row.submission?.reason_note || '—'}</span>
+                          <span className="text-muted">{row.submission?.reason_note || '—'}</span>
                         )}
                       </td>
                       {isApprover && (
                         <td className="px-4 py-2.5 whitespace-nowrap">
                           {row.kpi.pending_action ? (
                             <div className="flex gap-1.5">
-                              <button onClick={() => decideDictionaryChange(row.kpi.id, 'approve')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(46,189,133,.2)', color: '#2EBD85' }}>
+                              <button onClick={() => decideDictionaryChange(row.kpi.id, 'approve')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(46,189,133,.2)', color: '#2E7D32' }}>
                                 Approve {isPendingAdd ? 'add' : 'removal'}
                               </button>
-                              <button onClick={() => decideDictionaryChange(row.kpi.id, 'reject')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(229,84,75,.2)', color: '#E5544B' }}>Reject</button>
+                              <button onClick={() => decideDictionaryChange(row.kpi.id, 'reject')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(229,84,75,.2)', color: '#D32F2F' }}>Reject</button>
                             </div>
                           ) : row.submission?.status === 'submitted' ? (
                             <div className="flex gap-1.5">
-                              <button onClick={() => decide(row.submission.id, 'approve')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(46,189,133,.2)', color: '#2EBD85' }}>Approve</button>
-                              <button onClick={() => decide(row.submission.id, 'reject')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(229,84,75,.2)', color: '#E5544B' }}>Reject</button>
+                              <button onClick={() => decide(row.submission.id, 'approve')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(46,189,133,.2)', color: '#2E7D32' }}>Approve</button>
+                              <button onClick={() => decide(row.submission.id, 'reject')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(229,84,75,.2)', color: '#D32F2F' }}>Reject</button>
                             </div>
                           ) : row.submission?.status === 'approved' ? (
                             <button onClick={() => decide(row.submission.id, 'reopen')} disabled={busy} className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: 'rgba(63,167,225,.2)', color: '#3FA7E1' }}>Reopen</button>
                           ) : (
-                            <span className="text-white/30 text-[10px]">{row.submission?.status || 'not submitted'}</span>
+                            <span className="text-muted text-[10px]">{row.submission?.status || 'not submitted'}</span>
                           )}
                         </td>
                       )}
                       {canManageDictionary && (
                         <td className="px-4 py-2.5 whitespace-nowrap">
                           <div className="flex gap-1.5">
-                            <button onClick={() => setEditingKpiId(o => o === row.kpi.id ? null : row.kpi.id)} className="text-[10px] font-bold px-2 py-1 rounded-lg border border-white/20 text-white/70 hover:text-white">
+                            <button onClick={() => setEditingKpiId(o => o === row.kpi.id ? null : row.kpi.id)} className="text-[10px] font-bold px-2 py-1 rounded-lg border border-border text-muted hover:text-ink">
                               {isEditing ? 'Close' : 'Edit'}
                             </button>
-                            <button onClick={() => removeKpi(row)} disabled={busy || isPendingRemove} className="text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: 'rgba(229,84,75,.15)', color: '#E5544B' }}>
+                            <button onClick={() => removeKpi(row)} disabled={busy || isPendingRemove} className="text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-40" style={{ background: 'rgba(229,84,75,.15)', color: '#D32F2F' }}>
                               {isPendingRemove ? 'Pending' : 'Remove'}
                             </button>
                           </div>
@@ -392,7 +392,7 @@ export default function KpiDepartment({ departmentId, currentUser, onNavigate })
                       )}
                     </tr>
                     {isEditing && (
-                      <tr style={{ background: '#123C46' }}>
+                      <tr style={{ background: 'var(--tbl-row-sub)' }}>
                         <td colSpan={columnCount} className="px-4 py-3">
                           <KpiForm
                             initial={{

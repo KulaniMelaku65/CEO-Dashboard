@@ -18,17 +18,17 @@ import { fmtETB, fmtPct } from '../lib/fmt.js'
 // does — all client-side, no extra round trip.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// revenue was '#02404F' (navy) — same color as the dark-mode card the "Revenue to profit
+// revenue was '#0F5565' (navy) — same color as the dark-mode card the "Revenue to profit
 // bridge" bar sits on (see index.css's .dark-app .bg-white), so the bar itself disappeared
 // the same way its axis/value labels did before that earlier fix. Blue reads clearly
 // against both the light-mode white card and the dark-mode navy one, and isn't already
 // used by any of the other four bars here.
 const COLORS = {
   revenue:     '#4A90E2',
-  cos:         '#E5544B',
-  grossProfit: '#1FB6A6',
+  cos:         '#D32F2F',
+  grossProfit: '#12707F',
   opex:        '#8E5FD9',
-  ebitda:      '#2EBD85',
+  ebitda:      '#2E7D32',
 }
 
 // Splits a plain "Month Year" label (e.g. "January 2025") into its two parts so a
@@ -92,7 +92,7 @@ function PeriodTree({ mData, selected, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Filter by Period</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -101,7 +101,7 @@ function PeriodTree({ mData, selected, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-80 overflow-y-auto">
           <button
             onClick={() => onChange([])}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             YTD (all) {selected.length === 0 && <span>✓</span>}
           </button>
@@ -115,7 +115,7 @@ function PeriodTree({ mData, selected, onChange }) {
                 >
                   {expanded.has(qt.q) ? '−' : '+'}
                 </button>
-                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-navy cursor-pointer">
+                <label className="flex items-center gap-2 flex-1 px-1.5 py-0.5 text-xs font-bold text-ink cursor-pointer">
                   <input
                     type="checkbox"
                     checked={qt.state === 'all'}
@@ -129,7 +129,7 @@ function PeriodTree({ mData, selected, onChange }) {
               {expanded.has(qt.q) && (
                 <div className="pl-9">
                   {qt.months.map(i => (
-                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-navy hover:bg-[#F0F7F6] cursor-pointer">
+                    <label key={i} className="flex items-center gap-2 px-1.5 py-1 text-xs text-ink hover:bg-[#F0F7F6] cursor-pointer">
                       <input type="checkbox" checked={selected.includes(i)} onChange={() => toggleMonth(i)} className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate">{mData[i]?.label}</span>
                     </label>
@@ -174,7 +174,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
       <span className="text-[10px] font-extrabold text-muted uppercase tracking-wider">Compare To</span>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-navy"
+        className="flex items-center justify-between gap-2 bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-ink"
       >
         <SplitLabel label={summary} />
         <span className="text-muted text-[9px]">{open ? '▲' : '▼'}</span>
@@ -183,7 +183,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
         <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-border rounded-xl shadow-card z-20 py-1.5 max-h-72 overflow-y-auto">
           <button
             onClick={() => { onChange(null); setOpen(false) }}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-navy hover:bg-[#F0F7F6]"
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-bold text-ink hover:bg-[#F0F7F6]"
           >
             <span className="truncate">{autoLabel ? `Auto (${autoLabel})` : 'Auto (none)'}</span>
             {value == null && <span>✓</span>}
@@ -193,7 +193,7 @@ function ComparePicker({ mode, mData, current, value, onChange }) {
             <button
               key={o.value}
               onClick={() => { onChange(o.value); setOpen(false) }}
-              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-navy hover:bg-[#F0F7F6]"
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-ink hover:bg-[#F0F7F6]"
             >
               <span className="truncate">{o.label}</span>
               {value === o.value && <span>✓</span>}
@@ -213,7 +213,7 @@ function KpiCard({ label, value, sub, color, actual, budget, higherIsBetter, pri
   const pct = budget ? (actual / budget) * 100 : null
   const diff = budget != null ? actual - budget : null
   const good = pct != null ? (higherIsBetter ? pct >= 100 : pct <= 100) : true
-  const budgetColor = good ? '#2EBD85' : higherIsBetter ? '#E5544B' : '#EB7D23'
+  const budgetColor = good ? '#2E7D32' : higherIsBetter ? '#D32F2F' : '#EB7D23'
   const priorGrowth = (priorActual != null && priorActual !== 0) ? ((actual - priorActual) / Math.abs(priorActual)) * 100 : null
   const priorGood = priorGrowth != null && (higherIsBetter ? priorGrowth >= 0 : priorGrowth <= 0)
 
@@ -222,7 +222,7 @@ function KpiCard({ label, value, sub, color, actual, budget, higherIsBetter, pri
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: color }} />
       <div className="pl-2">
         <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted mb-1">{label}</p>
-        <p className="text-xl font-extrabold text-navy leading-none mb-1">{value}</p>
+        <p className="text-xl font-extrabold text-ink leading-none mb-1">{value}</p>
         {sub && <p className="text-[10px] text-muted">{sub}</p>}
         {!!budget && (
           <p className="text-[10px] font-semibold mt-1" style={{ color: budgetColor }}>
@@ -230,7 +230,7 @@ function KpiCard({ label, value, sub, color, actual, budget, higherIsBetter, pri
           </p>
         )}
         {priorGrowth != null && (
-          <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2EBD85' : '#E5544B' }}>
+          <p className="text-[10px] font-semibold mt-0.5" style={{ color: priorGood ? '#2E7D32' : '#D32F2F' }}>
             {priorGrowth >= 0 ? '▲' : '▼'} {fmtPct(Math.abs(priorGrowth), 1)} vs {priorLabel}
           </p>
         )}
@@ -242,8 +242,8 @@ function KpiCard({ label, value, sub, color, actual, budget, higherIsBetter, pri
 function StatementRow({ label, value, bold, indent, trStyle }) {
   return (
     <tr style={trStyle} className={bold ? 'font-extrabold' : ''}>
-      <td className={`py-1.5 ${indent ? 'pl-6' : 'pl-2'} text-xs text-navy`}>{label}</td>
-      <td className="py-1.5 pr-2 text-right text-xs text-navy tabular-nums">
+      <td className={`py-1.5 ${indent ? 'pl-6' : 'pl-2'} text-xs text-ink`}>{label}</td>
+      <td className="py-1.5 pr-2 text-right text-xs text-ink tabular-nums">
         {value == null ? '—' : fmtETB(value)}
       </td>
     </tr>
@@ -422,7 +422,7 @@ export default function BusinessLinePL({ data }) {
     const labelX = isNeg ? x - 6 : x + width + 6
     return (
       <text x={labelX} y={y + height / 2} dy={4} textAnchor={isNeg ? 'end' : 'start'}
-        style={{ fontSize: 11, fontWeight: 700, fill: '#6B7C93' }}>
+        style={{ fontSize: 11, fontWeight: 700, fill: '#6B7780' }}>
         {fmtETB(Math.abs(value))}
       </text>
     )
@@ -438,7 +438,7 @@ export default function BusinessLinePL({ data }) {
               key={l.code}
               onClick={() => { setSelCode(l.code); setSelMonths([]) }}
               className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                l.code === line.code ? 'bg-navy text-white border-navy' : 'bg-white text-navy border-border hover:bg-[#F0F7F6]'
+                l.code === line.code ? 'bg-navy text-white border-navy' : 'bg-white text-ink border-border hover:bg-[#F0F7F6]'
               }`}
             >
               {l.code} · {l.name}
@@ -464,7 +464,7 @@ export default function BusinessLinePL({ data }) {
           {selMonths.length > 0 && (
             <button
               onClick={() => setSelMonths([])}
-              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+              className="text-[11px] font-bold px-3 py-2 rounded-xl border border-border text-muted hover:text-ink hover:border-navy transition-colors"
             >
               Clear filters
             </button>
@@ -473,13 +473,13 @@ export default function BusinessLinePL({ data }) {
       </div>
 
       {/* Report header */}
-      <div className="bg-navy rounded-2xl p-5 text-white">
-        <p className="text-[10px] font-extrabold uppercase tracking-widest text-white/60">Kifiya Financial Technology · Management Report</p>
+      <div className="bg-white rounded-2xl border border-border shadow-card p-5 text-ink">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Kifiya Financial Technology · Management Report</p>
         <h2 className="text-xl font-extrabold mt-1">{line.name}</h2>
-        <p className="text-xs text-white/70 mt-1">
+        <p className="text-xs text-muted mt-1">
           {line.code} · Profit &amp; loss summary · {periodLabel === 'YTD' ? `1 Jan – ${data.asOf} (${line.months} month${line.months === 1 ? '' : 's'})` : periodLabel}
         </p>
-        <p className="text-[10px] text-white/50 mt-2">Amounts in ETB</p>
+        <p className="text-[10px] text-muted mt-2">Amounts in ETB</p>
       </div>
 
       {/* KPI cards */}
@@ -508,7 +508,7 @@ export default function BusinessLinePL({ data }) {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* P&L statement */}
         <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-          <h3 className="text-sm font-bold text-navy mb-3">Profit &amp; loss statement</h3>
+          <h3 className="text-sm font-bold text-ink mb-3">Profit &amp; loss statement</h3>
           <table className="w-full">
             <tbody>
               <SectionHeader label="Revenue" color={COLORS.revenue} />
@@ -526,7 +526,7 @@ export default function BusinessLinePL({ data }) {
 
               <tr><td colSpan={2}><div className="border-t border-border my-1" /></td></tr>
               {/* A translucent navy tint, not a flat light gray — the row's text is the
-                  "text-navy" class, which .dark-app (index.css) flips to white; a flat light
+                  "text-ink" class, which .dark-app (index.css) flips to white; a flat light
                   background wouldn't follow it there and the row would go near-invisible
                   (white-on-near-white). This tint darkens right along with the dark card. */}
               <StatementRow label="Gross profit" value={c.grossProfit} bold trStyle={{ background: 'rgba(2,64,79,0.06)' }} />
@@ -538,7 +538,7 @@ export default function BusinessLinePL({ data }) {
               <StatementRow label="Total OPEX" value={c.totalOpex} bold />
 
               <tr><td colSpan={2}><div className="border-t border-border my-1" /></td></tr>
-              <StatementRow label="Net profit / EBITDA" value={c.ebitda} bold trStyle={{ background: '#02404F', color: '#fff' }} />
+              <StatementRow label="Net profit / EBITDA" value={c.ebitda} bold trStyle={{ background: 'var(--tbl-head-bg)', color: 'var(--tbl-fg)' }} />
             </tbody>
           </table>
         </div>
@@ -546,7 +546,7 @@ export default function BusinessLinePL({ data }) {
         {/* Right column */}
         <div className="space-y-5">
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Revenue to profit bridge</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Revenue to profit bridge</h3>
             <ResponsiveContainer width="100%" height={190}>
               <BarChart data={bridgeData} layout="vertical" margin={{ top: 5, right: 56, left: 5, bottom: 5 }}>
                 {/* Padding the domain past the real min/max (rather than letting bars span
@@ -556,9 +556,9 @@ export default function BusinessLinePL({ data }) {
                 <XAxis type="number" hide domain={[(min) => (min < 0 ? min * 1.35 : 0), (max) => max * 1.05]} />
                 {/* Muted gray, not navy — this card is "bg-white" in light mode but remapped to a
                     dark navy card by .dark-app (index.css); navy text would vanish against that.
-                    Every other chart on a bg-white card in this app uses this same '#6B7C93' for
+                    Every other chart on a bg-white card in this app uses this same '#6B7780' for
                     axis/label text so it reads on both themes without a dark-mode-specific branch. */}
-                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: '#6B7C93' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: '#6B7780' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(v) => fmtETB(Math.abs(v))} />
                 <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                   {bridgeData.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -569,15 +569,15 @@ export default function BusinessLinePL({ data }) {
           </div>
 
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Revenue by Line</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Revenue by Line</h3>
             <div className="space-y-2.5">
               {c.revenueMix.map(r => (
                 <div key={r.account}>
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-navy font-semibold">{r.description}</span>
+                    <span className="text-ink font-semibold">{r.description}</span>
                     <span className="text-muted">{fmtETB(r.actual)} · {fmtPct(r.pct, 1)}</span>
                   </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#F4F6FA' }}>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#F7F9FA' }}>
                     <div className="h-full rounded-full" style={{ width: `${Math.max(0, r.actual / maxMix * 100)}%`, background: COLORS.revenue }} />
                   </div>
                 </div>
@@ -586,23 +586,23 @@ export default function BusinessLinePL({ data }) {
           </div>
 
           <div className="bg-white rounded-2xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Run-rate</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Run-rate</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Avg monthly revenue</p>
-                <p className="text-sm font-extrabold text-navy">{fmtETB(c.avgMonthlyRevenue)}</p>
+                <p className="text-sm font-extrabold text-ink">{fmtETB(c.avgMonthlyRevenue)}</p>
               </div>
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Avg monthly EBITDA</p>
-                <p className="text-sm font-extrabold text-navy">{fmtETB(c.avgMonthlyEbitda)}</p>
+                <p className="text-sm font-extrabold text-ink">{fmtETB(c.avgMonthlyEbitda)}</p>
               </div>
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">Cost of sales / revenue</p>
-                <p className="text-sm font-extrabold text-navy">{fmtPct(c.costOfSalesToRevenuePct)}</p>
+                <p className="text-sm font-extrabold text-ink">{fmtPct(c.costOfSalesToRevenuePct)}</p>
               </div>
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted">OPEX / revenue</p>
-                <p className="text-sm font-extrabold text-navy">{fmtPct(c.opexToRevenuePct)}</p>
+                <p className="text-sm font-extrabold text-ink">{fmtPct(c.opexToRevenuePct)}</p>
               </div>
             </div>
           </div>

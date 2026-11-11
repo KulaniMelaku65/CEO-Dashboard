@@ -6,15 +6,14 @@ const MONTH_ORDER = ['January','February','March','April','May','June','July','A
 function Sel({ label, value, onChange, options }) {
   return (
     <div className="flex flex-col gap-1" style={{ minWidth: 160 }}>
-      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="rounded-lg px-3 py-2 text-[12px] font-semibold focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-        style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1, borderStyle: 'solid' }}
+        className="rounded-lg px-3 py-2 text-[12px] font-semibold focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white text-ink border border-border"
       >
-        <option value="All" style={{ color: '#fff', background: '#0A3A46' }}>All</option>
-        {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled} style={{ color: '#fff', background: '#0A3A46' }}>{o.label}</option>)}
+        <option value="All" className="bg-white text-ink">All</option>
+        {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled} className="bg-white text-ink">{o.label}</option>)}
       </select>
     </div>
   )
@@ -138,7 +137,7 @@ export default function PeopleOpsFilterBar({ data }) {
         {anyActive && (
           <button
             onClick={clearFilters}
-            className="self-end px-3 py-2 rounded-lg text-[11px] font-bold border border-border text-muted hover:text-navy hover:border-navy transition-colors"
+            className="self-end px-3 py-2 rounded-lg text-[11px] font-bold border border-border text-muted hover:text-ink hover:border-navy transition-colors"
           >
             Clear filters
           </button>

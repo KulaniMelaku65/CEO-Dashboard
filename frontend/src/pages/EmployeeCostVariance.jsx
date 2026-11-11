@@ -25,8 +25,8 @@ function VarBadge({ variance }) {
   if (Math.abs(variance) < 0.01)
     return <span className="text-[12px]" style={{ color: '#EB7D23' }}>●</span>
   if (variance > 0)
-    return <span className="text-[10px]" style={{ color: '#2EBD85' }}>▲</span>
-  return <span className="text-[10px]" style={{ color: '#E5544B' }}>▼</span>
+    return <span className="text-[10px]" style={{ color: '#2E7D32' }}>▲</span>
+  return <span className="text-[10px]" style={{ color: '#D32F2F' }}>▼</span>
 }
 
 export default function EmployeeCostVariance({ data }) {
@@ -156,14 +156,14 @@ export default function EmployeeCostVariance({ data }) {
   const totalVar  = totalCurr - totalPrev
   const totalPct  = totalPrev !== 0 ? (totalVar / totalPrev) * 100 : 0
 
-  const varColor = (v) => v > 0.01 ? '#2EBD85' : v < -0.01 ? '#E5544B' : '#EB7D23'
+  const varColor = (v) => v > 0.01 ? '#2E7D32' : v < -0.01 ? '#D32F2F' : '#EB7D23'
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-extrabold text-navy mb-0.5">Month to Month Employee Cost Comparison</h2>
+        <h2 className="text-lg font-extrabold text-ink mb-0.5">Month to Month Employee Cost Comparison</h2>
         {monthA && monthB
-          ? <p className="text-xs text-muted font-medium">Comparing <span className="font-bold text-navy">{monthA}</span> vs <span className="font-bold text-navy">{monthB}</span> — select any two months to compare</p>
+          ? <p className="text-xs text-muted font-medium">Comparing <span className="font-bold text-ink">{monthA}</span> vs <span className="font-bold text-ink">{monthB}</span> — select any two months to compare</p>
           : <p className="text-xs text-muted font-medium">Select two months below to compare payroll costs</p>
         }
       </div>
@@ -185,7 +185,7 @@ export default function EmployeeCostVariance({ data }) {
                 value={monthA}
                 onChange={e => setMonthA(e.target.value)}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none"
-                style={{ color: '#02404F' }}
+                style={{ color: '#0F5565' }}
               >
                 {months.slice().reverse().map(m => (
                   <option key={m} value={m}>{m}</option>
@@ -205,7 +205,7 @@ export default function EmployeeCostVariance({ data }) {
                 value={monthB}
                 onChange={e => setMonthB(e.target.value)}
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm font-semibold bg-white focus:outline-none"
-                style={{ color: '#02404F' }}
+                style={{ color: '#0F5565' }}
               >
                 {months.slice().reverse().map(m => (
                   <option key={m} value={m}>{m}</option>
@@ -221,33 +221,33 @@ export default function EmployeeCostVariance({ data }) {
 
           {/* Variance by BU */}
           <div className="bg-white rounded-2xl border border-border p-4 shadow-card">
-            <h3 className="text-sm font-bold text-navy mb-3">Variance By BU</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Variance By BU</h3>
             {deptVarArr.length > 0 ? (
               <>
                 <ResponsiveContainer width="100%" height={Math.max(200, deptVarArr.length * 36)}>
                   <BarChart data={deptVarArr} layout="vertical" margin={{ top: 0, right: 38, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E3E9F2" horizontal={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E6E9EC" horizontal={false} />
                     <XAxis
                       type="number"
                       tickFormatter={fmtM}
-                      tick={{ fontSize: 9, fill: '#6B7C93' }}
+                      tick={{ fontSize: 9, fill: '#6B7780' }}
                       axisLine={false} tickLine={false}
                     />
                     <YAxis
                       type="category"
                       dataKey="displayName"
-                      tick={{ fontSize: 8, fill: '#6B7C93' }}
+                      tick={{ fontSize: 8, fill: '#6B7780' }}
                       axisLine={false} tickLine={false}
                       width={148}
                     />
                     <Tooltip
                       labelFormatter={(label, payload) => payload?.[0]?.payload?.name || label}
                       formatter={(v) => [fmtFull(v) + ' ETB', 'Variance']}
-                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E3E9F2' }}
+                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E6E9EC' }}
                     />
                     <Bar dataKey="variance" radius={[0, 3, 3, 0]} maxBarSize={12}>
                       {deptVarArr.map((d, i) => (
-                        <Cell key={i} fill={d.variance >= 0 ? '#EB7D23' : '#E5544B'} />
+                        <Cell key={i} fill={d.variance >= 0 ? '#EB7D23' : '#D32F2F'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -266,9 +266,9 @@ export default function EmployeeCostVariance({ data }) {
             <div className="overflow-x-auto max-h-[640px] overflow-y-auto">
               <table className="w-full text-[11px] border-collapse">
                 <thead className="sticky top-0 z-10">
-                  <tr style={{ background: '#02404F' }}>
+                  <tr style={{ background: '#0F5565' }}>
                     <th className="text-left px-4 py-3 font-bold text-white sticky left-0 z-20 min-w-[220px]"
-                        style={{ background: '#02404F' }}>
+                        style={{ background: '#0F5565' }}>
                       Employees
                     </th>
                     <th className="px-4 py-3 font-bold text-white text-right whitespace-nowrap min-w-[120px]">
@@ -292,14 +292,14 @@ export default function EmployeeCostVariance({ data }) {
                       className="border-t border-border"
                       style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}
                     >
-                      <td className="px-4 py-2 font-medium text-navy sticky left-0 z-10"
+                      <td className="px-4 py-2 font-medium text-ink sticky left-0 z-10"
                           style={{ background: i % 2 === 0 ? '#fff' : '#F9FBFD' }}>
                         {emp.label}
                       </td>
                       <td className="px-4 py-2 text-right text-muted tabular-nums">
                         {fmtFull(emp.prevCost)}
                       </td>
-                      <td className="px-4 py-2 text-right font-semibold text-navy tabular-nums">
+                      <td className="px-4 py-2 text-right font-semibold text-ink tabular-nums">
                         {fmtFull(emp.currCost)}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold"
@@ -318,15 +318,15 @@ export default function EmployeeCostVariance({ data }) {
                   ))}
 
                   {/* Grand total row */}
-                  <tr className="border-t-2 sticky bottom-0 z-10" style={{ background: '#02404F' }}>
+                  <tr className="border-t-2 sticky bottom-0 z-10" style={{ background: '#0F5565' }}>
                     <td className="px-4 py-3 font-extrabold text-white sticky left-0 z-20"
-                        style={{ background: '#02404F' }}>
+                        style={{ background: '#0F5565' }}>
                       Total
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtFull(totalPrev)}</td>
                     <td className="px-4 py-3 text-right font-bold text-white tabular-nums">{fmtFull(totalCurr)}</td>
                     <td className="px-4 py-3 text-right font-bold text-white tabular-nums"
-                        style={{ color: totalVar >= 0 ? '#2EBD85' : '#E5544B' }}>
+                        style={{ color: totalVar >= 0 ? '#2E7D32' : '#D32F2F' }}>
                       {fmtFull(totalVar)}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-white tabular-nums">

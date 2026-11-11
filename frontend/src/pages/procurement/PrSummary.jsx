@@ -131,7 +131,7 @@ function Body({ proc, data }) {
           rows={matrix}
           columns={[
             { key: 'u', label: 'Requester', align: 'left' },
-            ...STATUSES.map(([s, c]) => ({ key: s, label: s, format: v => (v ? v : '—'), color: r => (r[s] ? c : '#6B7C93') })),
+            ...STATUSES.map(([s, c]) => ({ key: s, label: s, format: v => (v ? v : '—'), color: r => (r[s] ? c : '#6B7780') })),
             { key: 'total', label: 'Total' },
             { key: 'value', label: 'Value (ETB)', format: v => Math.round(v).toLocaleString() },
           ]}
@@ -143,8 +143,8 @@ function Body({ proc, data }) {
         subtitle={`${fmtInt(scoped.length)} requisitions · showing the 40 largest`}
         right={
           <div className="flex items-center gap-2">
-            {status && <button onClick={() => setStatus(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-navy">Clear filter</button>}
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PR, payee, requester" className="text-xs border border-border rounded-xl px-3 py-2 text-navy outline-none focus:border-navy w-52 bg-transparent" />
+            {status && <button onClick={() => setStatus(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-border text-muted hover:text-ink">Clear filter</button>}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search PR, payee, requester" className="text-xs border border-border rounded-xl px-3 py-2 text-ink outline-none focus:border-navy w-52 bg-transparent" />
           </div>
         }
       >
@@ -156,7 +156,7 @@ function Body({ proc, data }) {
             { key: 'no', label: 'PR', align: 'left' },
             { key: 'v', label: 'Payee', align: 'left', format: v => truncateLabel(v, 22) },
             { key: 'u', label: 'Requester' },
-            { key: 'st', label: 'Status', color: r => STATUS_COLOR[r.st] || '#FFFFFF' },
+            { key: 'st', label: 'Status', color: r => STATUS_COLOR[r.st] || 'var(--tbl-fg)' },
             { key: 'd', label: 'Doc date', format: fmtDay },
             { key: 'bu', label: 'Business unit', format: v => truncateLabel(buName(v), 14) },
             { key: 'desc', label: 'Description', format: v => truncateLabel(v, 20) },

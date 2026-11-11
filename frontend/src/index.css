@@ -10,6 +10,62 @@
   ::-webkit-scrollbar-thumb { background: #E3E9F2; border-radius: 99px; }
 }
 
+/* Chart colors (Recharts axis/grid/tooltip/cursor) referenced as var(--chart-*) from
+   inline JS props — same technique the EPMS reference uses for its radar chart's own
+   axis-label fill. CSS classes can't reach into SVG/Recharts props, but a custom
+   property can: it still cascades through .dark-app like any other CSS value, so these
+   flip between light/dark without each page needing its own theme-aware logic. Values
+   that are themselves an intentionally-dark fixed panel (chat bubbles, tooltip chips)
+   are NOT part of this — those stay the same literal dark hex in both themes by
+   design, same as EPMS never re-themes --teal/--orange either. */
+:root {
+  --chart-axis: rgba(0, 0, 0, 0.45);
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-cursor: rgba(0, 0, 0, 0.04);
+  --chart-muted-fill: rgba(0, 0, 0, 0.18);
+  --row-tint-a: rgba(0, 0, 0, 0.03);
+  --row-tint-b: rgba(0, 0, 0, 0.05);
+  --tone-muted-bg: rgba(0, 0, 0, 0.06);
+  --tone-muted-fg: #6B7780;
+  --panel-header-bg: #F0F7F6;
+
+  /* Data tables (drilldowns, HR Analysis, People & Culture, Group KPI): same surfaces
+     as the rest of the page — card white / page grey in light mode, the dark-app card
+     and page colors in dark mode. Pages reference these via ROW_BG / var(--tbl-*) in
+     inline styles, so they follow whichever theme is selected. */
+  --tbl-head-bg: #F7F9FA;      /* = bg-bg */
+  --tbl-head-fg: #6B7780;      /* = text-muted */
+  --tbl-row-even: #FFFFFF;     /* = bg-white (cards) */
+  --tbl-row-odd: #FAFBFC;
+  --tbl-row-sub: #F7F9FA;      /* expanded child / section rows */
+  --tbl-row-sub2: #FBFCFD;     /* second-level child rows */
+  --tbl-fg: #222222;           /* = text-ink */
+  --tbl-fg-muted: #6B7780;
+  --tbl-fg-faint: #9AA5AD;
+  --tbl-line: #E6E9EC;         /* = border-border */
+}
+.dark-app {
+  --tbl-head-bg: #0B1417;      /* dark-app bg-bg */
+  --tbl-head-fg: #8BA3AB;      /* dark-app text-muted */
+  --tbl-row-even: #111E22;     /* dark-app bg-white (cards) */
+  --tbl-row-odd: #14232A;
+  --tbl-row-sub: #0E1A1E;
+  --tbl-row-sub2: #121F24;
+  --tbl-fg: #EEF4F5;           /* dark-app text-ink */
+  --tbl-fg-muted: #8BA3AB;
+  --tbl-fg-faint: #5F7880;
+  --tbl-line: rgba(255, 255, 255, 0.08);
+  --chart-axis: rgba(255, 255, 255, 0.55);
+  --chart-grid: rgba(255, 255, 255, 0.12);
+  --chart-cursor: rgba(255, 255, 255, 0.06);
+  --chart-muted-fill: rgba(255, 255, 255, 0.30);
+  --row-tint-a: rgba(255, 255, 255, 0.04);
+  --row-tint-b: rgba(255, 255, 255, 0.08);
+  --tone-muted-bg: rgba(255, 255, 255, 0.1);
+  --tone-muted-fg: #9FB4BD;
+  --panel-header-bg: #0A3A46;
+}
+
 @keyframes fadeSlide {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -31,26 +87,31 @@
 /* ── App-wide dark theme ──────────────────────────────────────────────────────
    Scoped to .dark-app (wraps the authenticated app shell in App.jsx) so the
    pre-login screen is unaffected. Every page/component still uses the same
-   semantic Tailwind classes (bg-white for cards, text-navy for headings,
+   semantic Tailwind classes (bg-white for cards, text-ink for body/heading text,
    text-muted for labels, border-border for dividers) — this just repoints what
    those classes render as inside the dark shell, instead of touching every
    file. Chart internals (Recharts axis/grid/tooltip colors, which are always
    set via inline JS props, never CSS classes) are handled per-page separately
-   since CSS can't reach into SVG props. */
+   since CSS can't reach into SVG props.
+   Dark values match the EPMS theme's own [data-theme="dark"] tokens (--bg/--surface/
+   --text/--muted/--border) — white-on-dark is the literal inverse of the light
+   theme's black-on-white, not an ad hoc dark palette. navy/teal accents (sidebar,
+   buttons, focus rings) are deliberately NOT overridden here, same as EPMS itself
+   never redefines --teal/--orange between light and dark. */
 .dark-app {
-  background: #052C36;
+  background: #0b1417;
   color-scheme: dark;
 }
-.dark-app .bg-bg { background-color: #052C36 !important; }
-.dark-app .bg-white { background-color: #0A3A46 !important; }
-.dark-app .text-navy { color: #FFFFFF !important; }
-.dark-app .text-muted { color: rgba(255, 255, 255, 0.55) !important; }
+.dark-app .bg-bg { background-color: #0b1417 !important; }
+.dark-app .bg-white { background-color: #111e22 !important; }
+.dark-app .text-ink { color: #eef4f5 !important; }
+.dark-app .text-muted { color: #8ba3ab !important; }
 .dark-app .border-border,
 .dark-app .divide-border > * + * {
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: #1e2f35 !important;
 }
-.dark-app .shadow-card { box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25); }
+.dark-app .shadow-card { box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35); }
 .dark-app .hover\:bg-\[\#F0F7F6\]:hover { background-color: rgba(255, 255, 255, 0.06) !important; }
-.dark-app .hover\:text-navy:hover { color: #FFFFFF !important; }
+.dark-app .hover\:text-ink:hover { color: #FFFFFF !important; }
 .dark-app .hover\:border-navy:hover { border-color: rgba(255, 255, 255, 0.4) !important; }
 .dark-app ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }

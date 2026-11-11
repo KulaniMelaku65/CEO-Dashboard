@@ -8,12 +8,12 @@ import ExportButton from '../components/ExportButton.jsx'
 import { usePeopleOpsFilters } from '../context/PeopleOpsFilters.jsx'
 import { buildEmployeeExportRows, buildExportMeta, EMPLOYEE_EXPORT_COLUMNS } from '../lib/csvExport.js'
 
-const BG      = '#052C36'
-const PANEL   = '#0A3A46'
+const BG      = 'var(--tbl-row-even)'   // page-colored surface (follows light/dark mode)
+const PANEL   = 'var(--tbl-row-even)'   // same as cards
 const ORANGE  = '#EB7D23'
-const TEAL    = '#1FB6A6'
-const LINE    = 'rgba(255,255,255,0.10)'
-const AXIS    = 'rgba(255,255,255,0.55)'
+const TEAL    = '#12707F'
+const LINE    = 'var(--chart-grid)'
+const AXIS    = 'var(--chart-axis)'
 
 const fmtN = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US')
 const fmtC = (n) => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -27,7 +27,7 @@ function Cell1({ label, value, valueSize = 34, sub, icon, children }) {
         {icon}
       </div>
       {value !== undefined && (
-        <p className="font-extrabold text-white leading-none mt-2" style={{ fontSize: valueSize }}>{value}</p>
+        <p className="font-extrabold text-ink leading-none mt-2" style={{ fontSize: valueSize }}>{value}</p>
       )}
       {sub && <p className="text-[10px] font-semibold mt-1" style={{ color: AXIS }}>{sub}</p>}
       {children}
@@ -353,7 +353,7 @@ export default function PeopleHRSummary({ data }) {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-extrabold text-navy mb-0.5">People & Culture</h2>
+          <h2 className="text-lg font-extrabold text-ink mb-0.5">People & Culture</h2>
           <p className="text-xs text-muted font-medium">Workforce & cost snapshot — headcount, turnover, and CTC by business unit</p>
         </div>
         <ExportButton
@@ -376,8 +376,8 @@ export default function PeopleHRSummary({ data }) {
           <Cell1 label="Gender in %" valueSize={20}
             sub={null}>
             <div className="mt-2 flex gap-4">
-              <div><p className="text-white font-extrabold text-xl leading-none">{malePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Male</p></div>
-              <div><p className="text-white font-extrabold text-xl leading-none">{femalePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Female</p></div>
+              <div><p className="text-ink font-extrabold text-xl leading-none">{malePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Male</p></div>
+              <div><p className="text-ink font-extrabold text-xl leading-none">{femalePct}%</p><p className="text-[9px] mt-1" style={{ color: AXIS }}>Female</p></div>
             </div>
           </Cell1>
           <Cell1 label="Employees In HQ" value={isPeriodScoped ? '—' : fmtN(hqField.hq)}
@@ -393,8 +393,8 @@ export default function PeopleHRSummary({ data }) {
             <div className="space-y-1.5">
               {employmentTypeRows.length > 0 ? employmentTypeRows.map(row => (
                 <div key={row.type} className="flex items-center justify-between text-[12px]">
-                  <span className="font-medium" style={{ color: '#D7E5E9' }}>{row.type}</span>
-                  <span className="font-bold text-white">{fmtN(row.count)}</span>
+                  <span className="font-medium" style={{ color: 'var(--tbl-fg)' }}>{row.type}</span>
+                  <span className="font-bold text-ink">{fmtN(row.count)}</span>
                 </div>
               )) : <p className="text-[11px]" style={{ color: AXIS }}>No data</p>}
             </div>
@@ -402,7 +402,7 @@ export default function PeopleHRSummary({ data }) {
 
           <div className="p-4 flex flex-col items-center justify-center text-center" style={{ background: PANEL }}>
             <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: ORANGE }}>Turnover Rate</p>
-            <p className="font-extrabold text-white leading-none mt-2" style={{ fontSize: 40 }}>{fmtPct1(turnoverRate)}</p>
+            <p className="font-extrabold text-ink leading-none mt-2" style={{ fontSize: 40 }}>{fmtPct1(turnoverRate)}</p>
             <p className="text-[9px] mt-1" style={{ color: AXIS }}>Excl. Agents · {turnoverPeriodLabel}</p>
           </div>
 
@@ -413,7 +413,7 @@ export default function PeopleHRSummary({ data }) {
                 <LineChart data={monthlyHires} margin={{ top: 6, right: 6, left: -20, bottom: 0 }}>
                   <XAxis dataKey="label" tick={{ fontSize: 8, fill: AXIS }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 8, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ fontSize: 10, background: PANEL, border: '1px solid rgba(255,255,255,.15)', color: '#fff' }} />
+                  <Tooltip contentStyle={{ fontSize: 10, background: PANEL, border: '1px solid var(--tbl-line)', color: 'var(--tbl-fg)' }} />
                   <Line type="monotone" dataKey="joiners" stroke={TEAL} strokeWidth={2} dot={{ r: 2.5, fill: TEAL }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -431,7 +431,7 @@ export default function PeopleHRSummary({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 9, fill: AXIS }} axisLine={false} tickLine={false} interval={0} angle={-20} textAnchor="end" height={50} />
                   <YAxis tick={{ fontSize: 9, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid rgba(255,255,255,.15)', color: '#fff' }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                  <Tooltip contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid var(--tbl-line)', color: 'var(--tbl-fg)' }} cursor={{ fill: 'var(--chart-cursor)' }} />
                   <Bar dataKey="count" fill="#D7E5E9" maxBarSize={36} />
                 </BarChart>
               </ResponsiveContainer>
@@ -446,7 +446,7 @@ export default function PeopleHRSummary({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke={LINE} horizontal={false} />
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: AXIS }} axisLine={false} tickLine={false} width={90} />
-                  <Tooltip formatter={v => fmtC(v)} contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid rgba(255,255,255,.15)', color: '#fff' }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                  <Tooltip formatter={v => fmtC(v)} contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid var(--tbl-line)', color: 'var(--tbl-fg)' }} cursor={{ fill: 'var(--chart-cursor)' }} />
                   <Bar dataKey="value" fill={TEAL} maxBarSize={16}>
                     {ctcByBUData.map((_, i) => <Cell key={i} fill={TEAL} />)}
                   </Bar>
@@ -486,7 +486,7 @@ export default function PeopleHRSummary({ data }) {
                   <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 8, fill: AXIS }} axisLine={false} tickLine={false} interval={0} angle={-30} textAnchor="end" height={60} />
                   <YAxis tick={{ fontSize: 9, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid rgba(255,255,255,.15)', color: '#fff' }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                  <Tooltip contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid var(--tbl-line)', color: 'var(--tbl-fg)' }} cursor={{ fill: 'var(--chart-cursor)' }} />
                   <Bar dataKey="count" fill="#D7E5E9" maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
@@ -502,18 +502,18 @@ export default function PeopleHRSummary({ data }) {
                     <Pie data={budgetLine} cx="50%" cy="50%" innerRadius={44} outerRadius={72} dataKey="value" paddingAngle={3}>
                       {budgetLine.map((_, i) => <Cell key={i} fill={BUDGET_COLORS[i % BUDGET_COLORS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={v => fmtC(v)} contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid rgba(255,255,255,.15)', color: '#fff' }} />
+                    <Tooltip formatter={v => fmtC(v)} contentStyle={{ fontSize: 11, background: PANEL, border: '1px solid var(--tbl-line)', color: 'var(--tbl-fg)' }} />
                   </PieChart>
                   <div className="space-y-2">
                     {budgetLine.map((d, i) => (
                       <div key={d.name} className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: BUDGET_COLORS[i % BUDGET_COLORS.length] }} />
-                        <span className="text-[11px] font-semibold text-white">{d.name}</span>
+                        <span className="text-[11px] font-semibold text-ink">{d.name}</span>
                         <span className="text-[10px]" style={{ color: AXIS }}>{fmtC(d.value)}</span>
                       </div>
                     ))}
                     <p className="text-[10px] pt-2 mt-1" style={{ color: AXIS, borderTop: `1px solid ${LINE}` }}>
-                      Total: <strong className="text-white">{fmtC(budgetLineTotal)}</strong>
+                      Total: <strong className="text-ink">{fmtC(budgetLineTotal)}</strong>
                     </p>
                   </div>
                 </div>
